@@ -32,7 +32,13 @@ public class JwtTokenUtil {
         Integer sessionHours = platformSettingService.current().getSessionHours();
         long expirationTime = 1000L * 60 * 60 * (sessionHours == null ? 24 : sessionHours);
         Boolean isRoot = user.getIsRoot();
-        String branchUID = user.getBranch().getUid();
+        // Read, not dereferenced blind. A user whose branch is missing - never
+        // set, or pointing at one that has since gone - used to throw here,
+        // and login turned that into a 500 saying "Error in setting Token".
+        // The branch claim is what narrows a screen to one branch; a token
+        // without it opens nothing, which is the right answer for an account
+        // in that state and a far better one than a crash.
+        String branchUID = branchUidOf(user);
         String fullName = String.format("%s             %s", user.getFirstName(), user.getLastName());
         String email = user.getEmail();
         // An account with no roles used to be handed "ROOT" here - the highest
@@ -67,6 +73,15 @@ public class JwtTokenUtil {
                 .setIssuedAt(new Date())
                 .signWith(SignatureAlgorithm.HS512, PRIVATE_KEY)
                 .compact();
+    }
+
+    private static String branchUidOf(User user) {
+        try {
+            return user.getBranch() == null ? null : user.getBranch().getUid();
+        } catch (Exception e) {
+            // An eager association pointing at a row that no longer exists.
+            return null;
+        }
     }
 
     public String extractUsername(String token){

@@ -49,8 +49,12 @@ public class Initializer implements ApplicationRunner {
         seedPermissions();
         seedSuperRole();
         seedStandardRoles();
-        seedSuperUser();
+        // The branch first: the super user is put in it, and a user with no
+        // branch cannot be issued a token - which meant a fresh install could
+        // not log in at all, the one account it has having been created a
+        // moment before the branch it belongs to.
         seedRootBranch();
+        seedSuperUser();
         platformSettingService.seedIfMissing();
         regionService.seedIfMissing(BranchCodeHelper.SEED_REGION_CODES);
     }
@@ -306,6 +310,15 @@ public class Initializer implements ApplicationRunner {
         User user = userRepository.findFirstByUsername("root@root.com");
         Role role = roleRepository.findByCode("ROOT");
         Branch branch = branchRepository.findByBranchCode(ROOT_BRANCH_CODE);
+        // An install seeded in the old order already has this user without a
+        // branch, and reordering alone leaves it that way forever - the block
+        // below only runs when the user is absent. So repair it in passing.
+        if (user != null && branch != null && user.getBranch() == null) {
+            log.info("Super user had no branch; attaching the root branch");
+            user.setBranch(branch);
+            userRepository.save(user);
+        }
+
         if(user == null){
             User superUser = new User();
             superUser.setUsername("root@root.com");
