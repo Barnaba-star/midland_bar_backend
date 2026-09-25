@@ -42,6 +42,14 @@ public class BarStaff extends TenantEntity {
     @Column(name = "gender")
     private String gender;
 
+    /**
+     * The login this staff member sells under. Sales are rung up by whoever
+     * is logged in, and their commission lands on the staff row linked here -
+     * created from the user's own details the first time they sell.
+     */
+    @Column(name = "user_uid")
+    private String userUid;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "store_open")
     @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})

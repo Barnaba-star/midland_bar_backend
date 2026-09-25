@@ -35,7 +35,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         } else {
             Cookie[] cookies = request.getCookies();
             if (cookies != null) {
-                Optional<String> optional = Arrays.stream(cookies).filter(cookie -> cookie.getName().equals("jwt_token")).map(Cookie::getValue).findFirst();
+                Optional<String> optional = Arrays.stream(cookies).filter(cookie -> cookie.getName().equals("bar_jwt_token")).map(Cookie::getValue).findFirst();
                 token = optional.orElse(null);
             }
         }

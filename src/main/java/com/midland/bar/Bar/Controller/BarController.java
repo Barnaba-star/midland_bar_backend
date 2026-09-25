@@ -4,6 +4,9 @@ import com.midland.bar.Bar.Dto.*;
 import com.midland.bar.Bar.Model.*;
 import com.midland.bar.Bar.Projection.*;
 import com.midland.bar.Bar.Service.BarService;
+import com.midland.bar.Bar.Service.StockService;
+import com.midland.bar.Bar.Service.BillCodeService;
+import com.midland.bar.Bar.Service.BillPaymentService;
 import com.midland.bar.Bar.Service.ServiceAndStoreReportResponse;
 import com.midland.bar.Uaa.Dto.AssignUserRoleDTO;
 import com.midland.bar.Uaa.Model.User;
@@ -25,6 +28,9 @@ import java.util.List;
 @RequiredArgsConstructor
 public class BarController {
     private final BarService barService;
+    private final StockService stockService;
+    private final BillCodeService billCodeService;
+    private final BillPaymentService billPaymentService;
     private final UserService userService;
 
     /***
@@ -45,6 +51,12 @@ public class BarController {
     public ResponseList<CommissionProjection> findCommissionList(){
         return barService.findCommissionList();
     }
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_COMMISSION')")
+    @PostMapping("/findServiceCommissionPage")
+    public ResponsePage<ServiceCommissionProjection> findServiceCommissionPage(@RequestBody PageableParam pageableParam){
+        return barService.findServiceCommissionPage(pageableParam.getPage(), pageableParam.getSize(), pageableParam.getSearchParam());
+    }
+
     @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_COMMISSION')")
     @PostMapping("/findCommissionPage")
     public ResponsePage<CommissionProjection> findCommissionPage(@RequestBody PageableParam pageableParam){
@@ -107,7 +119,7 @@ public class BarController {
     @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_SERVICE')")
     @PostMapping("/findBarServicePage")
     public ResponsePage<BarProjection> findBarServicePage(@RequestBody PageableParam pageableParam){
-        return barService.findBarServicePage(pageableParam.getPage(), pageableParam.getSize());
+        return barService.findBarServicePage(pageableParam.getPage(), pageableParam.getSize(), pageableParam.getSearchParam(), pageableParam.getFilter());
     }
     @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_SERVICE')")
     @GetMapping("/findServiceEntityUIDList/{status}")
@@ -123,7 +135,7 @@ public class BarController {
     public Response<BarStaff> saveBarStaff(@RequestBody BarStaffDTO barStaffDTO){
         return barService.saveBarStaff(barStaffDTO);
     }
-    @PreAuthorize("@authChecker.hasPermissionOrRoot('DELETE_BAR')")
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('DELETE_STAFF')")
     @PostMapping("/deleteBarStaff/{barStaffUID}")
     public Response<BarStaff> deleteBarStaff(@PathVariable String barStaffUID){
         return barService.deleteBarStaff(barStaffUID);
@@ -141,7 +153,7 @@ public class BarController {
     @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_STAFF')")
     @PostMapping("/findBarStaffPage")
     public ResponsePage<BarProjection> findBarStaffPage(@RequestBody PageableParam pageableParam){
-        return barService.findBarStaffPage(pageableParam.getPage(), pageableParam.getSize());
+        return barService.findBarStaffPage(pageableParam.getPage(), pageableParam.getSize(), pageableParam.getSearchParam(), pageableParam.getFilter());
     }
 
     /***
@@ -152,7 +164,7 @@ public class BarController {
     public ResponseList<BarSales> saveBarSales(@RequestBody BarSalesDTO barSalesDTO){
         return barService.saveBarSales(barSalesDTO);
     }
-    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_SALES)")
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_SALES')")
     @GetMapping("/findBarSalesByUID/{barSalesUID}")
     public Response<BarProjection> findBarSalesByUID(@PathVariable String barSalesUID){
         return barService.findBarSalesByUID(barSalesUID);
@@ -184,6 +196,24 @@ public class BarController {
     }
 
     @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
+    @PostMapping("/payBill")
+    public Response<SalesOpened> payBill(@Valid @RequestBody PayBillDTO payBillDTO){
+        return billPaymentService.payBill(payBillDTO);
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_SALES')")
+    @GetMapping("/findBillReceipt/{billUid}")
+    public Response<java.util.Map<String, Object>> findBillReceipt(@PathVariable String billUid){
+        return billPaymentService.receipt(billUid);
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
+    @PostMapping("/addSaleItems")
+    public Response<SalesOpened> addSaleItems(@Valid @RequestBody SaleItemsDTO saleItemsDTO){
+        return barService.addSaleItems(saleItemsDTO);
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
     @PostMapping("/saveOpenSale")
     public Response<SalesOpened> saveOpenSale(@RequestBody SaleOpenedDTO saleOpenedDTO){
         return barService.saveOpenSale(saleOpenedDTO);
@@ -197,7 +227,7 @@ public class BarController {
     /***
      METHODS FOR REPORT PERMISSION
      ***/
-    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_REPORT)")
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_REPORT')")
     @GetMapping("/findBarReportByUID/{barReportUID}")
     public Response<BarReports> findBarReportByUID(@PathVariable String barReportUID){
         return barService.findBarReportByUID(barReportUID);
@@ -289,6 +319,69 @@ public class BarController {
     /***
      METHODS FOR BAR SETTING
      ***/
+    /*
+     BILL CODES - set up in POS Setting (SAVE_SERVICE, like the rest of that
+     screen); anyone who can sell may see which are free.
+     */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SERVICE')")
+    @PostMapping("/saveBillCode")
+    public Response<BillCode> saveBillCode(@RequestBody java.util.Map<String, String> body){
+        return billCodeService.save(body.get("code"));
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SERVICE')")
+    @PostMapping("/deleteBillCode/{uid}")
+    public Response<BillCode> deleteBillCode(@PathVariable String uid){
+        return billCodeService.delete(uid);
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_SERVICE')")
+    @GetMapping("/findBillCodes")
+    public ResponseList<BillCodeProjection> findBillCodes(){
+        return billCodeService.findAll();
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_SALES')")
+    @GetMapping("/findAvailableBillCodes")
+    public ResponseList<String> findAvailableBillCodes(){
+        return billCodeService.findAvailable();
+    }
+
+    /*
+     STOCK - deliveries into the store. SAVE_STORE is seeded to CEO and
+     MANAGER only; a cashier can see the store but not add to it.
+     */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_STORE')")
+    @PostMapping("/addStock")
+    public Response<StockReceipt> addStock(@Valid @RequestBody StockReceiptDTO stockReceiptDTO){
+        return stockService.addStock(stockReceiptDTO);
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_STORE')")
+    @PostMapping("/adjustStock")
+    public Response<StockAdjustment> adjustStock(@Valid @RequestBody StockAdjustmentDTO stockAdjustmentDTO){
+        return stockService.adjustStock(stockAdjustmentDTO);
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_STORE')")
+    @PostMapping("/findStockAdjustments/{serviceUID}")
+    public ResponsePage<StockAdjustmentProjection> findStockAdjustments(@PathVariable String serviceUID, @RequestBody PageableParam pageableParam){
+        return stockService.findAdjustments(serviceUID, pageableParam.getPage(), pageableParam.getSize());
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_STORE')")
+    @PostMapping("/findStockMovementPage")
+    public ResponsePage<StockMovementProjection> findStockMovementPage(@RequestBody PageableParam pageableParam){
+        return stockService.findMovements(pageableParam.getSearchParam(), pageableParam.getFromDate(), pageableParam.getToDate(),
+                pageableParam.getPage(), pageableParam.getSize());
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_STORE')")
+    @PostMapping("/findStockReceipts/{serviceUID}")
+    public ResponsePage<StockReceiptProjection> findStockReceipts(@PathVariable String serviceUID, @RequestBody PageableParam pageableParam){
+        return stockService.findReceipts(serviceUID, pageableParam.getPage(), pageableParam.getSize());
+    }
+
     @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_STORE')")
     @PostMapping("/saveStore")
     public Response<Store> saveStore(@RequestBody StoreDTO storeDTO){

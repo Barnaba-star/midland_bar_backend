@@ -1,9 +1,12 @@
 package com.midland.bar.Bar.Service;
 
+import java.util.LinkedHashMap;
+
 import com.midland.bar.Config.Security.LoggerUser;
 import com.midland.bar.Notification.Service.NotificationService;
 import com.midland.bar.Bar.Dto.*;
 import com.midland.bar.Bar.Model.*;
+import com.midland.bar.Setting.Service.PlatformSettingService;
 import com.midland.bar.Bar.Projection.*;
 import com.midland.bar.Bar.Repository.*;
 import com.midland.bar.Uaa.Model.User;
@@ -56,6 +59,8 @@ public class BarService {
   private final StockAndPurchaseRepository stockAndPurchaseRepository;
   private final StockAndPurchaseDescriptionsRepository stockAndPurchaseDescriptionsRepository;
   private final NotificationService notificationService;
+  private final PlatformSettingService platformSettingService;
+  private final BillCodeService billCodeService;
 
     /*
    BAR SERVICE METHODS
@@ -66,23 +71,145 @@ public class BarService {
           return new Response<>("Provide Data for Bar Service");
       BarServiceEntity serviceEntity = null;
       if(barServiceDTO.getUid() != null){
-          Optional<BarServiceEntity> optionalBarServiceEntity = barServiceRepository.findById(barServiceDTO.getUid());
+          // Scoped to the caller's branch - a bare findById let one branch
+          // edit another's product by its uid.
+          Optional<BarServiceEntity> optionalBarServiceEntity = barServiceRepository.findBarServiceByUID(barServiceDTO.getUid(), LoggerUser.getBranchUID());
           if(optionalBarServiceEntity.isEmpty())
               return new Response<>("Service Not Found");
           serviceEntity = optionalBarServiceEntity.get();
           serviceEntity.update();
       }else{
           serviceEntity = new BarServiceEntity();
+          // A new product starts empty and on sale. Stock arrives only through
+          // Add Stock, so editing the product can never overwrite a count that
+          // sales and deliveries have moved.
+          serviceEntity.setStockQuantity(0);
+          serviceEntity.setStatus("active");
+          // Generated, not typed. It stays with the product for life - even if
+          // its category is edited later - so receipts and reports that quote
+          // it keep pointing at the same thing.
+          serviceEntity.setServiceCode(ServiceKind.of(barServiceDTO.getKind()) == ServiceKind.STOCK_ITEM
+                  ? nextCode(ProductCategory.STOCK_ITEM_PREFIX)
+                  : nextProductCode(ProductCategory.valueOf(barServiceDTO.getCategory())));
       }
-      serviceEntity.setServiceCode(barServiceDTO.getServiceCode());
+      ServiceKind kind = ServiceKind.of(barServiceDTO.getKind());
+      serviceEntity.setKind(kind.name());
+      ProductCategory category = ProductCategory.valueOf(barServiceDTO.getCategory());
       serviceEntity.setServiceName(barServiceDTO.getServiceName());
       serviceEntity.setDescription(barServiceDTO.getDescription());
-      serviceEntity.setStatus(barServiceDTO.getStatus());
       serviceEntity.setPrice(barServiceDTO.getPrice());
-      serviceEntity.setDuration(barServiceDTO.getDuration());
+      serviceEntity.setCategory(category.name());
+      serviceEntity.setUnit(barServiceDTO.getUnit());
+      boolean hasPack = barServiceDTO.getPackUnit() != null && !barServiceDTO.getPackUnit().isBlank();
+      if (hasPack && (barServiceDTO.getUnitsPerPack() == null || barServiceDTO.getUnitsPerPack() < 2))
+          return new Response<>("Say how many units are in one " + barServiceDTO.getPackUnit());
+      // Without a pack a unit is its own pack, so the same arithmetic
+      // (stock / unitsPerPack) holds for every product.
+      serviceEntity.setPackUnit(hasPack ? barServiceDTO.getPackUnit() : null);
+      serviceEntity.setUnitsPerPack(hasPack ? barServiceDTO.getUnitsPerPack() : 1);
+      serviceEntity.setBuyingPrice(barServiceDTO.getBuyingPrice());
+
+      boolean ladderChanged = false;
+      if (kind == ServiceKind.STOCK_ITEM) {
+          // Kept in the store, never sold: counted, no price, no source.
+          if (barServiceDTO.getBuyingPrice() == null)
+              return new Response<>("Enter the buying price");
+          // Its measures, smallest first. Without a ladder the plain unit and
+          // pack fields make a two-rung one (Bottle; Crate = 24).
+          List<com.midland.bar.Bar.Dto.LadderLevel> requested = barServiceDTO.getUnitLadder();
+          if (requested == null || requested.isEmpty()) {
+              requested = new ArrayList<>();
+              requested.add(new com.midland.bar.Bar.Dto.LadderLevel(
+                      barServiceDTO.getUnit() == null || barServiceDTO.getUnit().isBlank() ? "Unit" : barServiceDTO.getUnit(), 1, null));
+              if (hasPack)
+                  requested.add(new com.midland.bar.Bar.Dto.LadderLevel(barServiceDTO.getPackUnit(), barServiceDTO.getUnitsPerPack(), null));
+          }
+          List<com.midland.bar.Bar.Dto.LadderLevel> ladder;
+          try {
+              ladder = UnitLadders.normalise(requested);
+          } catch (BusinessException e) {
+              return new Response<>(e.getMessage());
+          }
+          String ladderJson = UnitLadders.toJson(ladder);
+          ladderChanged = !ladderJson.equals(serviceEntity.getUnitLadder());
+          serviceEntity.setUnitLadder(ladderJson);
+          // Counted in the smallest rung, bought in the largest.
+          com.midland.bar.Bar.Dto.LadderLevel top = ladder.get(ladder.size() - 1);
+          serviceEntity.setUnit(ladder.get(0).getName());
+          serviceEntity.setPackUnit(ladder.size() > 1 ? top.getName() : null);
+          serviceEntity.setUnitsPerPack(top.getBase());
+          serviceEntity.setPrice(null);
+          serviceEntity.setTrackStock(true);
+          serviceEntity.setStockSourceUid(null);
+          serviceEntity.setUnitsPerSale(null);
+          serviceEntity.setSaleUnitName(null);
+          serviceEntity.setSaleUnitCount(null);
+      } else {
+          if (barServiceDTO.getPrice() == null)
+              return new Response<>("Enter the selling price");
+          String source = barServiceDTO.getStockSource();
+          if (source == null || source.isBlank())
+              source = category.tracksStockByDefault() ? "SELF" : "NONE";
+          if ("SELF".equals(source)) {
+              if (barServiceDTO.getBuyingPrice() == null)
+                  return new Response<>("Enter the buying price");
+              serviceEntity.setTrackStock(true);
+              serviceEntity.setStockSourceUid(null);
+              serviceEntity.setUnitsPerSale(null);
+          } else if ("NONE".equals(source)) {
+              serviceEntity.setTrackStock(false);
+              serviceEntity.setStockSourceUid(null);
+              serviceEntity.setUnitsPerSale(null);
+          } else {
+              Optional<BarServiceEntity> stockItem = barServiceRepository.findBarServiceByUID(source, LoggerUser.getBranchUID())
+                      .filter(s -> ServiceKind.of(s.getKind()) == ServiceKind.STOCK_ITEM);
+              if (stockItem.isEmpty())
+                  return new Response<>("Choose a stock item from the store");
+              // One sale is a count of one rung of the item's ladder
+              // (1 x Nusu = 60 Nyama); or, for an item without one, a
+              // plain number of its units.
+              int perSale;
+              String saleUnit = barServiceDTO.getSaleUnitName();
+              int saleCount = barServiceDTO.getSaleUnitCount() == null ? 1 : barServiceDTO.getSaleUnitCount();
+              if (saleUnit != null && !saleUnit.isBlank()) {
+                  Optional<Integer> base = UnitLadders.baseOf(stockItem.get().getUnitLadder(), saleUnit);
+                  if (base.isEmpty())
+                      return new Response<>(stockItem.get().getServiceName() + " has no measure called " + saleUnit);
+                  perSale = base.get() * saleCount;
+                  serviceEntity.setSaleUnitName(saleUnit);
+                  serviceEntity.setSaleUnitCount(saleCount);
+              } else if (barServiceDTO.getUnitsPerSale() != null) {
+                  perSale = barServiceDTO.getUnitsPerSale();
+                  serviceEntity.setSaleUnitName(null);
+                  serviceEntity.setSaleUnitCount(null);
+              } else {
+                  return new Response<>("Say how much of " + stockItem.get().getServiceName() + " one sale takes");
+              }
+              // Counted through the stock item, not on its own.
+              serviceEntity.setTrackStock(false);
+              serviceEntity.setStockSourceUid(stockItem.get().getUid());
+              serviceEntity.setUnitsPerSale(perSale);
+              serviceEntity.setPackUnit(null);
+              serviceEntity.setUnitsPerPack(1);
+              serviceEntity.setBuyingPrice(null);
+          }
+      }
       serviceEntity.setUsageType(barServiceDTO.getUsageType());
       try {
-          return new Response<>(barServiceRepository.save(serviceEntity));
+          BarServiceEntity saved = barServiceRepository.save(serviceEntity);
+          if (ladderChanged && saved.getUid() != null) {
+              // A rung resized (a Portion is now 12 Mshikaki) changes what
+              // every service made from this item takes per sale.
+              for (BarServiceEntity drawing : barServiceRepository.findDrawingOn(saved.getUid(), LoggerUser.getBranchUID())) {
+                  if (drawing.getSaleUnitName() == null)
+                      continue;
+                  UnitLadders.baseOf(saved.getUnitLadder(), drawing.getSaleUnitName()).ifPresent(base -> {
+                      drawing.setUnitsPerSale(base * (drawing.getSaleUnitCount() == null ? 1 : drawing.getSaleUnitCount()));
+                      barServiceRepository.save(drawing);
+                  });
+              }
+          }
+          return new Response<>(saved);
       } catch (Exception e) {
           e.printStackTrace();
           return new Response<>("Error in Saving New Service");
@@ -103,28 +230,72 @@ public class BarService {
       if (optionalBarServiceEntity.isEmpty())
           return new Response<>("Service Not Found");
       BarServiceEntity serviceEntity = optionalBarServiceEntity.get();
+      long drawing = barServiceRepository.countDrawingOn(serviceEntity.getUid(), LoggerUser.getBranchUID());
+      if (drawing > 0)
+          return new Response<>(drawing + " service(s) are made from " + serviceEntity.getServiceName()
+                  + " - point them elsewhere before deleting it");
       try{
-          barServiceRepository.delete(optionalBarServiceEntity.get());
+          // Set aside, not removed: deliveries, sales, corrections and its
+          // commission all point at this row, and deleting it would either
+          // fail on those links or take the history with it. Marked
+          // inactive, it drops out of every list, the till and the reports
+          // (TenantEntity's is_active filter), while the records stay.
+          serviceEntity.delete();
+          barServiceRepository.save(serviceEntity);
           return new Response<>(serviceEntity);
       } catch (Exception e) {
           e.printStackTrace();
           return new Response<>("Error in Deleting Service");
       }
   }
+  /** One past the highest code in use for this category in the caller's branch: DRK-001, DRK-002... */
+  private String nextProductCode(ProductCategory category){
+      return nextCode(category.codePrefix());
+  }
+
+  private String nextCode(String prefix){
+      int highest = barServiceRepository.findCodesByPrefix(LoggerUser.getBranchUID(), prefix).stream()
+              .map(code -> code.substring(prefix.length() + 1))
+              .filter(number -> number.matches("\\d+"))
+              .mapToInt(Integer::parseInt)
+              .max()
+              .orElse(0);
+      return String.format("%s-%03d", prefix, highest + 1);
+  }
+
+  /** "Ginger" -> "%ginger%"; blank -> "%", which matches everything. */
+  private static String likePattern(String search){
+      if (search == null || search.isBlank())
+          return "%";
+      String escaped = search.trim().toLowerCase()
+              .replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+      return "%" + escaped + "%";
+  }
+
+  /** Settings > Config decides when a product counts as running low. */
+  private int lowStockLevel(){
+      Integer level = platformSettingService.current().getLowStockLevel();
+      return level == null ? 0 : level;
+  }
   public ResponseList<BarProjection> findBarServiceList(){
       log.info(LoggerUser.getEmail() + "Is Accessing Bar Service");
       try{
-          return new ResponseList<>(barServiceRepository.findAllBarServiceList(LoggerUser.getBranchUID()));
+          return new ResponseList<>(barServiceRepository.findAllBarServiceList(LoggerUser.getBranchUID(), lowStockLevel()));
       }catch (Exception e){
           e.printStackTrace();
           return new ResponseList<>("Error in Accessing Services");
       }
   }
-  public ResponsePage<BarProjection> findBarServicePage(Integer page, Integer size){
+  /** search matches name, code or description - "ginger" finds every drink described as ginger. */
+  /**
+   * filter "COUNTED" keeps only what has a count of its own - the store's
+   * view: bottles and stock items, not the services drawn from them.
+   */
+  public ResponsePage<BarProjection> findBarServicePage(Integer page, Integer size, String search, String filter){
         log.info(LoggerUser.getEmail() + " Is Accessing Bar Services");
         Pageable pageable = PageRequest.of(page, size);
         try{
-            Page<BarProjection> response = barServiceRepository.findBarServicePage(pageable, LoggerUser.getBranchUID());
+            Page<BarProjection> response = barServiceRepository.findBarServicePage(pageable, LoggerUser.getBranchUID(), lowStockLevel(), likePattern(search), "COUNTED".equals(filter));
             return new ResponsePage<>(response);
         }catch(Exception e){
             e.printStackTrace();
@@ -145,28 +316,51 @@ public class BarService {
         log.info(LoggerUser.getEmail() + "Is Saving Bar Commissions");
         if(commissionDTO == null)
             return new Response<>("Provide Commissions Data");
+        Integer[] parts = {
+                commissionDTO.getStaffPercent(), commissionDTO.getOwnerPercent(), commissionDTO.getTraPercent(),
+                commissionDTO.getMaintenancePercent(), commissionDTO.getEmergencyPercent(), commissionDTO.getOtherPercent(),
+                commissionDTO.getRentPercent(), commissionDTO.getLoanPercent(), commissionDTO.getLukuPercent(),
+                commissionDTO.getWaterPercent(), commissionDTO.getStockPurchasePercent()};
+        int total = 0;
+        for (Integer part : parts) {
+            if (part != null && (part < 0 || part > 100))
+                return new Response<>("Each percentage must be between 0 and 100");
+            total += part == null ? 0 : part;
+        }
+        if (total > 100)
+            return new Response<>("The percentages add up to " + total + "% - they cannot pass 100%");
+
         Commission commission = null;
         if(commissionDTO.getUid() !=null){
             Optional<Commission> optionalCommission = commissionRepository.findCommissionByUID(commissionDTO.getUid(), LoggerUser.getBranchUID());
             if(optionalCommission.isEmpty())
                 return new Response<>("Commission Not Found");
             commission = optionalCommission.get();
-        }else{
-            commission=new Commission();
         }
         if(commissionDTO.getBarServiceUID() != null) {
-            Optional<BarServiceEntity> optionalBarServiceEntity = barServiceRepository.findById(commissionDTO.getBarServiceUID());
+            // Scoped to the caller's branch - a bare findById let a split be
+            // hung on another branch's service.
+            Optional<BarServiceEntity> optionalBarServiceEntity = barServiceRepository.findBarServiceByUID(commissionDTO.getBarServiceUID(), LoggerUser.getBranchUID());
             if(optionalBarServiceEntity.isEmpty())
                 return new Response<>("Service Not Found");
+            if (commission == null) {
+                // One split per service: a second "add" edits the first
+                // rather than leaving two for a sale to choose between.
+                commission = commissionRepository.findCommissionByService(optionalBarServiceEntity.get(), LoggerUser.getBranchUID())
+                        .orElseGet(Commission::new);
+            }
             commission.setBarService(optionalBarServiceEntity.get());
         }
+        if (commission == null)
+            return new Response<>("Choose the service");
         commission.setEmergencyPercent(commissionDTO.getEmergencyPercent());
         commission.setMaintenancePercent(commissionDTO.getMaintenancePercent());
         commission.setStaffPercent(commissionDTO.getStaffPercent());
         commission.setOwnerPercent(commissionDTO.getOwnerPercent());
         commission.setOtherPercent(commissionDTO.getOtherPercent());
         commission.setTraPercent(commissionDTO.getTraPercent());
-        commission.setTotalPercent(commissionDTO.getTotalPercent());
+        // Worked out here, not trusted from the client.
+        commission.setTotalPercent(total);
         commission.setLoanPercent(commissionDTO.getLoanPercent());
         commission.setLukuPercent(commissionDTO.getLukuPercent());
         commission.setWaterPercent(commissionDTO.getWaterPercent());
@@ -183,6 +377,10 @@ public class BarService {
     public ResponseList<CommissionProjection> findCommissionList(){
         log.info(LoggerUser.getEmail() + "Is accessing Commissions");
         return new ResponseList<>(commissionRepository.findCommissionList(LoggerUser.getBranchUID()));
+    }
+    public ResponsePage<ServiceCommissionProjection> findServiceCommissionPage(Integer page, Integer size, String search){
+        return new ResponsePage<>(commissionRepository.findServiceCommissionPage(
+                LoggerUser.getBranchUID(), likePattern(search), PageRequest.of(page, size)));
     }
     public ResponsePage<CommissionProjection> findCommissionPage(Integer page, Integer size){
         Pageable pageable = PageRequest.of(page, size);
@@ -218,11 +416,17 @@ public class BarService {
         log.info(LoggerUser.getEmail() + "is Saving Staff");
         if(barStaffDTO ==null)
             return new Response<>("Provide Staff Data");
+        if (isBlank(barStaffDTO.getFirstName()) || isBlank(barStaffDTO.getLastName()))
+            return new Response<>("First and last name are required");
+        if (isBlank(barStaffDTO.getPhoneNumber()))
+            return new Response<>("Phone number is required");
+        if (!StaffCategory.isValid(barStaffDTO.getBarCategory()))
+            return new Response<>("Choose the staff member's category");
         BarStaff barStaff = null;
         if(barStaffDTO.getUid() != null){
             Optional<BarStaff> optionalBarStaff = barStaffRepository.findBarStaffByUID(barStaffDTO.getUid(), LoggerUser.getBranchUID());
             if(optionalBarStaff.isEmpty())
-                return new Response<>("Service Not Found");
+                return new Response<>("Staff Not Found");
             barStaff = optionalBarStaff.get();
             barStaff.update();
         }else{
@@ -231,7 +435,8 @@ public class BarService {
 
         barStaff.setDateOfBirth(barStaffDTO.getDateOfBirth());
         barStaff.setFirstName(barStaffDTO.getFirstName());
-        barStaff.setMiddleName(barStaffDTO.getMiddleName());
+        // Optional - most staff go by two names.
+        barStaff.setMiddleName(isBlank(barStaffDTO.getMiddleName()) ? null : barStaffDTO.getMiddleName().trim());
         barStaff.setLastName(barStaffDTO.getLastName());
         barStaff.setPhoneNumber(barStaffDTO.getPhoneNumber());
         barStaff.setBarCategory(barStaffDTO.getBarCategory());
@@ -254,9 +459,18 @@ public class BarService {
         log.info(LoggerUser.getEmail() + "Is Accessing Bar Staff");
         return new ResponseList<>(barStaffRepository.findBarStaffList(LoggerUser.getBranchUID()));
     }
-    public ResponsePage<BarProjection> findBarStaffPage(Integer page, Integer size){
+    /**
+     * search matches any name or the phone number; category, when given, is
+     * one StaffCategory name (WAITER...). Either may be blank.
+     */
+    public ResponsePage<BarProjection> findBarStaffPage(Integer page, Integer size, String search, String category){
         Pageable pageable = PageRequest.of(page, size);
-        return new ResponsePage<>(barStaffRepository.findBarStaffPage(pageable, LoggerUser.getBranchUID()));
+        String categoryFilter = StaffCategory.isValid(category) ? category : "";
+        return new ResponsePage<>(barStaffRepository.findBarStaffPage(pageable, LoggerUser.getBranchUID(), likePattern(search), categoryFilter));
+    }
+
+    private static boolean isBlank(String value){
+        return value == null || value.isBlank();
     }
     public Response<BarStaff> deleteBarStaff(String barStaffUID){
         log.info(LoggerUser.getEmail() + "Is Deleting Staff");
@@ -480,6 +694,205 @@ public class BarService {
             throw e;
         }
     }
+    /**
+     * Rings lines up on an open bill: 3 x Castle Lite, 1 x chips. The seller
+     * is whoever is logged in. In one transaction each line
+     *  - takes its units out of the store (refused, all of it, if a counted
+     *    service does not have enough),
+     *  - is charged at the service's current price, copied onto the line,
+     *  - is split into the service's commission buckets on price x quantity,
+     *    feeding the reports, the seller's commission, the weekly income pots
+     *    and the stock-purchase pot, exactly as a single service used to.
+     */
+    @Transactional
+    public Response<SalesOpened> addSaleItems(SaleItemsDTO dto) {
+        String branchUID = LoggerUser.getBranchUID();
+        SalesOpened bill = salesOpenedRepository.findById(dto.getSalesOpenedUID())
+                .filter(so -> Optional.ofNullable(branchUID).orElse("MAIN_OFFICE").equals(so.getBranchUid()))
+                .orElse(null);
+        if (bill == null)
+            return new Response<>("Open Sale Not Found");
+        if ("PAID".equals(bill.getPaymentStatus()))
+            return new Response<>("Bill " + bill.getSalesCode() + " is already paid - open a new bill");
+
+        // The same service twice on one request is one line.
+        Map<String, Integer> quantities = new LinkedHashMap<>();
+        for (SaleItemsDTO.Item item : dto.getItems())
+            quantities.merge(item.getBarServiceUID(), item.getQuantity(), Integer::sum);
+
+        List<BarServiceEntity> services = new ArrayList<>();
+        // Every store row this sale takes from - the services counted
+        // themselves and the stock items the others are made from - locked
+        // until commit, so two tills selling the last units cannot both see
+        // them on the shelf. Keyed by uid so a mshikaki and a robo drawing on
+        // the same beef share one row and one running count.
+        Map<String, BarServiceEntity> storeRows = new HashMap<>();
+        for (String serviceUid : quantities.keySet()) {
+            BarServiceEntity service = barServiceRepository.findForUpdate(serviceUid, branchUID)
+                    .orElseThrow(() -> new BusinessException("Service Not Found"));
+            if (ServiceKind.of(service.getKind()) == ServiceKind.STOCK_ITEM)
+                throw new BusinessException(service.getServiceName() + " is kept in the store, not sold - sell a service made from it");
+            if (service.getPrice() == null || service.getPrice() <= 0)
+                throw new BusinessException("No selling price set for " + service.getServiceName());
+            services.add(service);
+            if (service.getStockSourceUid() != null && !storeRows.containsKey(service.getStockSourceUid())) {
+                BarServiceEntity stockItem = barServiceRepository.findForUpdate(service.getStockSourceUid(), branchUID)
+                        .orElseThrow(() -> new BusinessException("The stock item " + service.getServiceName() + " is made from is missing"));
+                storeRows.put(stockItem.getUid(), stockItem);
+            } else if (Boolean.TRUE.equals(service.getTrackStock())) {
+                storeRows.put(service.getUid(), service);
+            }
+        }
+        Map<String, Commission> commissionsByService = loadCommissionsByService(services);
+
+        BarStaff seller = sellerStaff();
+        String soldBy = LoggerUser.getEmail();
+        LocalDate today = LocalDate.now();
+        LocalDate weekStart = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+
+        List<BarSales> lines = new ArrayList<>();
+        List<BarReports> reports = new ArrayList<>();
+        List<Integer> sellerCuts = new ArrayList<>();
+        List<IncomeExpenses> pots = new ArrayList<>();
+        Map<String, StockAndPurchase> purchasePots = getCurrentWeekByServices(services);
+        int added = 0;
+
+        for (BarServiceEntity service : services) {
+            int quantity = quantities.get(service.getUid());
+            Commission commission = commissionsByService.get(service.getUid());
+            if (commission == null)
+                throw new BusinessException("No commission split set for " + service.getServiceName()
+                        + " - set it in Setting > Commission");
+
+            // Where this line's units come out of: the stock item it is made
+            // from (units per sale each), itself (one each), or nowhere.
+            BarServiceEntity storeRow = null;
+            int perSale = 1;
+            if (service.getStockSourceUid() != null) {
+                storeRow = storeRows.get(service.getStockSourceUid());
+                perSale = service.getUnitsPerSale() == null || service.getUnitsPerSale() < 1 ? 1 : service.getUnitsPerSale();
+            } else if (Boolean.TRUE.equals(service.getTrackStock())) {
+                storeRow = storeRows.get(service.getUid());
+            }
+            int stockUnits = quantity * perSale;
+            if (storeRow != null) {
+                int onHand = storeRow.getStockQuantity() == null ? 0 : storeRow.getStockQuantity();
+                if (onHand < stockUnits)
+                    throw new BusinessException(storeRow == service
+                            ? "Only " + onHand + " " + service.getServiceName() + " left in the store"
+                            : "Only " + onHand + " units of " + storeRow.getServiceName() + " left - "
+                              + quantity + " " + service.getServiceName() + " need " + stockUnits);
+                storeRow.setStockQuantity(onHand - stockUnits);
+                barServiceRepository.save(storeRow);
+            }
+
+            int unitPrice = service.getPrice();
+            int lineTotal = unitPrice * quantity;
+            // Cost of one sold unit, from whatever row the stock came out of:
+            // a mshikaki costs its share of the beef.
+            BarServiceEntity costRow = storeRow != null ? storeRow : service;
+            int perPack = costRow.getUnitsPerPack() == null || costRow.getUnitsPerPack() < 1 ? 1 : costRow.getUnitsPerPack();
+            int unitCost = costRow.getBuyingPrice() == null ? 0
+                    : Math.round((float) costRow.getBuyingPrice() * perSale / perPack);
+
+            BarSales line = new BarSales();
+            line.setBarStaff(seller);
+            line.setBarServiceEntity(service);
+            line.setSalesOpened(bill);
+            line.setQuantity(quantity);
+            line.setUnitPrice(unitPrice);
+            line.setLineTotal(lineTotal);
+            line.setUnitCost(unitCost);
+            line.setStockItemUid(storeRow == null ? null : storeRow.getUid());
+            line.setStockUnits(storeRow == null ? null : stockUnits);
+            line.setSoldBy(soldBy);
+            lines.add(line);
+
+            BarReports report = new BarReports();
+            report.setBarStaff(seller);
+            report.setBarSales(line);
+            report.setBarServiceEntity(service);
+            report.setStaffAmount(calculatePercentage(commission.getStaffPercent(), lineTotal));
+            report.setOwnerAmount(calculatePercentage(commission.getOwnerPercent(), lineTotal));
+            report.setTraAmount(calculatePercentage(commission.getTraPercent(), lineTotal));
+            report.setMaintenanceAmount(calculatePercentage(commission.getMaintenancePercent(), lineTotal));
+            report.setEmergencyAmount(calculatePercentage(commission.getEmergencyPercent(), lineTotal));
+            report.setOthersAmount(calculatePercentage(commission.getOtherPercent(), lineTotal));
+            report.setRentAmount(calculatePercentage(commission.getRentPercent(), lineTotal));
+            report.setLoanAmount(calculatePercentage(commission.getLoanPercent(), lineTotal));
+            report.setLukuAmount(calculatePercentage(commission.getLukuPercent(), lineTotal));
+            report.setWaterAmount(calculatePercentage(commission.getWaterPercent(), lineTotal));
+            report.setStockPurchaseAmount(calculatePercentage(commission.getStockPurchasePercent(), lineTotal));
+            reports.add(report);
+
+            // The seller's cut is the same staffAmount the report carries, so
+            // what they are owed and what the report says always agree.
+            sellerCuts.add(report.getStaffAmount());
+
+            BigDecimal amount = BigDecimal.valueOf(lineTotal);
+            addIncomeExpense("Staff", amount, commission.getStaffPercent(), branchUID, weekStart, pots);
+            addIncomeExpense("Owner", amount, commission.getOwnerPercent(), branchUID, weekStart, pots);
+            addIncomeExpense("TRA", amount, commission.getTraPercent(), branchUID, weekStart, pots);
+            addIncomeExpense("Emergency", amount, commission.getEmergencyPercent(), branchUID, weekStart, pots);
+            addIncomeExpense("Maintenance", amount, commission.getMaintenancePercent(), branchUID, weekStart, pots);
+            addIncomeExpense("Other", amount, commission.getOtherPercent(), branchUID, weekStart, pots);
+            addIncomeExpense("LUKU", amount, commission.getLukuPercent(), branchUID, weekStart, pots);
+            addIncomeExpense("Water", amount, commission.getWaterPercent(), branchUID, weekStart, pots);
+            addIncomeExpense("Rent", amount, commission.getRentPercent(), branchUID, weekStart, pots);
+            addIncomeExpense("Loan", amount, commission.getLoanPercent(), branchUID, weekStart, pots);
+            addIncomeExpense("Stock Purchase", amount, commission.getStockPurchasePercent(), branchUID, weekStart, pots);
+
+            int toPurchasePot = calculatePercentage(commission.getStockPurchasePercent(), lineTotal);
+            StockAndPurchase pot = purchasePots.get(service.getUid());
+            if (pot == null) {
+                pot = new StockAndPurchase();
+                pot.setBarService(service);
+                pot.setCommission(commission);
+                pot.setTotalAmount(toPurchasePot);
+                pot.setRemainingAmount(toPurchasePot);
+                purchasePots.put(service.getUid(), pot);
+            } else {
+                pot.setTotalAmount((pot.getTotalAmount() == null ? 0 : pot.getTotalAmount()) + toPurchasePot);
+                pot.setRemainingAmount((pot.getRemainingAmount() == null ? 0 : pot.getRemainingAmount()) + toPurchasePot);
+            }
+
+            added += lineTotal;
+        }
+
+        bill.setBill((bill.getBill() == null ? 0 : bill.getBill()) + added);
+        bill.update();
+        salesOpenedRepository.save(bill);
+        barSalesRepository.saveAll(lines);
+        barReportsRepository.saveAll(reports);
+        addStaffCommission(seller.getUid(), branchUID, today, sellerCuts);
+        stockAndPurchaseRepository.saveAll(purchasePots.values());
+
+        log.info(soldBy + " added " + lines.size() + " line(s) worth " + added + " to bill " + bill.getSalesCode());
+        return new Response<>(bill);
+    }
+
+    /**
+     * The staff row the logged-in user sells as. Made from their own account
+     * the first time they sell, so every seller has somewhere for their
+     * commission to land without anyone setting it up by hand.
+     */
+    private BarStaff sellerStaff() {
+        User user = LoggerUser.getUser();
+        String branchUID = LoggerUser.getBranchUID();
+        List<BarStaff> linked = barStaffRepository.findByUserUid(user.getUid(), branchUID);
+        if (!linked.isEmpty())
+            return linked.get(0);
+        BarStaff staff = new BarStaff();
+        staff.setUserUid(user.getUid());
+        staff.setFirstName(user.getFirstName() != null ? user.getFirstName() : user.getUsername());
+        staff.setMiddleName(user.getMiddleName());
+        staff.setLastName(user.getLastName());
+        staff.setPhoneNumber(user.getPhone());
+        staff.setGender(user.getGender());
+        staff.setDescription("Created from login " + user.getUsername() + " on first sale");
+        return barStaffRepository.save(staff);
+    }
+
     public Response<BarProjection> findBarSalesByUID(String barSalesUID){
         log.info(LoggerUser.getEmail() + "Is accessing sales");
         if(barSalesUID == null)
@@ -522,7 +935,10 @@ public class BarService {
         SalesOpened salesOpened;
         boolean wasAlreadyPaid = false;
         if (saleOpenedDTO.getUid() != null) {
-            Optional<SalesOpened> optionalSalesOpened = salesOpenedRepository.findById(saleOpenedDTO.getUid());
+            Optional<SalesOpened> optionalSalesOpened = salesOpenedRepository.findById(saleOpenedDTO.getUid())
+                    // Another branch's bill is as good as missing.
+                    // (branchless users write MAIN_OFFICE, as TenantEntity does).
+                    .filter(so -> Optional.ofNullable(LoggerUser.getBranchUID()).orElse("MAIN_OFFICE").equals(so.getBranchUid()));
             if (optionalSalesOpened.isEmpty()) {
                 return new Response<>("Open Sale Not Found");
             }
@@ -530,15 +946,16 @@ public class BarService {
             wasAlreadyPaid = "PAID".equals(salesOpened.getPaymentStatus());
             salesOpened.update();
         } else {
+            // A new bill takes one of the codes from POS Setting that no
+            // unpaid bill is holding.
+            if (!billCodeService.isAvailable(saleOpenedDTO.getSalesCode()))
+                return new Response<>("Code " + saleOpenedDTO.getSalesCode() + " is not available - choose a free code");
             salesOpened = new SalesOpened();
         }
-        if(saleOpenedDTO.getPaymentMethod() != null)
-            salesOpened.setPaymentMethod(saleOpenedDTO.getPaymentMethod());
-        if(saleOpenedDTO.getPaidAmount() != null)
-            salesOpened.setPaidAmount(saleOpenedDTO.getPaidAmount());
-        if(saleOpenedDTO.getPaymentStatus()!=null)
-            salesOpened.setPaymentStatus(saleOpenedDTO.getPaymentStatus());
-        if(saleOpenedDTO.getSalesCode() != null)
+        // Paying goes through /payBill, which works the amount out from the
+        // bill's lines. Taking method, amount or PAID from here let the
+        // screen mark any bill paid for any amount.
+        if(saleOpenedDTO.getUid() == null && saleOpenedDTO.getSalesCode() != null)
             salesOpened.setSalesCode(saleOpenedDTO.getSalesCode());
         if(saleOpenedDTO.getStatus() != null)
             salesOpened.setStatus(saleOpenedDTO.getStatus());
@@ -565,7 +982,7 @@ public class BarService {
     }
     public ResponseList<SalesOpened> salesOpenedList(){
         log.info(LoggerUser.getEmail() + " Is Accessing opened Sales");
-        return new ResponseList<>(salesOpenedRepository.salesOpenedList(LoggerUser.getBranchUID(), LocalDate.now()));
+        return new ResponseList<>(salesOpenedRepository.findOpenBills(LoggerUser.getBranchUID()));
     }
     public ResponseList<SalesOpened> salesOpenedListByStatus(String filter) {
 

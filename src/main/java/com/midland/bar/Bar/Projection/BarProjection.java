@@ -28,7 +28,42 @@ public interface BarProjection {
 
     Integer getPrice();
 
-    Integer getDuration();
+    String getCategory();
+
+    String getUnit();
+
+    String getPackUnit();
+
+    Integer getUnitsPerPack();
+
+    // getBuyingPrice() is declared once, under the store section below, and
+    // serves both.
+
+    Integer getStockQuantity();
+
+    /** SERVICE or STOCK_ITEM (null on older rows = SERVICE). */
+    String getKind();
+
+    /** For a service made from a stock item: that item, and how much one sale takes. */
+    String getStockSourceUid();
+    String getStockSourceName();
+    Integer getUnitsPerSale();
+
+    /** A stock item's measures as JSON, smallest first (see BarServiceEntity.unitLadder). */
+    String getUnitLadder();
+
+    /** For a service from a stock item: the rung one sale is, how many of it, and the item's ladder. */
+    String getSaleUnitName();
+    Integer getSaleUnitCount();
+    String getSourceUnitLadder();
+
+    /** The stock item's units on hand, so the till can say how many can still be sold. */
+    Integer getSourceStockQuantity();
+
+    /** Counted, and at or below the Settings > Config low-stock level (in packs). */
+    Boolean getLowStock();
+
+    Boolean getTrackStock();
 
     Integer getCommissionValue();
 
@@ -119,6 +154,9 @@ public interface BarProjection {
      String getCodeOfStore();
 
      Integer getQuantity();
+
+    /** price x quantity for a sale line. */
+    Integer getLineTotal();
 
      String getBarServiceEntityUID();
 

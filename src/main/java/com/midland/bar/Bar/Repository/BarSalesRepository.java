@@ -14,6 +14,10 @@ import java.util.Optional;
 
 @Repository
 public interface BarSalesRepository extends JpaRepository<BarSales, String> {
+    /** What a bill's lines add up to, as charged - the amount paying must cover. */
+    @Query("SELECT COALESCE(SUM(COALESCE(s.lineTotal, s.unitPrice, ss.price)), 0) FROM BarSales s LEFT JOIN s.barServiceEntity ss WHERE s.salesOpened.uid = :billUid AND s.isActive = true")
+    long billTotal(@org.springframework.data.repository.query.Param("billUid") String billUid);
+
 
     @Query("SELECT s FROM BarSales s WHERE s.uid=:uid AND s.branchUid=:branchUID")
     Optional<BarSales> findSalesByUID(String uid, String branchUID);
@@ -40,7 +44,9 @@ public interface BarSalesRepository extends JpaRepository<BarSales, String> {
         st.lastName as lastName,
         ss.serviceName as serviceName,
         ss.serviceCode as serviceCode,
-        ss.price as price
+        COALESCE(s.unitPrice, ss.price) as price,
+        COALESCE(s.quantity, 1) as quantity,
+        COALESCE(s.lineTotal, s.unitPrice, ss.price) as lineTotal
     FROM BarSales s
     JOIN s.salesOpened so
     LEFT JOIN s.barStaff st

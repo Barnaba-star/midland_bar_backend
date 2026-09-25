@@ -69,6 +69,7 @@ public class PlatformSettingService {
         setting.setDefaultSubscriptionAmount(incoming.getDefaultSubscriptionAmount());
         setting.setDefaultSubscriptionDays(incoming.getDefaultSubscriptionDays());
         setting.setSessionHours(incoming.getSessionHours());
+        setting.setLowStockLevel(incoming.getLowStockLevel());
         setting.setErrorRetentionDays(incoming.getErrorRetentionDays());
         setting.setErrorPurgeDays(incoming.getErrorPurgeDays());
         setting.setAuditRetentionDays(incoming.getAuditRetentionDays());
@@ -108,6 +109,7 @@ public class PlatformSettingService {
         if (setting.getDefaultSubscriptionAmount() == null) { setting.setDefaultSubscriptionAmount(defaults.getDefaultSubscriptionAmount()); changed = true; }
         if (setting.getDefaultSubscriptionDays() == null) { setting.setDefaultSubscriptionDays(defaults.getDefaultSubscriptionDays()); changed = true; }
         if (setting.getSessionHours() == null) { setting.setSessionHours(defaults.getSessionHours()); changed = true; }
+        if (setting.getLowStockLevel() == null) { setting.setLowStockLevel(defaults.getLowStockLevel()); changed = true; }
         if (setting.getErrorRetentionDays() == null) { setting.setErrorRetentionDays(defaults.getErrorRetentionDays()); changed = true; }
         if (setting.getErrorPurgeDays() == null) { setting.setErrorPurgeDays(defaults.getErrorPurgeDays()); changed = true; }
         if (setting.getAuditRetentionDays() == null) { setting.setAuditRetentionDays(defaults.getAuditRetentionDays()); changed = true; }
@@ -150,6 +152,9 @@ public class PlatformSettingService {
         // be revoked by expiry at all.
         if (outside(s.getSessionHours(), 1, 720)) {
             return "Session hours must be between 1 and 720";
+        }
+        if (outside(s.getLowStockLevel(), 0, 100_000)) {
+            return "Low stock level must be between 0 and 100000";
         }
         if (outside(s.getErrorRetentionDays(), 1, 365)) {
             return "Error retention days must be between 1 and 365";

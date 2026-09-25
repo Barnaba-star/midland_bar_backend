@@ -296,7 +296,9 @@ public interface BarReportsRepository extends JpaRepository<BarReports, String> 
             """)
     long totalRevenueOn(@Param("branchUID") String branchUID, @Param("date") LocalDate date);
 
-    @Query("SELECT COUNT(r) FROM BarReports r WHERE r.branchUid = :branchUID AND r.createdAt = :date")
+    // Units sold, not lines: 3 x Castle Lite counts 3. A line from before
+    // quantities existed counts one.
+    @Query("SELECT COALESCE(SUM(COALESCE(s.quantity, 1)), 0) FROM BarReports r LEFT JOIN r.barSales s WHERE r.branchUid = :branchUID AND r.createdAt = :date")
     long countServicesSoldOn(@Param("branchUID") String branchUID, @Param("date") LocalDate date);
 
     // One row per day for the home page's trend line. Days with no sales are

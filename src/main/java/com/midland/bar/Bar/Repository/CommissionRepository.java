@@ -1,5 +1,7 @@
 package com.midland.bar.Bar.Repository;
 
+import com.midland.bar.Bar.Projection.ServiceCommissionProjection;
+
 import com.midland.bar.Bar.Model.Commission;
 import com.midland.bar.Bar.Model.BarServiceEntity;
 import com.midland.bar.Bar.Projection.CommissionProjection;
@@ -43,6 +45,41 @@ public interface CommissionRepository extends JpaRepository<Commission, String> 
                 WHERE c.isActive=true AND c.branchUid=:branchUID
             """)
     Page<CommissionProjection> findCommissionPage(Pageable pageable, String branchUID);
+
+    /*
+     * Every service in the branch, joined to its commission when it has
+     * one - the Setting > Commission list, where the unconfigured ones are
+     * the point of looking.
+     */
+    @Query(value = """
+            SELECT s.uid AS serviceUid, s.serviceName AS serviceName, s.serviceCode AS serviceCode,
+                   s.category AS category, s.price AS price,
+                   c.uid AS commissionUid,
+                   c.staffPercent AS staffPercent, c.ownerPercent AS ownerPercent, c.traPercent AS traPercent,
+                   c.maintenancePercent AS maintenancePercent, c.emergencyPercent AS emergencyPercent,
+                   c.otherPercent AS otherPercent, c.rentPercent AS rentPercent, c.loanPercent AS loanPercent,
+                   c.lukuPercent AS lukuPercent, c.waterPercent AS waterPercent,
+                   c.stockPurchasePercent AS stockPurchasePercent, c.totalPercent AS totalPercent
+            FROM BarServiceEntity s
+            LEFT JOIN Commission c ON c.barService = s AND c.isActive = true AND c.branchUid = s.branchUid
+            WHERE s.branchUid = :branchUID
+              AND (s.kind IS NULL OR s.kind <> 'STOCK_ITEM')
+              AND (LOWER(s.serviceName) LIKE :search ESCAPE '\\'
+                   OR LOWER(COALESCE(s.serviceCode, '')) LIKE :search ESCAPE '\\'
+                   OR LOWER(COALESCE(s.description, '')) LIKE :search ESCAPE '\\')
+            ORDER BY s.serviceName
+            """,
+            countQuery = """
+            SELECT COUNT(s) FROM BarServiceEntity s
+            WHERE s.branchUid = :branchUID
+              AND (s.kind IS NULL OR s.kind <> 'STOCK_ITEM')
+              AND (LOWER(s.serviceName) LIKE :search ESCAPE '\\'
+                   OR LOWER(COALESCE(s.serviceCode, '')) LIKE :search ESCAPE '\\'
+                   OR LOWER(COALESCE(s.description, '')) LIKE :search ESCAPE '\\')
+            """)
+    Page<ServiceCommissionProjection> findServiceCommissionPage(@Param("branchUID") String branchUID,
+                                                                @Param("search") String search,
+                                                                Pageable pageable);
 
     @Query("""
             SELECT c FROM Commission c WHERE c.barService=:service AND c.branchUid=:branchUID

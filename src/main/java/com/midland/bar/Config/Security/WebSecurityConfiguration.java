@@ -70,6 +70,11 @@ public class WebSecurityConfiguration {
                         // established via HMAC signature verification instead (see
                         // SnippeWebhookController / SnippeClient.verifyWebhookSignature).
                         .requestMatchers("/setting/webhooks/**").permitAll()
+                        // The container forwards an unhandled exception here with no
+                        // JWT (the filter skips error dispatches). Locked, every 500
+                        // reached the browser as a 401 "session expired" and logged
+                        // the user out.
+                        .requestMatchers("/error").permitAll()
                         .anyRequest().authenticated()
                 )
 

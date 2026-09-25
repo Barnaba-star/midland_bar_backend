@@ -156,7 +156,7 @@ public class UserController {
             user.setLastSeen(LocalDateTime.now());
             userRepository.save(user);
             String token = jwtTokenUtil.generateToken(user);
-            Cookie cookie = new Cookie("jwt_token", token);
+            Cookie cookie = new Cookie("bar_jwt_token", token);
             cookie.setHttpOnly(false);
             cookie.setPath("/");
             cookie.setMaxAge(60 * 60 * 24);

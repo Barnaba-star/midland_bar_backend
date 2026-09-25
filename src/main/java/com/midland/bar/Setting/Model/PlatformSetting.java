@@ -62,6 +62,13 @@ public class PlatformSetting extends BaseEntity {
     @Column(name = "default_subscription_days")
     private Integer defaultSubscriptionDays = 30;
 
+    /**
+     * A counted product at or below this many packs (crates, cartons - or
+     * units, for one bought singly) is flagged as running low.
+     */
+    @Column(name = "low_stock_level")
+    private Integer lowStockLevel = 5;
+
     /** How long a login lasts before the user has to sign in again. */
     @Column(name = "session_hours")
     private Integer sessionHours = 24;

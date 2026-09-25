@@ -23,6 +23,9 @@ public class PageableParam {
     private Sort.Direction direction;
     private Integer defaultSize = 10;
     private LocalDate date;
+    /** Inclusive date range, for reports that cover a period. */
+    private LocalDate fromDate;
+    private LocalDate toDate;
 
     public Pageable pageable(Boolean sorted){
         String sortedByField = sortBy != null ? sortBy : "createdAt";

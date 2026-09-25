@@ -11,6 +11,18 @@ import java.util.List;
 
 @Repository
 public interface SalesOpenedRepository extends JpaRepository<SalesOpened, String> {
+    /**
+     * Every unpaid bill in the branch, whatever day it was opened - an
+     * unpaid bill from last night still holds its code and still owes.
+     */
+    @Query("SELECT s FROM SalesOpened s WHERE s.branchUid = :branchUID AND s.paymentStatus = 'PENDING' ORDER BY s.salesCode")
+    List<SalesOpened> findOpenBills(@Param("branchUID") String branchUID);
+
+    /** The bill, locked until the transaction ends - for paying it. */
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT s FROM SalesOpened s WHERE s.uid = :uid AND s.branchUid = :branchUID")
+    java.util.Optional<SalesOpened> findForUpdate(@Param("uid") String uid, @Param("branchUID") String branchUID);
+
     @Query("SELECT s FROM SalesOpened s WHERE s.branchUid = :branchUID AND s.paymentStatus='PENDING' AND s.createdAt=:date ")
     List<SalesOpened> salesOpenedList(String branchUID, LocalDate date);
     @Query("""
