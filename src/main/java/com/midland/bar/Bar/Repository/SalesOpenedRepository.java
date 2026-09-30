@@ -18,6 +18,18 @@ public interface SalesOpenedRepository extends JpaRepository<SalesOpened, String
     @Query("SELECT s FROM SalesOpened s WHERE s.branchUid = :branchUID AND s.paymentStatus = 'PENDING' ORDER BY s.salesCode")
     List<SalesOpened> findOpenBills(@Param("branchUID") String branchUID);
 
+    /** A staff member's unpaid bills, for Staff Sell. */
+    @Query("SELECT s FROM SalesOpened s WHERE s.branchUid = :branchUID AND s.staffUid = :staffUid AND s.paymentStatus = 'PENDING' ORDER BY s.salesCode")
+    List<SalesOpened> findOpenBillsByStaff(@Param("staffUid") String staffUid, @Param("branchUID") String branchUID);
+
+    /** Unpaid bills per staff member: [staffCode, staffName, bills, amount]. Null code = opened on the Sales page. */
+    @Query("SELECT s.staffCode, s.staffName, COUNT(s), COALESCE(SUM(s.bill), 0) FROM SalesOpened s WHERE s.branchUid = :branchUID AND s.paymentStatus = 'PENDING' GROUP BY s.staffCode, s.staffName")
+    List<Object[]> openBillsByStaff(@Param("branchUID") String branchUID);
+
+    /** Codes held by unpaid bills in the branch - a new staff bill takes the first free K1-n. */
+    @Query("SELECT s.salesCode FROM SalesOpened s WHERE s.branchUid = :branchUID AND s.paymentStatus = 'PENDING' AND s.salesCode IS NOT NULL")
+    List<String> findOpenBillCodes(@Param("branchUID") String branchUID);
+
     /** The bill, locked until the transaction ends - for paying it. */
     @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT s FROM SalesOpened s WHERE s.uid = :uid AND s.branchUid = :branchUID")
@@ -31,6 +43,7 @@ public interface SalesOpenedRepository extends JpaRepository<SalesOpened, String
     WHERE s.branchUid = :branchUID
       AND s.createdAt >= :startDate
       AND s.createdAt < :endDate
+      AND (s.isActive IS NULL OR s.isActive = true)
 """)
     List<SalesOpened> salesOpenedListByStatus(
             @Param("branchUID") String branchUID,

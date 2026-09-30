@@ -28,6 +28,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
+import java.util.List;
 
 @RestController
 @RequestMapping("/authentication")
@@ -110,6 +112,36 @@ public class UserController {
             noRole.put("status", 403);
             noRole.put("code", "NO_ROLE_ASSIGNED");
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(noRole);
+        }
+
+        // Several branches: they choose one to work in, and this session is that branch.
+        List<Branch> workBranches = user.getWorkBranches();
+        if (!Boolean.TRUE.equals(user.getIsRoot()) && workBranches.size() > 1) {
+            String chosen = loginDTO.getBranchUID();
+            if (chosen == null || chosen.isBlank()) {
+                List<Map<String, Object>> choices = new java.util.ArrayList<>();
+                for (Branch b : workBranches) {
+                    Map<String, Object> c = new LinkedHashMap<>();
+                    c.put("uid", b.getUid());
+                    c.put("branchName", b.getBranchName());
+                    c.put("branchCode", b.getBranchCode());
+                    c.put("home", b == user.getHomeBranch());
+                    choices.add(c);
+                }
+                Map<String, Object> choose = new LinkedHashMap<>();
+                choose.put("code", "CHOOSE_BRANCH");
+                choose.put("branches", choices);
+                return ResponseEntity.ok(choose);
+            }
+            Optional<Branch> picked = workBranches.stream().filter(b -> chosen.equals(b.getUid())).findFirst();
+            if (picked.isEmpty()) {
+                Map<String, Object> notYours = new LinkedHashMap<>();
+                notYours.put("status", 403);
+                notYours.put("code", "BRANCH_NOT_ALLOWED");
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(notYours);
+            }
+            if (picked.get() != user.getHomeBranch())
+                user.setActiveBranch(picked.get());
         }
 
         // Branch must be within its free/paid period to log in. ROOT users

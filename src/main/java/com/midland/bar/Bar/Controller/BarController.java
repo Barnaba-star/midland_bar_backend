@@ -31,6 +31,8 @@ public class BarController {
     private final StockService stockService;
     private final BillCodeService billCodeService;
     private final BillPaymentService billPaymentService;
+    private final com.midland.bar.Bar.Service.StaffSellService staffSellService;
+    private final com.midland.bar.Bar.Service.StaffOrderService staffOrderService;
     private final UserService userService;
 
     /***
@@ -207,10 +209,87 @@ public class BarController {
         return billPaymentService.receipt(billUid);
     }
 
+    /** Staff Sell: the staff member behind a code, and their unpaid bills. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_SALES')")
+    @GetMapping("/staffSell/{staffCode}")
+    public Response<java.util.Map<String, Object>> findStaffSell(@PathVariable String staffCode){
+        return staffSellService.findByCode(staffCode);
+    }
+
+    /** Staff Sell: write an item onto the bill's order for the supervisor (not onto the bill). */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
+    @PostMapping("/staffOrders/addItem")
+    public Response<com.midland.bar.Bar.Model.StaffOrder> addStaffOrderItem(@Valid @RequestBody com.midland.bar.Bar.Dto.StaffOrderItemDTO dto){
+        return staffOrderService.addItem(dto);
+    }
+
+    /** Staff Sell: take a line off an order not yet sent. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
+    @PostMapping("/staffOrders/{orderUid}/removeLine/{lineUid}")
+    public Response<com.midland.bar.Bar.Model.StaffOrder> removeStaffOrderLine(@PathVariable String orderUid, @PathVariable String lineUid){
+        return staffOrderService.removeLine(orderUid, lineUid);
+    }
+
+    /** Staff Sell: send the staff member's written orders to the supervisor. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
+    @PostMapping("/staffOrders/send/{staffCode}")
+    public Response<Integer> sendStaffOrders(@PathVariable String staffCode){
+        return staffSellService.sendOrders(staffCode);
+    }
+
+    /** Supervisor: orders waiting to be received, oldest first. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('RECEIVE_ORDERS')")
+    @GetMapping("/staffOrders/pending")
+    public Response<java.util.List<com.midland.bar.Bar.Model.StaffOrder>> pendingStaffOrders(){
+        return staffOrderService.pending();
+    }
+
+    /** Supervisor: receive - the order goes on the bill and the drinks may leave. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('RECEIVE_ORDERS')")
+    @PostMapping("/staffOrders/{orderUid}/receive")
+    public Response<com.midland.bar.Bar.Model.StaffOrder> receiveStaffOrder(@PathVariable String orderUid){
+        return staffOrderService.receive(orderUid);
+    }
+
+    /** Supervisor: reject, with the reason the staff member will see. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('RECEIVE_ORDERS')")
+    @PostMapping("/staffOrders/{orderUid}/reject")
+    public Response<com.midland.bar.Bar.Model.StaffOrder> rejectStaffOrder(@PathVariable String orderUid, @Valid @RequestBody com.midland.bar.Bar.Dto.StaffOrderRejectDTO dto){
+        return staffOrderService.reject(orderUid, dto);
+    }
+
+    /** Staff Sell: a manager's login to leave for POS. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_SALES')")
+    @PostMapping("/staffSell/unlock")
+    public Response<Boolean> unlockStaffSell(@Valid @RequestBody com.midland.bar.Bar.Dto.StaffSellUnlockDTO dto){
+        return staffSellService.unlock(dto);
+    }
+
+    /** Sales page: each staff member's takings for a day by payment method, and their unpaid bills. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_SALES')")
+    @GetMapping("/staffSell/summary/{date}")
+    public Response<java.util.List<java.util.Map<String, Object>>> staffSalesSummary(@PathVariable java.time.LocalDate date){
+        return staffSellService.summary(date);
+    }
+
+    /** Staff Sell: open a bill that belongs to the staff member. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
+    @PostMapping("/staffSell/openBill")
+    public Response<SalesOpened> openStaffBill(@Valid @RequestBody com.midland.bar.Bar.Dto.StaffBillDTO staffBillDTO){
+        return staffSellService.openBill(staffBillDTO);
+    }
+
     @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
     @PostMapping("/addSaleItems")
     public Response<SalesOpened> addSaleItems(@Valid @RequestBody SaleItemsDTO saleItemsDTO){
         return barService.addSaleItems(saleItemsDTO);
+    }
+
+    /** An empty bill opened by mistake - whoever may open a bill may take an empty one away. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
+    @PostMapping("/deleteEmptyBill/{billUid}")
+    public Response<SalesOpened> deleteEmptyBill(@PathVariable String billUid){
+        return barService.deleteEmptyBill(billUid);
     }
 
     @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")

@@ -134,11 +134,13 @@ public class Initializer implements ApplicationRunner {
                         "DELETE_BAR_USER", "ASSIGN_USER_ROLE", "ENABLE_OR_DISABLE_ACCOUNT",
                         "VIEW_ROLE",
                         "VIEW_BRANCH",
+                        // Changes the branch logo (ROOT could before; the owner can now too).
+                        "MANAGE_SYSTEM_SETTINGS",
                         "SAVE_COMMISSION", "VIEW_COMMISSION", "DELETE_COMMISSION",
                         "VIEW_TABLE_SIZE",
                         "SAVE_SERVICE", "VIEW_SERVICE", "DELETE_SERVICE",
                         "VIEW_STAFF", "SAVE_STAFF", "DELETE_STAFF",
-                        "SAVE_SALES", "VIEW_SALES", "DELETE_SALES",
+                        "SAVE_SALES", "VIEW_SALES", "DELETE_SALES", "RECEIVE_ORDERS",
                         "VIEW_REPORT", "PAY_STAFF", "SAVE_EXPENSES", "VIEW_EXPENSES",
                         "SAVE_STOCK_AND_PURCHASE", "VIEW_STOCK_AND_PURCHASE",
                         "SAVE_STORE", "VIEW_STORE", "DELETE_STORE"
@@ -151,7 +153,7 @@ public class Initializer implements ApplicationRunner {
                 List.of(
                         "VIEW_BRANCH",
                         "SAVE_USER", "VIEW_USER",
-                        "SAVE_SALES", "VIEW_SALES",
+                        "SAVE_SALES", "VIEW_SALES", "RECEIVE_ORDERS",
                         "SAVE_SERVICE", "VIEW_SERVICE",
                         "SAVE_STAFF", "VIEW_STAFF",
                         "VIEW_REPORT", "VIEW_EXPENSES", "VIEW_STOCK_AND_PURCHASE",
@@ -169,6 +171,32 @@ public class Initializer implements ApplicationRunner {
                         "VIEW_SERVICE",
                         // Staff report + Store report tabs under "Matumizi"
                         "VIEW_REPORT"
+                )
+        );
+
+        // Receives what staff write at Staff Sell before the drinks leave the
+        // counter. Lands on the Supervisor screen and nothing else.
+        seedRoleWithPermissions(
+                "SUPERVISOR",
+                "Receives staff orders before drinks leave the counter",
+                List.of(
+                        "VIEW_BRANCH",
+                        "VIEW_SALES",
+                        "RECEIVE_ORDERS"
+                )
+        );
+
+        // Main office: answers the branches and publishes guidance to them -
+        // the Admin area, across every branch - without DIRECTOR's hold on
+        // users, roles and branches.
+        seedRoleWithPermissions(
+                "ADMIN",
+                "Main office - answers branch messages and publishes guidance",
+                List.of(
+                        "VIEW_BRANCH",
+                        "VIEW_BRANCH_MESSAGE", "REPLY_BRANCH_MESSAGE", "MANAGE_GUIDANCE",
+                        // Admin > Errors, Audit and Expiring branches (moved from Settings).
+                        "VIEW_ERROR_LOG", "DELETE_ERROR_LOG", "VIEW_AUDIT_LOG", "VIEW_EXPIRING_BRANCHES"
                 )
         );
 

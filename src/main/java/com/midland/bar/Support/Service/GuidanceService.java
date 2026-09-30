@@ -48,6 +48,7 @@ public class GuidanceService {
     );
 
     private final GuidanceRepository guidanceRepository;
+    private final com.midland.bar.Config.Security.AuthChecker authChecker;
 
     @Value("${file.upload-dir:uploads}")
     private String uploadDir;
@@ -154,9 +155,15 @@ public class GuidanceService {
     }
 
     /** The file itself, for whoever is allowed to read the note. */
+    /**
+     * The file on a note. Branches get it only once the note is published -
+     * a draft is the platform's until then; whoever manages guidance can open
+     * it to check it before publishing.
+     */
     public Optional<Guidance> findForDownload(String uid) {
         return guidanceRepository.findById(uid)
-                .filter(g -> g.getFilePath() != null && !g.getFilePath().isBlank());
+                .filter(g -> g.getFilePath() != null && !g.getFilePath().isBlank())
+                .filter(g -> Boolean.TRUE.equals(g.getPublished()) || authChecker.hasPermissionOrRoot("MANAGE_GUIDANCE"));
     }
 
     public Response<String> delete(String uid) {

@@ -97,6 +97,7 @@ public interface BarProjection {
      */
 
     String getFirstName();
+    String getStaffCode();
     String getMiddleName();
     String getLastName();
     LocalDate getDateOfBirth();

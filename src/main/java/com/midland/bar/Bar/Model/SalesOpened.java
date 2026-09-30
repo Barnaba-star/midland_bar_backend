@@ -25,6 +25,23 @@ public class SalesOpened extends TenantEntity {
     @Column(name = "sales_code")
     private String salesCode;
 
+    /**
+     * The staff member the bill belongs to when it was opened at Staff Sell.
+     * Everything sold on it is theirs - the seller on each line and the
+     * commission - whoever is logged in at the till. Null for bills opened on
+     * the Sales page, which sell as the logged-in user as before.
+     */
+    @Column(name = "staff_uid")
+    private String staffUid;
+
+    /** The staff member's name when the bill was opened, for showing on it. */
+    @Column(name = "staff_name")
+    private String staffName;
+
+    /** Their code when the bill was opened (K1) - what the Sales page filters bills by. */
+    @Column(name = "staff_code")
+    private String staffCode;
+
     @Column(name = "payment_method")
     private String paymentMethod;
 

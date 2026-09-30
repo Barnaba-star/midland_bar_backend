@@ -64,7 +64,7 @@ public class BranchController {
      * The branches worth chasing: running out soon, or already lapsed.
      * Same permission as the branch list, and narrowed the same way.
      */
-    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_ALL_BRANCHES')")
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_ALL_BRANCHES') or @authChecker.hasPermissionOrRoot('VIEW_EXPIRING_BRANCHES')")
     @GetMapping("/findExpiringBranches")
     public ResponseList<ExpiringBranchDTO> findExpiringBranches(@RequestParam(required = false) Integer days) {
         return branchService.findExpiringBranches(days);

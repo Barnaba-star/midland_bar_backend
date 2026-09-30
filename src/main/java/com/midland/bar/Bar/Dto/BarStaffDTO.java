@@ -9,6 +9,8 @@ import java.time.LocalDate;
 @Setter
 public class BarStaffDTO {
     private String uid;
+    /** Typed on the staff form (K1, A2...). Blank gives the next number (001, 002...). */
+    private String staffCode;
     private String firstName;
     private String middleName;
     private String lastName;

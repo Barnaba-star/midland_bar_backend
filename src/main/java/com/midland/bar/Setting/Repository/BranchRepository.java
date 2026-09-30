@@ -13,6 +13,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -111,6 +112,15 @@ public interface BranchRepository extends JpaRepository<Branch, String> {
             ORDER BY b.pendingPaymentAt DESC
             """)
     List<Branch> findUnresolvedPayments();
+
+    /** Payments still awaiting Snippe's answer, for the scheduled reconcile. */
+    @Query("""
+            SELECT b FROM Branch b
+            WHERE b.pendingPaymentRef IS NOT NULL
+              AND b.subscriptionStatus = 'PENDING'
+              AND b.pendingPaymentAt >= :since
+            """)
+    List<Branch> findPendingPaymentsSince(@Param("since") LocalDateTime since);
 
     /**
      * Branches at or past the end of their subscription, soonest first.

@@ -61,6 +61,8 @@ public class BarService {
   private final NotificationService notificationService;
   private final PlatformSettingService platformSettingService;
   private final BillCodeService billCodeService;
+  private final StaffCodeService staffCodeService;
+  private final StaffOrderRepository staffOrderRepository;
 
     /*
    BAR SERVICE METHODS
@@ -433,6 +435,20 @@ public class BarService {
             barStaff = new BarStaff();
         }
 
+        // A typed code (K1) is checked and kept; left blank, a new staff member
+        // gets the next number and an existing one keeps theirs.
+        String code = StaffCodeService.normalise(barStaffDTO.getStaffCode());
+        if (!code.isEmpty()) {
+            if (!StaffCodeService.isValid(code))
+                return new Response<>("Staff code can only have letters, numbers and dashes (up to 10)");
+            Optional<BarStaff> holder = barStaffRepository.findByStaffCodeAnyStatus(code, LoggerUser.getBranchUIDOrMain());
+            if (holder.isPresent() && !holder.get().getUid().equals(barStaff.getUid()))
+                return new Response<>("Staff code " + code + " is already used by " + holder.get().getFirstName());
+            barStaff.setStaffCode(code);
+        } else if (barStaff.getStaffCode() == null) {
+            barStaff.setStaffCode(staffCodeService.nextCode(LoggerUser.getBranchUIDOrMain()));
+        }
+
         barStaff.setDateOfBirth(barStaffDTO.getDateOfBirth());
         barStaff.setFirstName(barStaffDTO.getFirstName());
         // Optional - most staff go by two names.
@@ -745,7 +761,13 @@ public class BarService {
         }
         Map<String, Commission> commissionsByService = loadCommissionsByService(services);
 
-        BarStaff seller = sellerStaff();
+        // A bill opened at Staff Sell sells as its staff member, commission and
+        // all; any other bill sells as whoever is logged in. soldBy stays the
+        // login either way - it records who actually pressed the button.
+        BarStaff seller = bill.getStaffUid() != null
+                ? barStaffRepository.findBarStaffByUID(bill.getStaffUid(), branchUID)
+                        .orElseThrow(() -> new BusinessException("The staff member on bill " + bill.getSalesCode() + " is no longer active"))
+                : sellerStaff();
         String soldBy = LoggerUser.getEmail();
         LocalDate today = LocalDate.now();
         LocalDate weekStart = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
@@ -890,6 +912,7 @@ public class BarService {
         staff.setPhoneNumber(user.getPhone());
         staff.setGender(user.getGender());
         staff.setDescription("Created from login " + user.getUsername() + " on first sale");
+        staff.setStaffCode(staffCodeService.nextCode(branchUID));
         return barStaffRepository.save(staff);
     }
 
@@ -927,6 +950,28 @@ public class BarService {
             return new Response<>("Error in deleting sales");
         }
     }
+    /**
+     * Removes a bill opened by mistake. Only while nothing is on it - no line, and no
+     * waiter's order still waiting to go on - so no sale or money is ever lost with it.
+     * Cancelled rather than erased, the way an empty arrival bill goes with its booking;
+     * its code is free again straight away.
+     */
+    @Transactional
+    public Response<SalesOpened> deleteEmptyBill(String billUid) {
+        SalesOpened bill = salesOpenedRepository.findForUpdate(billUid, LoggerUser.getBranchUID())
+                .filter(b -> b.getIsActive() == null || b.getIsActive())
+                .orElse(null);
+        if (bill == null || !"PENDING".equals(bill.getPaymentStatus()))
+            return new Response<>("That bill is not open any more");
+        if (barSalesRepository.countLines(billUid) > 0 || (bill.getBill() != null && bill.getBill() > 0))
+            return new Response<>("Only an empty bill can be deleted - bill " + bill.getSalesCode() + " has items on it");
+        if (staffOrderRepository.countUndecided(billUid) > 0)
+            return new Response<>("A waiter has an order waiting to go on bill " + bill.getSalesCode());
+        bill.setPaymentStatus("CANCELLED");
+        bill.delete();
+        return new Response<>(salesOpenedRepository.save(bill));
+    }
+
     public Response<SalesOpened> saveOpenSale(SaleOpenedDTO saleOpenedDTO) {
         log.info(LoggerUser.getEmail() + " is Opening Sale");
         if (saleOpenedDTO == null) {

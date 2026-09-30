@@ -18,6 +18,10 @@ public interface BarSalesRepository extends JpaRepository<BarSales, String> {
     @Query("SELECT COALESCE(SUM(COALESCE(s.lineTotal, s.unitPrice, ss.price)), 0) FROM BarSales s LEFT JOIN s.barServiceEntity ss WHERE s.salesOpened.uid = :billUid AND s.isActive = true")
     long billTotal(@org.springframework.data.repository.query.Param("billUid") String billUid);
 
+    /** How many live lines a bill has - an empty bill has none, whatever they cost. */
+    @Query("SELECT COUNT(s) FROM BarSales s WHERE s.salesOpened.uid = :billUid AND s.isActive = true")
+    long countLines(@org.springframework.data.repository.query.Param("billUid") String billUid);
+
 
     @Query("SELECT s FROM BarSales s WHERE s.uid=:uid AND s.branchUid=:branchUID")
     Optional<BarSales> findSalesByUID(String uid, String branchUID);

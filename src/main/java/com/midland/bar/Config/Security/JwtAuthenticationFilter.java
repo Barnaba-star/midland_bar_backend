@@ -49,6 +49,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         boolean isRoot = Boolean.TRUE.equals(jwtTokenUtil.isRoot(token));
         if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
             User user = userRepository.findByUsernameForAuthentication(username);
+            // The branch chosen at login - honoured only while it is still one of theirs.
+            String branchUID = jwtTokenUtil.extractBranchUID(token);
+            if (user != null && branchUID != null && user.getHomeBranch() != null
+                    && !branchUID.equals(user.getHomeBranch().getUid())) {
+                user.getWorkBranches().stream()
+                        .filter(b -> branchUID.equals(b.getUid()))
+                        .findFirst()
+                        .ifPresent(user::setActiveBranch);
+            }
             List<SimpleGrantedAuthority> authorities;
             if (isRoot) {
                 authorities = List.of(new SimpleGrantedAuthority("ROOT"));

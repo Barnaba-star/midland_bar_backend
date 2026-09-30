@@ -387,7 +387,7 @@ public class UserService {
     }
     // Mirrors RoleService: ROOT and DIRECTOR manage every role, everyone
     // else only ever sees/handles the branch-operational ones.
-    private static final List<String> STAFF_VISIBLE_ROLE_CODES = List.of("CEO", "MANAGER", "CASHIER");
+    private static final List<String> STAFF_VISIBLE_ROLE_CODES = List.of("CEO", "MANAGER", "SUPERVISOR", "CASHIER");
 
     private boolean seesAllRoles() {
         User loggedUser = LoggerUser.getUser();
@@ -486,4 +486,65 @@ public class UserService {
 
 
 
+
+    // ============================================================
+    // BRANCHES A USER MAY WORK IN
+    // ============================================================
+
+    public Response<java.util.Map<String, Object>> findUserBranches(String userUid) {
+        java.util.Optional<User> found = userRepository.findById(userUid);
+        if (found.isEmpty())
+            return new Response<>("User Not Found");
+        return new Response<>(branchesOf(found.get()));
+    }
+
+    /**
+     * Replaces the user's other branches. Their home branch always stays -
+     * it is where they were made - and is left out of the list if sent.
+     */
+    @org.springframework.transaction.annotation.Transactional
+    public Response<java.util.Map<String, Object>> saveUserBranches(com.midland.bar.Uaa.Dto.UserBranchesDTO dto) {
+        if (dto == null || dto.getUserUID() == null)
+            return new Response<>("Choose the user");
+        java.util.Optional<User> found = userRepository.findById(dto.getUserUID());
+        if (found.isEmpty())
+            return new Response<>("User Not Found");
+        User user = found.get();
+        if (Boolean.TRUE.equals(user.getIsRoot()))
+            return new Response<>("A root user already reaches every branch");
+        java.util.Set<Branch> extra = new java.util.HashSet<>();
+        for (String uid : dto.getBranchUIDs() == null ? java.util.List.<String>of() : dto.getBranchUIDs()) {
+            if (uid == null || (user.getHomeBranch() != null && uid.equals(user.getHomeBranch().getUid())))
+                continue;
+            Branch b = branchRepository.findById(uid).orElse(null);
+            if (b == null || Boolean.FALSE.equals(b.getIsActive()))
+                return new Response<>("Branch Not Found");
+            if ("ROOT".equalsIgnoreCase(b.getBranchCode()))
+                return new Response<>("The main office is not a working branch");
+            extra.add(b);
+        }
+        user.getExtraBranches().clear();
+        user.getExtraBranches().addAll(extra);
+        userRepository.save(user);
+        log.info(LoggerUser.getEmail() + " set " + user.getUsername() + " to work in " + (extra.size() + 1) + " branch(es)");
+        return new Response<>(branchesOf(user));
+    }
+
+    private java.util.Map<String, Object> branchesOf(User user) {
+        java.util.Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("userUID", user.getUid());
+        out.put("username", user.getUsername());
+        Branch home = user.getHomeBranch();
+        out.put("home", home == null ? null : branchRef(home));
+        out.put("extra", user.getWorkBranches().stream().filter(b -> b != home).map(this::branchRef).toList());
+        return out;
+    }
+
+    private java.util.Map<String, Object> branchRef(Branch b) {
+        java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+        m.put("uid", b.getUid());
+        m.put("branchName", b.getBranchName());
+        m.put("branchCode", b.getBranchCode());
+        return m;
+    }
 }

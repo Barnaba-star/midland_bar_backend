@@ -35,6 +35,7 @@ public class BillPaymentService {
     private final SalesOpenedRepository salesOpenedRepository;
     private final BarSalesRepository barSalesRepository;
     private final BillPaymentRepository billPaymentRepository;
+    private final com.midland.bar.Bar.Repository.StaffOrderRepository staffOrderRepository;
     private final NotificationService notificationService;
 
     /**
@@ -50,6 +51,11 @@ public class BillPaymentService {
             return new Response<>("Open Sale Not Found");
         if ("PAID".equals(bill.getPaymentStatus()))
             return new Response<>("Bill " + bill.getSalesCode() + " is already paid");
+
+        // A staff order still with the supervisor is not on the bill yet; paying
+        // now would leave it off the customer's total for good.
+        if (staffOrderRepository.countUndecided(bill.getUid()) > 0)
+            return new Response<>("Bill " + bill.getSalesCode() + " has an order waiting for the supervisor - receive or reject it first");
 
         int due = (int) barSalesRepository.billTotal(bill.getUid());
         if (due <= 0)
@@ -155,6 +161,9 @@ public class BillPaymentService {
         receipt.put("status", bill.getPaymentStatus());
         receipt.put("total", barSalesRepository.billTotal(bill.getUid()));
         receipt.put("paidBy", bill.getPaidBy());
+        // A Staff Sell bill was served by its staff member, not by whoever took the money.
+        receipt.put("staffCode", bill.getStaffCode());
+        receipt.put("staffName", bill.getStaffName());
         receipt.put("paidAt", bill.getPaidAt());
         receipt.put("lines", lines);
         receipt.put("payments", payments);

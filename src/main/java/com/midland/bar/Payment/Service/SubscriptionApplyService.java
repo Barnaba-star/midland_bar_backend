@@ -110,10 +110,13 @@ public class SubscriptionApplyService {
 
     // Snippe echoes back the amount we charged. Null rather than 0 when it's
     // absent, so recordPayment can tell "not reported" from "free" and fall
-    // back to the branch's own rate instead of filing a zero.
+    // back to the branch's own rate instead of filing a zero. The payment
+    // object carries it as {"value": 500, "currency": "TZS"}, like the
+    // balance does; a bare number is still accepted.
     public Integer parseAmount(JsonNode data) {
         JsonNode amount = data.path("amount");
-        return amount.isNumber() ? amount.asInt() : null;
+        JsonNode value = amount.isObject() ? amount.path("value") : amount;
+        return value.isNumber() ? value.asInt() : null;
     }
 
     public int parseMonths(JsonNode data) {

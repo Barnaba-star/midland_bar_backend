@@ -23,6 +23,8 @@ import java.time.LocalDate;
                 name = "idx_bar_Staffs_active",
                 columnList = "is_active"
         )
+}, uniqueConstraints = {
+        @UniqueConstraint(name = "uq_bar_staffs_branch_code", columnNames = {"branch_uid", "staff_code"})
 })
 public class BarStaff extends TenantEntity {
     @Column(name = "first_name")
@@ -41,6 +43,14 @@ public class BarStaff extends TenantEntity {
     private String barCategory;
     @Column(name = "gender")
     private String gender;
+
+    /**
+     * What the staff member types at Staff Sell to pull up their bills: 001,
+     * 002... Given out in order within the branch and never reused, so an old
+     * code cannot land a new person's sales on someone who has left.
+     */
+    @Column(name = "staff_code")
+    private String staffCode;
 
     /**
      * The login this staff member sells under. Sales are rung up by whoever

@@ -289,7 +289,11 @@ public class BranchService {
         LocalDate today = LocalDate.now();
         LocalDate horizon = today.plusDays(window);
 
-        String createdBy = seesAllBranches() ? null : LoggerUser.getUser().getUid();
+        // Admin's Expiring view (VIEW_EXPIRING_BRANCHES) is platform-wide, like ROOT/DIRECTOR.
+        boolean platformWide = seesAllBranches() || org.springframework.security.core.context.SecurityContextHolder
+                .getContext().getAuthentication().getAuthorities().stream()
+                .anyMatch(a -> "VIEW_EXPIRING_BRANCHES".equals(a.getAuthority()));
+        String createdBy = platformWide ? null : LoggerUser.getUser().getUid();
         List<Branch> branches = branchRepository.findExpiringBranches(horizon, createdBy);
 
         // Names of whoever registered them, in one query rather than one per row.

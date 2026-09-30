@@ -114,9 +114,62 @@ public class User extends BaseEntity {
     @Column(name = "email")
     private String email;
 
+    /** The user's home branch - where they were created. getBranch() may answer with another; see activeBranch. */
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "branch_uid")
     private Branch branch;
+
+    /**
+     * Other branches this user may work in, given by the main office. A user
+     * with any is asked at login which branch to work in (UserController).
+     */
+    @ManyToMany(fetch = FetchType.EAGER)
+    @JoinTable(
+            name = "user_branches",
+            joinColumns = @JoinColumn(name = "user_uid"),
+            inverseJoinColumns = @JoinColumn(name = "branch_uid")
+    )
+    @JsonIgnore
+    private java.util.Set<Branch> extraBranches = new java.util.HashSet<>();
+
+    /**
+     * The branch this session works in, chosen at login and carried in the
+     * token (JwtAuthenticationFilter sets it). Never stored: two devices can
+     * work in two branches at once.
+     */
+    @Transient
+    @JsonIgnore
+    private Branch activeBranch;
+
+    /**
+     * The branch everything this session reads and writes belongs to - the
+     * one chosen at login, else home. Persistence reads the field, not this,
+     * so saving the user never moves their home branch.
+     */
+    public Branch getBranch() {
+        return activeBranch != null ? activeBranch : branch;
+    }
+
+    /** Where the user was created, whichever branch they are working in now. */
+    @JsonIgnore
+    public Branch getHomeBranch() {
+        return branch;
+    }
+
+    /** Home first, then the others - only branches still in use. */
+    @JsonIgnore
+    public List<Branch> getWorkBranches() {
+        List<Branch> out = new java.util.ArrayList<>();
+        if (branch != null)
+            out.add(branch);
+        if (extraBranches != null)
+            extraBranches.stream()
+                    .filter(b -> b != null && !Boolean.FALSE.equals(b.getIsActive()))
+                    .filter(b -> branch == null || !b.getUid().equals(branch.getUid()))
+                    .sorted(java.util.Comparator.comparing(b -> b.getBranchName() == null ? "" : b.getBranchName()))
+                    .forEach(out::add);
+        return out;
+    }
 
     @Column(name = "last_seen")
     private LocalDateTime lastSeen;

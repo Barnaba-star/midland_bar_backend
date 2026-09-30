@@ -183,6 +183,11 @@ public class BranchMessageService {
         }
 
         boolean fromBranch = isOwnBranch(message, caller);
+        // Reading another branch's thread is VIEW_BRANCH_MESSAGE; answering
+        // for the platform is REPLY_BRANCH_MESSAGE, as setStatus asks.
+        if (!fromBranch && !authChecker.hasPermissionOrRoot("REPLY_BRANCH_MESSAGE")) {
+            return new Response<>("NOT_ALLOWED");
+        }
 
         BranchMessageReply reply = new BranchMessageReply();
         reply.setMessage(message);

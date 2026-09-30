@@ -77,6 +77,15 @@ public class LoggerUser {
         return user.getBranch() != null ? user.getBranch().getUid() : null;
     }
 
+    /**
+     * The branch as rows are stamped with it: a user with no branch writes
+     * MAIN_OFFICE (see TenantEntity.prePersist), so reads must look there too.
+     */
+    public static String getBranchUIDOrMain() {
+        String branchUID = getBranchUID();
+        return branchUID == null ? "MAIN_OFFICE" : branchUID;
+    }
+
 
 
 }

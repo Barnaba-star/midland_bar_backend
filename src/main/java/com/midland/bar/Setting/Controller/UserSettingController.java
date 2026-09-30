@@ -102,4 +102,21 @@ public class UserSettingController {
         return userService.saveUser(userDTO);
     }
 
+
+    /**
+     * The branches a user works in besides their home branch - given by the
+     * main office (SAVE_BRANCH: ROOT, DIRECTOR, STAFF), never by a branch
+     * for itself, since it reaches into other branches.
+     */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_BRANCH')")
+    @GetMapping("/findUserBranches/{userUID}")
+    public Response<java.util.Map<String, Object>> findUserBranches(@PathVariable String userUID) {
+        return userService.findUserBranches(userUID);
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_BRANCH')")
+    @PostMapping("/saveUserBranches")
+    public Response<java.util.Map<String, Object>> saveUserBranches(@RequestBody com.midland.bar.Uaa.Dto.UserBranchesDTO dto) {
+        return userService.saveUserBranches(dto);
+    }
 }
