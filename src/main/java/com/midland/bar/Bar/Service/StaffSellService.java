@@ -56,6 +56,7 @@ public class StaffSellService {
 
     /** Who the code belongs to, and their unpaid bills. */
     public Response<Map<String, Object>> findByCode(String code) {
+        com.midland.bar.Config.Security.StaffSession.requireOwnCode(code);
         Optional<BarStaff> staff = byCode(code);
         if (staff.isEmpty())
             return new Response<>("No staff member has code " + clean(code));
@@ -74,6 +75,7 @@ public class StaffSellService {
      * and K1-1 again once it is paid.
      */
     public Response<SalesOpened> openBill(StaffBillDTO dto) {
+        com.midland.bar.Config.Security.StaffSession.requireOwnCode(dto == null ? null : dto.getStaffCode());
         // Opened offline: the device's uid for it (its orders point there). Sent twice, the same bill.
         if (dto.getClientUid() != null) {
             Optional<SalesOpened> existing = salesOpenedRepository.findById(dto.getClientUid());
@@ -106,6 +108,7 @@ public class StaffSellService {
 
     /** Hand the staff member's written orders to the supervisor - on switching staff, or Send. */
     public Response<Integer> sendOrders(String staffCode) {
+        com.midland.bar.Config.Security.StaffSession.requireOwnCode(staffCode);
         workShiftService.requireOpen();
         Optional<BarStaff> staff = byCode(staffCode);
         if (staff.isEmpty())

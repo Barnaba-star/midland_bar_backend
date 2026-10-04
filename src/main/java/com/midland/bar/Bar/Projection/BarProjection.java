@@ -106,6 +106,8 @@ public interface BarProjection {
     String getBarCategory();
     Boolean getActive();
     String getUserUid();
+    /** Staff page only: whether they can sign in with their code yet. */
+    Boolean getHasPin();
 
     /*
      * ==========================================================

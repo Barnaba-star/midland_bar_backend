@@ -26,6 +26,8 @@ public class StaffRowDTO {
     private String barCategory;
     private Boolean active;
     private List<String> roles;
+    /** Whether they can sign in with their code yet (a PIN is set). */
+    private Boolean hasPin;
 
     public static StaffRowDTO of(BarProjection staff, List<String> roles) {
         StaffRowDTO row = new StaffRowDTO();
@@ -41,6 +43,7 @@ public class StaffRowDTO {
         row.setBarCategory(staff.getBarCategory());
         row.setActive(staff.getActive());
         row.setRoles(roles);
+        row.setHasPin(staff.getHasPin());
         return row;
     }
 }

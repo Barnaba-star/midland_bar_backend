@@ -92,6 +92,83 @@ public class JwtTokenUtil {
                 .compact();
     }
 
+    /** Token kinds besides a user's own login (which carries no "type"). */
+    public static final String TYPE_DEVICE = "DEVICE";
+    public static final String TYPE_STAFF = "STAFF";
+
+    /** The authority every staff-code session holds; what StaffSession looks for. */
+    public static final String STAFF_SESSION_AUTHORITY = "STAFF_SELL_SESSION";
+
+    /** What a staff session may do - Staff Sell and nothing else (see StaffSession for the paths). */
+    public static final List<String> STAFF_PERMISSIONS = List.of("VIEW_SALES", "SAVE_SALES", "VIEW_SERVICE");
+
+    private static final long DEVICE_TOKEN_MS = 365L * 24 * 60 * 60 * 1000;
+    private static final long STAFF_TOKEN_MS = 12L * 60 * 60 * 1000;
+
+    /**
+     * A ticket saying "this device belongs to this branch", handed to a
+     * device when a member of the branch signs in on it. Staff signing in
+     * with their code present it, so the code is looked up in the right
+     * branch - and only on devices the branch itself has set up.
+     * Never accepted as a login: the filter ignores DEVICE tokens.
+     */
+    public String generateDeviceToken(String branchUID, String registeredBy) {
+        return Jwts.builder()
+                .setSubject("device")
+                .claim("type", TYPE_DEVICE)
+                .claim("branchUID", branchUID)
+                .claim("registeredBy", registeredBy)
+                .setIssuedAt(new Date())
+                .setExpiration(new Date(System.currentTimeMillis() + DEVICE_TOKEN_MS))
+                .signWith(SignatureAlgorithm.HS512, PRIVATE_KEY)
+                .compact();
+    }
+
+    /** The branch a device ticket names, or null if it is not a valid, current device ticket. */
+    public String deviceBranch(String deviceToken) {
+        try {
+            Claims claims = claims(deviceToken);
+            if (!TYPE_DEVICE.equals(claims.get("type", String.class)))
+                return null;
+            return claims.get("branchUID", String.class);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** A staff member signed in with their code and PIN: Staff Sell, their own bills, nothing more. */
+    public String generateStaffToken(com.midland.bar.Bar.Model.BarStaff staff, String branchUID, String fullName) {
+        return Jwts.builder()
+                .setSubject("STAFF-" + staff.getStaffCode())
+                .claim("type", TYPE_STAFF)
+                .claim("isRoot", false)
+                .claim("roles", List.of("STAFF_SELLER"))
+                .claim("permissions", STAFF_PERMISSIONS)
+                .claim("branchUID", branchUID)
+                .claim("staffUid", staff.getUid())
+                .claim("staffCode", staff.getStaffCode())
+                .claim("fullName", fullName)
+                .claim("viewOnly", false)
+                .claim("mustChangePassword", false)
+                .setIssuedAt(new Date())
+                .setExpiration(new Date(System.currentTimeMillis() + STAFF_TOKEN_MS))
+                .signWith(SignatureAlgorithm.HS512, PRIVATE_KEY)
+                .compact();
+    }
+
+    /** "DEVICE", "STAFF", or null for an ordinary user login. */
+    public String tokenType(String token) {
+        return claims(token).get("type", String.class);
+    }
+
+    public Claims claims(String token) {
+        return Jwts.parserBuilder()
+                .setSigningKey(PRIVATE_KEY)
+                .build()
+                .parseClaimsJws(token)
+                .getBody();
+    }
+
     private static String branchUidOf(User user) {
         try {
             return user.getBranch() == null ? null : user.getBranch().getUid();

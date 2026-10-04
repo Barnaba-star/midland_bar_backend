@@ -59,6 +59,7 @@ public class StaffOrderService {
                 .orElse(null);
         if (bill == null)
             return new Response<>("Open Sale Not Found");
+        com.midland.bar.Config.Security.StaffSession.requireOwnBill(bill);
         if (!"PENDING".equals(bill.getPaymentStatus()))
             return new Response<>("Bill " + bill.getSalesCode() + " is already paid - open a new bill");
         if (bill.getStaffUid() == null)
@@ -106,6 +107,7 @@ public class StaffOrderService {
         StaffOrder order = staffOrderRepository.findByUid(orderUid, branch()).orElse(null);
         if (order == null)
             return new Response<>("Order Not Found");
+        com.midland.bar.Config.Security.StaffSession.requireOwnStaff(order.getStaffUid());
         if (!StaffOrder.DRAFT.equals(order.getStatus()))
             return new Response<>("This order is already with the supervisor");
         boolean removed = order.getLines().removeIf(l -> l.getUid().equals(lineUid));
@@ -214,6 +216,7 @@ public class StaffOrderService {
                 : salesOpenedRepository.findById(dto.getSalesOpenedUID()).filter(b -> branchUID.equals(b.getBranchUid())).orElse(null);
         if (bill == null)
             return new Response<>("Open Sale Not Found");
+        com.midland.bar.Config.Security.StaffSession.requireOwnBill(bill);
         if (bill.getStaffUid() == null)
             return new Response<>("Bill " + bill.getSalesCode() + " is not a staff bill");
         if (dto.getItems() == null || dto.getItems().isEmpty())

@@ -26,6 +26,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final BranchAccess branchAccess;
     private final JwtTokenUtil jwtTokenUtil;
     private final UserRepository userRepository;
+    private final com.midland.bar.Setting.Repository.BranchRepository branchRepository;
+    private final com.midland.bar.Bar.Repository.BarStaffRepository barStaffRepository;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
@@ -43,6 +45,23 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         if (token == null) {
             filterChain.doFilter(request, response);
+            return;
+        }
+
+        // Tokens that are not a user's login. A bad or expired one falls
+        // through to the user path below, which treats it as before.
+        String type = null;
+        try {
+            type = jwtTokenUtil.tokenType(token);
+        } catch (Exception ignored) {
+        }
+        if (JwtTokenUtil.TYPE_DEVICE.equals(type)) {
+            // A device ticket only proves which branch a device belongs to.
+            filterChain.doFilter(request, response);
+            return;
+        }
+        if (JwtTokenUtil.TYPE_STAFF.equals(type)) {
+            staffSession(token, request, response, filterChain);
             return;
         }
         String username = jwtTokenUtil.extractUsername(token);
@@ -84,6 +103,46 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
+        filterChain.doFilter(request, response);
+    }
+
+    /**
+     * A staff member signed in with code + PIN. They have no user account, so
+     * the principal is a stand-in User (never saved) carrying their name and
+     * branch - what the Staff Sell services read through LoggerUser - and the
+     * request may only go where StaffSession allows.
+     */
+    private void staffSession(String token, HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+            throws IOException, ServletException {
+        if (!StaffSession.allows(request.getMethod(), request.getRequestURI())) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.setContentType("application/json");
+            response.setCharacterEncoding("UTF-8");
+            response.getWriter().write("{\"status\":403,\"code\":\"STAFF_SESSION_SCOPE\"}");
+            return;
+        }
+        io.jsonwebtoken.Claims claims = jwtTokenUtil.claims(token);
+        String branchUID = claims.get("branchUID", String.class);
+        String staffUid = claims.get("staffUid", String.class);
+        String staffCode = claims.get("staffCode", String.class);
+        var branch = branchUID == null ? null : branchRepository.findById(branchUID).orElse(null);
+        // Removed (or moved) since signing in: the token no longer counts.
+        boolean stillHere = branch != null && staffUid != null
+                && barStaffRepository.findBarStaffByUID(staffUid, branchUID).isPresent();
+        if (stillHere && SecurityContextHolder.getContext().getAuthentication() == null) {
+            User standIn = new User();
+            standIn.setUid("staff-" + staffUid);
+            standIn.setUsername(claims.getSubject());
+            standIn.setFirstName(claims.get("fullName", String.class));
+            standIn.setBranch(branch);
+            List<SimpleGrantedAuthority> authorities = new ArrayList<>();
+            JwtTokenUtil.STAFF_PERMISSIONS.forEach(p -> authorities.add(new SimpleGrantedAuthority(p)));
+            authorities.add(new SimpleGrantedAuthority("STAFF_SELLER"));
+            authorities.add(new SimpleGrantedAuthority(JwtTokenUtil.STAFF_SESSION_AUTHORITY));
+            UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(standIn, null, authorities);
+            auth.setDetails(new StaffSession.Info(staffUid, staffCode));
+            SecurityContextHolder.getContext().setAuthentication(auth);
+        }
         filterChain.doFilter(request, response);
     }
 

@@ -29,7 +29,8 @@ public interface BarStaffRepository extends JpaRepository<BarStaff, String> {
 
     @Query("""
              SELECT s.uid as uid, s.staffCode as staffCode, s.firstName as firstName, s.middleName as middleName, s.lastName as lastName, s.dateOfBirth as dateOfBirth, s.phoneNumber as phoneNumber,
-             s.description as description, s.gender as gender, s.barCategory as barCategory, s.isActive as active, s.userUid as userUid FROM BarStaff s  WHERE s.branchUid=:branchUID AND s.isActive=true
+             s.description as description, s.gender as gender, s.barCategory as barCategory, s.isActive as active, s.userUid as userUid,
+             (CASE WHEN s.pinHash IS NULL THEN false ELSE true END) as hasPin FROM BarStaff s  WHERE s.branchUid=:branchUID AND s.isActive=true
                AND (:category = '' OR s.barCategory = :category)
                AND (LOWER(CONCAT(COALESCE(s.firstName, ''), ' ', COALESCE(s.middleName, ''), ' ', COALESCE(s.lastName, ''))) LIKE :search ESCAPE '\\'
                     OR LOWER(COALESCE(s.phoneNumber, '')) LIKE :search ESCAPE '\\'

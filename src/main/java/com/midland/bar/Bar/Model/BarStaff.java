@@ -1,7 +1,9 @@
 package com.midland.bar.Bar.Model;
 
 import com.midland.bar.Utils.TenantEntity;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.annotation.EnumNaming;
 import jakarta.persistence.*;
 import lombok.*;
@@ -59,6 +61,32 @@ public class BarStaff extends TenantEntity {
      */
     @Column(name = "user_uid")
     private String userUid;
+
+    /**
+     * The staff member's own 4-digit PIN for signing in with their code
+     * (code = who, PIN = proof). Stored as a bcrypt hash and never sent out:
+     * the code is known to the whole bar, the PIN only to them.
+     */
+    @JsonIgnore
+    @ToString.Exclude
+    @Column(name = "pin_hash")
+    private String pinHash;
+
+    /** Wrong PINs in a row; at 5 the code is locked for a while. */
+    @JsonIgnore
+    @Column(name = "pin_failed_attempts")
+    private Integer pinFailedAttempts;
+
+    /** Code sign-in refused until then, after too many wrong PINs. */
+    @JsonIgnore
+    @Column(name = "pin_locked_until")
+    private java.time.LocalDateTime pinLockedUntil;
+
+    /** For the staff list: whether they can sign in with their code yet. */
+    @JsonProperty("hasPin")
+    public boolean hasPin() {
+        return pinHash != null && !pinHash.isBlank();
+    }
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "store_open")

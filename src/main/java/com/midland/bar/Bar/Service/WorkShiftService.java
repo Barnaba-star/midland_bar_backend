@@ -50,7 +50,11 @@ public class WorkShiftService {
         String branchUID = LoggerUser.getBranchUID();
         String email = LoggerUser.getEmail();
         Map<String, Object> body = new LinkedHashMap<>();
-        Optional<WorkShift> shift = unfinished(branchUID, email);
+        // A staff member signed in with their code has no shift of their own:
+        // they sell on the branch's - any cashier's open shift.
+        Optional<WorkShift> shift = com.midland.bar.Config.Security.StaffSession.active()
+                ? branchOpenShift(branchUID)
+                : unfinished(branchUID, email);
         body.put("state", shift.map(WorkShift::getStatus).orElse("NONE"));
         body.put("shift", shift.orElse(null));
         List<Map<String, Object>> others = new ArrayList<>();
@@ -120,6 +124,11 @@ public class WorkShiftService {
 
     /** Selling - opening a bill, adding to it, taking payment - needs the login's shift open. */
     public void requireOpen() {
+        if (com.midland.bar.Config.Security.StaffSession.active()) {
+            if (branchOpenShift(LoggerUser.getBranchUID()).isEmpty())
+                throw new BusinessException("No shift is open - wait for the cashier to open one");
+            return;
+        }
         Optional<WorkShift> shift = unfinished(LoggerUser.getBranchUID(), LoggerUser.getEmail());
         if (shift.isEmpty())
             throw new BusinessException("Open your shift before selling");
@@ -185,6 +194,15 @@ public class WorkShiftService {
             rows.add(row);
         }
         return new ResponseList<>(rows);
+    }
+
+    /** Any cashier's OPEN shift in the branch - what a staff code session sells on. */
+    private Optional<WorkShift> branchOpenShift(String branchUID) {
+        if (branchUID == null)
+            return Optional.empty();
+        return shiftRepository.findAllUnfinished(branchUID, null).stream()
+                .filter(s -> WorkShift.OPEN.equals(s.getStatus()))
+                .findFirst();
     }
 
     private Optional<WorkShift> unfinished(String branchUID, String email) {

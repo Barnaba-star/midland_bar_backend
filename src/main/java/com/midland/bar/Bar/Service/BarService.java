@@ -59,6 +59,7 @@ public class BarService {
   private final BarServiceRepository barServiceRepository;
   private final OtherCommissionService otherCommissionService;
   private final UserRepository userRepository;
+  private final org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder passwordEncoder;
   private final CommissionRepository commissionRepository;
   private final BarStaffRepository barStaffRepository;
   private final BarSalesRepository barSalesRepository;
@@ -476,6 +477,20 @@ public class BarService {
             if (barStaffRepository.countCodeHolders(code, LoggerUser.getBranchUIDOrMain(), isNew ? null : barStaff.getUid()) > 0)
                 return new Response<>("Code " + code + " is already taken - choose another");
             barStaff.setStaffCode(code);
+        }
+
+        // Their PIN for signing in with the code. New staff must have one; an
+        // edit changes it only when a new one is sent (and clears any lock).
+        String pin = barStaffDTO.getPin() == null ? "" : barStaffDTO.getPin().trim();
+        if (pin.isEmpty() && isNew)
+            return new Response<>("Enter a 4-digit PIN for the staff member");
+        if (!pin.isEmpty()) {
+            String problem = StaffPinRules.problem(pin);
+            if (problem != null)
+                return new Response<>(problem);
+            barStaff.setPinHash(passwordEncoder.encode(pin));
+            barStaff.setPinFailedAttempts(0);
+            barStaff.setPinLockedUntil(null);
         }
 
         barStaff.setDateOfBirth(barStaffDTO.getDateOfBirth());
@@ -1262,6 +1277,9 @@ public class BarService {
     }
     public ResponseList<BarProjection> findBarSalesList(String barOpenUID){
         log.info(LoggerUser.getEmail() + "Is accessing Sales");
+        // A staff code session sees the lines of its own bills only.
+        if (com.midland.bar.Config.Security.StaffSession.active())
+            com.midland.bar.Config.Security.StaffSession.requireOwnBill(salesOpenedRepository.findById(barOpenUID).orElse(null));
         return new ResponseList<>(barSalesRepository.findBarSalesList(LoggerUser.getBranchUID(), barOpenUID));
     }
     public ResponseList<BarProjection> findBarSalesListActiveTrue(){
@@ -1300,6 +1318,7 @@ public class BarService {
                 .orElse(null);
         if (bill == null || !"PENDING".equals(bill.getPaymentStatus()))
             return new Response<>("That bill is not open any more");
+        com.midland.bar.Config.Security.StaffSession.requireOwnBill(bill);
         if (barSalesRepository.countLines(billUid) > 0 || (bill.getBill() != null && bill.getBill() > 0))
             return new Response<>("Only an empty bill can be deleted - bill " + bill.getSalesCode() + " has items on it");
         if (staffOrderRepository.countUndecided(billUid) > 0)
