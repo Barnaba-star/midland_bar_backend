@@ -38,3 +38,5 @@ build/
 local-env.sh
 .DS_Store
 local-test-accounts.md
+push-local-db.sh
+db-backups/

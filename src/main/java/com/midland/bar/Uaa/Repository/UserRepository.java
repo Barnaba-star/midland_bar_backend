@@ -142,8 +142,12 @@ public interface UserRepository extends JpaRepository<User, String> {
     FROM User u
     LEFT JOIN u.roles r
     WHERE u.uid = :userUID
+    ORDER BY CASE WHEN r.name = 'ROOT' THEN 1 ELSE 0 END, r.name
     """)
-    Optional<UserProjection> findUserWithRoles(
+    // One row per role: root also holds DIRECTOR, and a single-result query
+    // failed on them with "2 results were returned". The assignable role
+    // (anything but ROOT) comes first.
+    List<UserProjection> findUserWithRoles(
             @Param("userUID") String userUID
     );
 

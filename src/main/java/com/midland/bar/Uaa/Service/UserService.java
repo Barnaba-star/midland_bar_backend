@@ -322,8 +322,8 @@ public class UserService {
         log.info(LoggerUser.getEmail() + "is Accessing User");
         if(userUID == null)
             return new Response<>("Provide user ref UID");
-        Optional<UserProjection> optionalUser = userRepository.findUserWithRoles(userUID);
-        return optionalUser.map(Response::new).orElseGet(()->new Response<>("User Not Found"));
+        List<UserProjection> rows = userRepository.findUserWithRoles(userUID);
+        return rows.isEmpty() ? new Response<>("User Not Found") : new Response<>(rows.get(0));
     }
     public ResponsePage<User> findUserPAGE(int page, int size){
         log.info(LoggerUser.getEmail() + "is Accessing User Page");
