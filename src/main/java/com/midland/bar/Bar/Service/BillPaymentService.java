@@ -138,6 +138,8 @@ public class BillPaymentService {
                 .orElse(null);
         if (bill == null)
             return new Response<>("Open Sale Not Found");
+        // A staff member signed in with their code prints their own bills only.
+        com.midland.bar.Config.Security.StaffSession.requireOwnBill(bill);
 
         List<Map<String, Object>> lines = new ArrayList<>();
         for (BarProjection line : barSalesRepository.findBarSalesList(LoggerUser.getBranchUID(), bill.getUid())) {

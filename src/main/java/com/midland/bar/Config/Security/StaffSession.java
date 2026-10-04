@@ -36,6 +36,9 @@ public final class StaffSession {
             new Route("POST", Pattern.compile("^/bar/deleteEmptyBill/[^/]+$")),
             new Route("GET", Pattern.compile("^/bar/findBarServiceList$")),
             new Route("GET", Pattern.compile("^/bar/shift/current$")),
+            // Printing a bill: the receipt (own bills only - see BillPaymentService.receipt) and the branch logo on it.
+            new Route("GET", Pattern.compile("^/bar/findBillReceipt/[^/]+$")),
+            new Route("GET", Pattern.compile("^/systemSetting/logo$")),
             new Route("GET", Pattern.compile("^/uploads/.+$"))
     );
 
