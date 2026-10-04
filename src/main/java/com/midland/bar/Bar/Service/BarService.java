@@ -1350,6 +1350,11 @@ public class BarService {
             salesOpened = new SalesOpened();
             if (saleOpenedDTO.getClientUid() != null)
                 salesOpened.setUid(saleOpenedDTO.getClientUid());
+            // Whose bill this is when no staff member is on it: the login at the till.
+            String opener = LoggerUser.getEmail();
+            String openerName = opener == null ? null : userRepository.findFullNameByLogin(opener);
+            salesOpened.setOpenedBy(opener);
+            salesOpened.setOpenedByName(openerName == null || openerName.isBlank() ? opener : openerName);
             salesOpened.setCreatedAt(com.midland.bar.Utils.Offline.OfflineContext.today());
         }
         // Paying goes through /payBill, which works the amount out from the

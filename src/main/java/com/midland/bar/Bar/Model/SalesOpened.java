@@ -42,6 +42,17 @@ public class SalesOpened extends TenantEntity {
     @Column(name = "staff_code")
     private String staffCode;
 
+    /**
+     * Who opened the bill at the till (sign-in name) - the person a bill with
+     * no staff member belongs to on the Sales page: a manager, the CEO, root.
+     */
+    @Column(name = "opened_by")
+    private String openedBy;
+
+    /** Their full name at the time, for showing on the bill. */
+    @Column(name = "opened_by_name")
+    private String openedByName;
+
     @Column(name = "payment_method")
     private String paymentMethod;
 
