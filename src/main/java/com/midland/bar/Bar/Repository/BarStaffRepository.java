@@ -43,6 +43,10 @@ public interface BarStaffRepository extends JpaRepository<BarStaff, String> {
     @Query("SELECT s FROM BarStaff s WHERE UPPER(s.staffCode) = UPPER(:code) AND s.branchUid = :branchUID AND s.isActive = true")
     Optional<BarStaff> findByStaffCode(@Param("code") String code, @Param("branchUID") String branchUID);
 
+    /** Active staff holding a code in any branch - staff code sign-in without a registered device. */
+    @Query("SELECT s FROM BarStaff s WHERE UPPER(s.staffCode) = UPPER(:code) AND s.isActive = true")
+    java.util.List<BarStaff> findAllByStaffCodeAnyBranch(@Param("code") String code);
+
     /** Whoever holds a code, active or not - codes are never handed out twice. */
     @Query("SELECT s FROM BarStaff s WHERE UPPER(s.staffCode) = UPPER(:code) AND s.branchUid = :branchUID")
     Optional<BarStaff> findByStaffCodeAnyStatus(@Param("code") String code, @Param("branchUID") String branchUID);

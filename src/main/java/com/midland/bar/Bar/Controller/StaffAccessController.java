@@ -22,19 +22,22 @@ import org.springframework.web.bind.annotation.RestController;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * Staff members signing in with their staff code + PIN, straight into Staff Sell.
+ * Staff members signing in with their staff code + PIN, straight into Staff Sell,
+ * from any device (their own phone included).
  *
- * The code says who, the PIN proves it, and the device says which branch:
- * codes are only unique within a branch, so the device must first be
- * registered to one - which happens when a member of that branch signs in on
- * it. Five wrong PINs lock that code for 15 minutes.
+ * The code says who and the PIN proves it. Codes are only unique within a
+ * branch, so a registered device (one a member of the branch has signed in
+ * on) narrows the search to its branch; without one, code + PIN are matched
+ * across branches. Five wrong PINs lock that code for 15 minutes.
  */
 @Slf4j
 @RestController
@@ -68,14 +71,93 @@ public class StaffAccessController {
         return ResponseEntity.ok(body);
     }
 
+    /**
+     * Staff code + PIN. The branch comes from the device's ticket when it has
+     * one; otherwise the code is looked up in every branch and the PIN picks
+     * the person (codes repeat across branches, code + PIN almost never). If
+     * it still fits staff in two branches they are asked which (CHOOSE_BRANCH).
+     */
     @PostMapping("/authentication/staffLogin")
     public ResponseEntity<Map<String, Object>> staffLogin(@RequestBody StaffLoginDTO dto) {
-        String branchUID = dto == null ? null : jwtTokenUtil.deviceBranch(dto.getDeviceToken());
-        if (branchUID == null)
-            return refuse(HttpStatus.UNAUTHORIZED, "DEVICE_NOT_REGISTERED", null);
+        if (dto == null)
+            return refuse(HttpStatus.UNAUTHORIZED, "INVALID_STAFF_LOGIN", null);
+        String deviceBranch = jwtTokenUtil.deviceBranch(dto.getDeviceToken());
+        String chosenBranch = dto.getBranchUID() != null && !dto.getBranchUID().isBlank() ? dto.getBranchUID() : null;
+
+        List<BarStaff> candidates;
+        if (chosenBranch != null)
+            candidates = byCode(dto.getStaffCode(), chosenBranch).map(List::of).orElse(List.of());
+        else if (deviceBranch != null)
+            candidates = byCode(dto.getStaffCode(), deviceBranch).map(List::of).orElse(List.of());
+        else
+            candidates = byCodeAnyBranch(dto.getStaffCode());
+        // One answer for "no such code" and "wrong PIN": the reply must not
+        // tell a guesser which codes exist.
+        if (candidates.isEmpty())
+            return refuse(HttpStatus.UNAUTHORIZED, "INVALID_STAFF_LOGIN", null);
+
+        LocalDateTime now = LocalDateTime.now();
+        List<BarStaff> open = candidates.stream()
+                .filter(c -> c.getPinLockedUntil() == null || !c.getPinLockedUntil().isAfter(now))
+                .toList();
+        if (open.isEmpty()) {
+            LocalDateTime until = candidates.stream().map(BarStaff::getPinLockedUntil).min(LocalDateTime::compareTo).orElse(now);
+            return refuse(HttpStatus.FORBIDDEN, "STAFF_LOCKED", Math.max(1, ChronoUnit.MINUTES.between(now, until) + 1));
+        }
+        List<BarStaff> withPin = open.stream().filter(BarStaff::hasPin).toList();
+        if (withPin.isEmpty())
+            return refuse(HttpStatus.FORBIDDEN, "NO_PIN_SET", null);
+
+        String pin = dto.getPin() == null ? "" : dto.getPin().trim();
+        List<BarStaff> matched = withPin.stream().filter(c -> passwordEncoder.matches(pin, c.getPinHash())).toList();
+
+        if (matched.isEmpty()) {
+            // Every holder of the code takes the wrong guess: a guesser
+            // cannot spread tries across branches to dodge the lock.
+            boolean lockedNow = false;
+            for (BarStaff c : withPin) {
+                int tries = (c.getPinFailedAttempts() == null ? 0 : c.getPinFailedAttempts()) + 1;
+                if (tries >= MAX_PIN_TRIES) {
+                    c.setPinFailedAttempts(0);
+                    c.setPinLockedUntil(now.plusMinutes(LOCK_MINUTES));
+                    lockedNow = true;
+                    log.warn("Staff code {} locked in branch {} after {} wrong PINs", c.getStaffCode(), c.getBranchUid(), MAX_PIN_TRIES);
+                } else {
+                    c.setPinFailedAttempts(tries);
+                }
+            }
+            barStaffRepository.saveAll(withPin);
+            return lockedNow && withPin.size() == 1
+                    ? refuse(HttpStatus.FORBIDDEN, "STAFF_LOCKED", (long) LOCK_MINUTES)
+                    : refuse(HttpStatus.UNAUTHORIZED, "INVALID_STAFF_LOGIN", null);
+        }
+
+        if (matched.size() > 1) {
+            // The same code and PIN in two branches: which one are they working in?
+            List<Map<String, Object>> branches = new ArrayList<>();
+            for (BarStaff c : matched) {
+                Branch b = branchRepository.findById(c.getBranchUid()).orElse(null);
+                if (b == null)
+                    continue;
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("uid", b.getUid());
+                row.put("branchName", b.getBranchName());
+                row.put("branchCode", b.getBranchCode());
+                row.put("home", false);
+                row.put("viewOnly", false);
+                branches.add(row);
+            }
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("code", "CHOOSE_BRANCH");
+            body.put("branches", branches);
+            return ResponseEntity.ok(body);
+        }
+
+        BarStaff staff = matched.get(0);
+        String branchUID = staff.getBranchUid();
         Branch branch = branchRepository.findById(branchUID).orElse(null);
         if (branch == null)
-            return refuse(HttpStatus.UNAUTHORIZED, "DEVICE_NOT_REGISTERED", null);
+            return refuse(HttpStatus.UNAUTHORIZED, "INVALID_STAFF_LOGIN", null);
 
         // Same lapsed-subscription rule as an ordinary sign-in (ROOT branch exempt).
         Integer graceDays = platformSettingService.current().getGracePeriodDays();
@@ -85,43 +167,23 @@ public class StaffAccessController {
                 && branch.getCloseSubscription().isBefore(lockoutDate))
             return refuse(HttpStatus.FORBIDDEN, "SUBSCRIPTION_EXPIRED", null);
 
-        Optional<BarStaff> found = byCode(dto.getStaffCode(), branchUID);
-        // One answer for "no such code" and "wrong PIN": the reply must not
-        // tell a guesser which codes exist.
-        if (found.isEmpty())
-            return refuse(HttpStatus.UNAUTHORIZED, "INVALID_STAFF_LOGIN", null);
-        BarStaff staff = found.get();
-
-        LocalDateTime now = LocalDateTime.now();
-        if (staff.getPinLockedUntil() != null && staff.getPinLockedUntil().isAfter(now)) {
-            long minutes = Math.max(1, ChronoUnit.MINUTES.between(now, staff.getPinLockedUntil()) + 1);
-            return refuse(HttpStatus.FORBIDDEN, "STAFF_LOCKED", minutes);
-        }
-        if (!staff.hasPin())
-            return refuse(HttpStatus.FORBIDDEN, "NO_PIN_SET", null);
-
-        String pin = dto.getPin() == null ? "" : dto.getPin().trim();
-        if (!passwordEncoder.matches(pin, staff.getPinHash())) {
-            int tries = (staff.getPinFailedAttempts() == null ? 0 : staff.getPinFailedAttempts()) + 1;
-            if (tries >= MAX_PIN_TRIES) {
-                staff.setPinFailedAttempts(0);
-                staff.setPinLockedUntil(now.plusMinutes(LOCK_MINUTES));
-                barStaffRepository.save(staff);
-                log.warn("Staff code {} locked in branch {} after {} wrong PINs", staff.getStaffCode(), branchUID, MAX_PIN_TRIES);
-                return refuse(HttpStatus.FORBIDDEN, "STAFF_LOCKED", (long) LOCK_MINUTES);
-            }
-            staff.setPinFailedAttempts(tries);
-            barStaffRepository.save(staff);
-            return refuse(HttpStatus.UNAUTHORIZED, "INVALID_STAFF_LOGIN", null);
-        }
-
         staff.setPinFailedAttempts(0);
         staff.setPinLockedUntil(null);
         barStaffRepository.save(staff);
         String fullName = Stream.of(staff.getFirstName(), staff.getMiddleName(), staff.getLastName())
-                .filter(s -> s != null && !s.isBlank()).map(String::trim).collect(Collectors.joining(" "));
+                .filter(x -> x != null && !x.isBlank()).map(String::trim).collect(Collectors.joining(" "));
         log.info("Staff {} signed in with their code in branch {}", staff.getStaffCode(), branchUID);
         return ResponseEntity.ok(Map.of("token", jwtTokenUtil.generateStaffToken(staff, branchUID, fullName)));
+    }
+
+    private List<BarStaff> byCodeAnyBranch(String raw) {
+        String code = StaffCodeService.normalise(raw);
+        if (code.isEmpty())
+            return List.of();
+        List<BarStaff> staff = barStaffRepository.findAllByStaffCodeAnyBranch(code);
+        if (staff.isEmpty() && code.matches("\\d{1,3}"))
+            staff = barStaffRepository.findAllByStaffCodeAnyBranch(String.format("%03d", Integer.parseInt(code)));
+        return staff;
     }
 
     private Optional<BarStaff> byCode(String raw, String branchUID) {
