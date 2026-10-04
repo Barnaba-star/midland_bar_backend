@@ -1,5 +1,6 @@
 package com.midland.bar.Setting.Controller;
 
+import com.midland.bar.Uaa.Dto.ResentCodeDTO;
 import com.midland.bar.Setting.Dto.UserSettingDTo;
 import com.midland.bar.Uaa.Dto.AssignUserRoleDTO;
 import com.midland.bar.Uaa.Dto.UserAndAttachmentDTO;
@@ -66,12 +67,13 @@ public class UserSettingController {
     }
 
     /**
-     * Issues a new one-time code and texts it. For the account that never got
+     * Issues a new one-time code, returns it to show on screen and texts it
+     * when there is a phone. For the account that never got
      * the first message, let it expire, or burned it on wrong guesses.
      */
     @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_USER')")
     @PostMapping("/resendActivationCode/{userUID}")
-    public Response<String> resendActivationCode(@PathVariable String userUID){
+    public Response<ResentCodeDTO> resendActivationCode(@PathVariable String userUID){
         return userService.resendActivationCode(userUID);
     }
 

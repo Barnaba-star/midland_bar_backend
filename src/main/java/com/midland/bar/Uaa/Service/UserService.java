@@ -197,7 +197,7 @@ public class UserService {
      * different risks, not something an admin should be able to do from the
      * user list by accident.
      */
-    public Response<String> resendActivationCode(String userUID) {
+    public Response<ResentCodeDTO> resendActivationCode(String userUID) {
         log.info(LoggerUser.getEmail() + " is resending an activation code");
         if (userUID == null)
             return new Response<>("Provide user ref UID");
@@ -206,14 +206,22 @@ public class UserService {
             return new Response<>("User Not Found");
         User user = optionalUser.get();
         if (!Boolean.TRUE.equals(user.getMustChangePassword()))
-            return data("ALREADY_ACTIVATED");
-        if (user.getPhone() == null || user.getPhone().isBlank())
-            return data("NO_PHONE");
+            return new Response<>(new ResentCodeDTO("ALREADY_ACTIVATED", user.getUsername(), null, null));
 
         String code = issueActivationCode(user);
         User saved = userRepository.save(user);
-        smsService.sendActivationCode(saved.getUid(), saved.getPhone(), saved.getUsername(), code);
-        return data("SENT");
+        // The new code is shown to the admin either way (as on creation); a
+        // phone on file also gets it by text. No phone is no longer a dead end.
+        boolean hasPhone = saved.getPhone() != null && !saved.getPhone().isBlank();
+        if (hasPhone) {
+            smsService.sendActivationCode(saved.getUid(), saved.getPhone(), saved.getUsername(), code);
+        }
+        return new Response<>(new ResentCodeDTO(
+                hasPhone ? "SENT" : "SHOWN",
+                saved.getUsername(),
+                code,
+                ActivationCode.VALID_HOURS
+        ));
     }
 
     /**
