@@ -34,6 +34,20 @@ public interface UserRepository extends JpaRepository<User, String> {
     @Query("SELECT u FROM User u WHERE u.username=:username")
     User findByUsername(@Param("username") String username);
 
+    /**
+     * "First Middle Last" for a sign-in name or email, for printing who did
+     * something (a receipt's "served by"). Native so a user who has since
+     * been removed still prints by name on their old bills.
+     */
+    @Query(value = """
+        SELECT TRIM(CONCAT_WS(' ', NULLIF(TRIM(first_name), ''), NULLIF(TRIM(middle_name), ''), NULLIF(TRIM(last_name), '')))
+        FROM users
+        WHERE LOWER(username) = LOWER(:login) OR LOWER(email) = LOWER(:login)
+        ORDER BY (LOWER(username) = LOWER(:login)) DESC
+        LIMIT 1
+        """, nativeQuery = true)
+    String findFullNameByLogin(@Param("login") String login);
+
     @Query("SELECT u FROM User u WHERE u.username=:username")
     User findFirstByUsername(@Param("username")String username);
 

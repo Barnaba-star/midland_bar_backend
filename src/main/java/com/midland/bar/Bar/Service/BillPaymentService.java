@@ -40,6 +40,7 @@ public class BillPaymentService {
     private final com.midland.bar.Bar.Repository.StaffOrderRepository staffOrderRepository;
     private final NotificationService notificationService;
     private final com.midland.bar.Utils.Offline.OfflineOps offlineOps;
+    private final com.midland.bar.Uaa.Repository.UserRepository userRepository;
 
     /**
      * Settles a bill in one or more payments. The amount due is worked out
@@ -171,7 +172,8 @@ public class BillPaymentService {
         receipt.put("branchName", branchName);
         receipt.put("status", bill.getPaymentStatus());
         receipt.put("total", barSalesRepository.billTotal(bill.getUid()));
-        receipt.put("paidBy", bill.getPaidBy());
+        // Stored as the cashier's sign-in name; the slip prints their name.
+        receipt.put("paidBy", displayName(bill.getPaidBy()));
         // A Staff Sell bill was served by its staff member, not by whoever took the money.
         receipt.put("staffCode", bill.getStaffCode());
         receipt.put("staffName", bill.getStaffName());
@@ -179,5 +181,14 @@ public class BillPaymentService {
         receipt.put("lines", lines);
         receipt.put("payments", payments);
         return new Response<>(receipt);
+    }
+
+    /** A login's full name, or the login itself if there is no name to show. */
+    private String displayName(String login) {
+        if (login == null || login.isBlank()) {
+            return login;
+        }
+        String name = userRepository.findFullNameByLogin(login);
+        return name == null || name.isBlank() ? login : name;
     }
 }
