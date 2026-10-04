@@ -38,10 +38,13 @@ import java.util.Optional;
 @Slf4j
 public class StaffOrderService {
 
+    /** Selling and paying out need the login's shift open. */
+    private final WorkShiftService workShiftService;
     private final StaffOrderRepository staffOrderRepository;
     private final SalesOpenedRepository salesOpenedRepository;
     private final BarServiceRepository barServiceRepository;
     private final BarService barService;
+    private final com.midland.bar.Utils.Offline.OfflineOps offlineOps;
 
     /** Rejected orders stay on the staff member's bill this long, so they see why. */
     private static final int REJECTED_SHOWN_HOURS = 12;
@@ -49,6 +52,7 @@ public class StaffOrderService {
     /** Write an item onto the bill's waiting order (one is started if there is none). */
     @Transactional
     public Response<StaffOrder> addItem(StaffOrderItemDTO dto) {
+        workShiftService.requireOpen();
         String branchUID = branch();
         SalesOpened bill = salesOpenedRepository.findById(dto.getSalesOpenedUID())
                 .filter(b -> branchUID.equals(b.getBranchUid()))
@@ -163,7 +167,7 @@ public class StaffOrderService {
             items.add(item);
         }
         sale.setItems(items);
-        Response<SalesOpened> result = barService.addSaleItems(sale);
+        Response<SalesOpened> result = barService.addItemsToBill(sale);
         if (result.getData() == null)
             // Rolls the whole receive back and reaches the supervisor as the reason.
             throw new BusinessException(result.getMessage());
@@ -192,6 +196,86 @@ public class StaffOrderService {
     }
 
     /** For Staff Sell: the orders to show on these bills - waiting, and recently rejected. */
+    /**
+     * An order written at Staff Sell with no internet. No supervisor could see
+     * it then, so it went straight onto the bill on the device; now it does so
+     * here - stock, split, the staff member's commission, at the time it was
+     * written - and is kept RECEIVED and marked offline, for the supervisor to
+     * look over. Sent twice, it is applied once.
+     */
+    @Transactional
+    public Response<StaffOrder> recordOffline(com.midland.bar.Bar.Dto.StaffOfflineOrderDTO dto) {
+        Optional<String> done = offlineOps.alreadyApplied();
+        if (done.isPresent())
+            return staffOrderRepository.findById(done.get()).map(Response::new).orElseGet(() -> new Response<>("Order Not Found"));
+        workShiftService.requireOpen();
+        String branchUID = branch();
+        SalesOpened bill = dto == null || dto.getSalesOpenedUID() == null ? null
+                : salesOpenedRepository.findById(dto.getSalesOpenedUID()).filter(b -> branchUID.equals(b.getBranchUid())).orElse(null);
+        if (bill == null)
+            return new Response<>("Open Sale Not Found");
+        if (bill.getStaffUid() == null)
+            return new Response<>("Bill " + bill.getSalesCode() + " is not a staff bill");
+        if (dto.getItems() == null || dto.getItems().isEmpty())
+            return new Response<>("Nothing on the order");
+
+        LocalDateTime at = com.midland.bar.Utils.Offline.OfflineContext.now();
+        StaffOrder order = new StaffOrder();
+        order.setSalesOpenedUid(bill.getUid());
+        order.setSalesCode(bill.getSalesCode());
+        order.setStaffUid(bill.getStaffUid());
+        order.setStaffCode(bill.getStaffCode());
+        order.setStaffName(bill.getStaffName());
+        order.setStatus(StaffOrder.RECEIVED);
+        order.setOffline(true);
+        order.setSentAt(at);
+        order.setDecidedAt(at);
+        order.setDecidedBy(LoggerUser.getEmail());
+        SaleItemsDTO sale = new SaleItemsDTO();
+        sale.setSalesOpenedUID(bill.getUid());
+        List<SaleItemsDTO.Item> items = new ArrayList<>();
+        for (com.midland.bar.Bar.Dto.StaffOfflineOrderDTO.Item it : dto.getItems()) {
+            BarServiceEntity service = barServiceRepository.findBarServiceByUID(it.getBarServiceUID(), branchUID).orElse(null);
+            if (service == null)
+                return new Response<>("Service Not Found");
+            int qty = it.getQuantity() == null || it.getQuantity() < 1 ? 1 : it.getQuantity();
+            StaffOrderLine line = new StaffOrderLine();
+            line.setOrder(order);
+            line.setBarServiceUid(service.getUid());
+            line.setServiceName(service.getServiceName());
+            line.setQuantity(qty);
+            line.setUnitPrice(service.getPrice());
+            order.getLines().add(line);
+            SaleItemsDTO.Item item = new SaleItemsDTO.Item();
+            item.setBarServiceUID(service.getUid());
+            item.setQuantity(qty);
+            items.add(item);
+        }
+        sale.setItems(items);
+        Response<SalesOpened> result = barService.addItemsToBill(sale);
+        if (result.getData() == null)
+            throw new BusinessException(result.getMessage());
+        StaffOrder saved = staffOrderRepository.save(order);
+        offlineOps.claim("STAFF_ORDER", saved.getUid());
+        return new Response<>(saved);
+    }
+
+    /** Offline orders still to be looked over by the supervisor, oldest first. */
+    public Response<List<StaffOrder>> offlineUnreviewed() {
+        return new Response<>(staffOrderRepository.findOfflineUnreviewed(branch()));
+    }
+
+    /** The supervisor has looked an offline order over. */
+    @Transactional
+    public Response<StaffOrder> review(String orderUid) {
+        StaffOrder order = staffOrderRepository.findById(orderUid).filter(o -> branch().equals(o.getBranchUid())).orElse(null);
+        if (order == null || !Boolean.TRUE.equals(order.getOffline()))
+            return new Response<>("Order Not Found");
+        order.setReviewedBy(LoggerUser.getEmail());
+        order.setReviewedAt(LocalDateTime.now());
+        return new Response<>(staffOrderRepository.save(order));
+    }
+
     public List<StaffOrder> shownOn(Collection<String> billUids) {
         if (billUids.isEmpty())
             return List.of();

@@ -64,22 +64,34 @@ public interface CommissionRepository extends JpaRepository<Commission, String> 
             LEFT JOIN Commission c ON c.barService = s AND c.isActive = true AND c.branchUid = s.branchUid
             WHERE s.branchUid = :branchUID
               AND (s.kind IS NULL OR s.kind <> 'STOCK_ITEM')
+              AND (:missingOnly = false OR c.uid IS NULL)
               AND (LOWER(s.serviceName) LIKE :search ESCAPE '\\'
                    OR LOWER(COALESCE(s.serviceCode, '')) LIKE :search ESCAPE '\\'
                    OR LOWER(COALESCE(s.description, '')) LIKE :search ESCAPE '\\')
-            ORDER BY s.serviceName
+            ORDER BY CASE WHEN c.uid IS NULL THEN 0 ELSE 1 END, s.serviceName
             """,
             countQuery = """
             SELECT COUNT(s) FROM BarServiceEntity s
+            LEFT JOIN Commission c ON c.barService = s AND c.isActive = true AND c.branchUid = s.branchUid
             WHERE s.branchUid = :branchUID
               AND (s.kind IS NULL OR s.kind <> 'STOCK_ITEM')
+              AND (:missingOnly = false OR c.uid IS NULL)
               AND (LOWER(s.serviceName) LIKE :search ESCAPE '\\'
                    OR LOWER(COALESCE(s.serviceCode, '')) LIKE :search ESCAPE '\\'
                    OR LOWER(COALESCE(s.description, '')) LIKE :search ESCAPE '\\')
             """)
     Page<ServiceCommissionProjection> findServiceCommissionPage(@Param("branchUID") String branchUID,
                                                                 @Param("search") String search,
+                                                                @Param("missingOnly") boolean missingOnly,
                                                                 Pageable pageable);
+
+    /** Services on sale with no commission split yet - they cannot be sold until they have one. */
+    @Query("""
+            SELECT COUNT(s) FROM BarServiceEntity s
+            LEFT JOIN Commission c ON c.barService = s AND c.isActive = true AND c.branchUid = s.branchUid
+            WHERE s.branchUid = :branchUID AND (s.kind IS NULL OR s.kind <> 'STOCK_ITEM') AND c.uid IS NULL
+            """)
+    long countWithoutCommission(@Param("branchUID") String branchUID);
 
     @Query("""
             SELECT c FROM Commission c WHERE c.barService=:service AND c.branchUid=:branchUID

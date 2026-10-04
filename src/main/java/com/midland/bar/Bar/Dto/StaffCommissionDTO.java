@@ -18,4 +18,6 @@ public class StaffCommissionDTO {
     private String filter;
     private LocalDate weekDate;
     private String descriptions;
+    /** How it was paid out (cash when not given). */
+    private String method;
 }

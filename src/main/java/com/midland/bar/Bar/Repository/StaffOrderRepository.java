@@ -48,4 +48,8 @@ public interface StaffOrderRepository extends JpaRepository<StaffOrder, String> 
     /** Orders still to be decided on a bill - it cannot be paid while there are any. */
     @Query("SELECT COUNT(o) FROM StaffOrder o WHERE o.salesOpenedUid = :billUid AND o.status IN ('DRAFT', 'SENT') AND SIZE(o.lines) > 0")
     long countUndecided(@Param("billUid") String billUid);
+
+    /** Orders that went onto bills offline and the supervisor has not looked over yet. */
+    @Query("SELECT DISTINCT o FROM StaffOrder o WHERE o.branchUid = :branchUID AND o.offline = true AND o.reviewedAt IS NULL ORDER BY o.decidedAt")
+    List<StaffOrder> findOfflineUnreviewed(@Param("branchUID") String branchUID);
 }

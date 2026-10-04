@@ -172,4 +172,8 @@ public interface UserRepository extends JpaRepository<User, String> {
 
 
 
+
+    /** [userUid, roleName] for a page of users - their roles, in one query. */
+    @Query("SELECT u.uid, r.name FROM User u JOIN u.roles r WHERE u.uid IN :uids ORDER BY r.name")
+    List<Object[]> findRoleNamesOf(@Param("uids") java.util.Collection<String> uids);
 }

@@ -22,6 +22,8 @@ public class JwtTokenUtil {
     private String PRIVATE_KEY;
 
     private final PlatformSettingService platformSettingService;
+    private final BranchAccess branchAccess;
+    private final com.midland.bar.Uaa.Repository.PermissionRepository permissionRepository;
 
 
 
@@ -53,6 +55,19 @@ public class JwtTokenUtil {
                 .map(Permission::getName)
                 .distinct()
                 .toList();
+        // Main office (STAFF, DIRECTOR) can always look around the branch it
+        // works in - MIDLAND or a customer's - so it gets every VIEW_*; its
+        // roles alone give it nothing to read in POS. STAFF in a customer's
+        // branch may only look: their own write permissions are dropped for
+        // this session. ROOT passes every check anyway.
+        boolean viewOnly = branchAccess.isSupportViewOnly(user);
+        if (branchAccess.isMainOffice(user)) {
+            java.util.Set<String> merged = new java.util.LinkedHashSet<>(viewOnly ? List.of() : permissions);
+            permissionRepository.findAll().stream().map(Permission::getName)
+                    .filter(n -> n != null && n.startsWith("VIEW_"))
+                    .forEach(merged::add);
+            permissions = new java.util.ArrayList<>(merged);
+        }
         String userUID = user.getUid();
 
 
@@ -62,6 +77,8 @@ public class JwtTokenUtil {
                 .claim("roles", roles)
                 .claim("branchUID", branchUID)
                 .claim("permissions", permissions)
+                // STAFF in a customer's branch: the screens show "view only".
+                .claim("viewOnly", viewOnly)
                 .claim("fullName", fullName)
                 .claim("userUID", userUID)
                 .claim("email", email)

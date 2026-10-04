@@ -94,4 +94,10 @@ public interface BarSalesRepository extends JpaRepository<BarSales, String> {
             LEFT JOIN SalesOpened so WHERE  s.branchUid=:branchUID AND s.isActive=true
            """)
     Page<BarProjection> findBarSalesPage(Pageable pageable, String branchUID);
+
+    /** The line a given request added for a service on a bill - found by the op id that added it. */
+    @Query("SELECT s.uid FROM BarSales s WHERE s.addOpId = :opId AND s.barServiceEntity.uid = :serviceUid AND s.salesOpened.uid = :billUid")
+    java.util.Optional<String> findAddedBy(@org.springframework.data.repository.query.Param("opId") String opId,
+                                           @org.springframework.data.repository.query.Param("serviceUid") String serviceUid,
+                                           @org.springframework.data.repository.query.Param("billUid") String billUid);
 }

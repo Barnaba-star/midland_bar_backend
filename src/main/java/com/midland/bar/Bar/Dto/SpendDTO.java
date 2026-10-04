@@ -9,4 +9,6 @@ public class SpendDTO {
     private String uid;
     private Integer amount;
     private String description;
+    /** How it was paid out (cash when not given). */
+    private String method;
 }

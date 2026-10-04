@@ -105,6 +105,7 @@ public interface BarProjection {
     String getGender();
     String getBarCategory();
     Boolean getActive();
+    String getUserUid();
 
     /*
      * ==========================================================
@@ -117,6 +118,8 @@ public interface BarProjection {
     BigDecimal getTotalAmount();
     BigDecimal getPaidAmount();
     BigDecimal getRemainingAmount();
+    /** Handover shortages charged to a staff commission row. */
+    Integer getLossAmount();
     LocalDate getBookingDate();
     String getServiceUID();
 

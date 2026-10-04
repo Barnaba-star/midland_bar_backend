@@ -27,6 +27,8 @@ import java.util.*;
 @Slf4j
 public class BillPaymentService {
 
+    /** Selling and paying out need the login's shift open. */
+    private final WorkShiftService workShiftService;
     /** The ways a bill can be paid. Stored lower-case, as the till has always sent them. */
     public static final Set<String> METHODS = Set.of("cash", "mpesa", "tigopesa", "airtelmoney", "halopesa", "bank");
 
@@ -37,6 +39,7 @@ public class BillPaymentService {
     private final BillPaymentRepository billPaymentRepository;
     private final com.midland.bar.Bar.Repository.StaffOrderRepository staffOrderRepository;
     private final NotificationService notificationService;
+    private final com.midland.bar.Utils.Offline.OfflineOps offlineOps;
 
     /**
      * Settles a bill in one or more payments. The amount due is worked out
@@ -45,6 +48,12 @@ public class BillPaymentService {
      */
     @Transactional
     public Response<SalesOpened> payBill(PayBillDTO dto) {
+        // A queued payment sent twice is applied once.
+        if (offlineOps.alreadyApplied().isPresent())
+            return salesOpenedRepository.findById(dto.getSalesOpenedUID())
+                    .map(b -> new Response<>((SalesOpened) org.hibernate.Hibernate.unproxy(b)))
+                    .orElseGet(() -> new Response<>("Open Sale Not Found"));
+        workShiftService.requireOpen();
         String branchUID = Optional.ofNullable(LoggerUser.getBranchUID()).orElse("MAIN_OFFICE");
         SalesOpened bill = salesOpenedRepository.findForUpdate(dto.getSalesOpenedUID(), branchUID).orElse(null);
         if (bill == null)
@@ -64,7 +73,8 @@ public class BillPaymentService {
         int paid = 0;
         List<BillPayment> rows = new ArrayList<>();
         List<Map<String, Object>> breakdown = new ArrayList<>();
-        LocalDateTime now = LocalDateTime.now();
+        // When it was paid - the device's time for a payment taken offline.
+        LocalDateTime now = com.midland.bar.Utils.Offline.OfflineContext.now();
         String by = LoggerUser.getEmail();
         for (PayBillDTO.Part part : dto.getPayments()) {
             String method = part.getMethod() == null ? "" : part.getMethod().trim().toLowerCase();
@@ -115,6 +125,7 @@ public class BillPaymentService {
             log.warn("Failed to send sale-completed notification: {}", notifyError.getMessage());
         }
         log.info("{} took payment of {} for bill {} ({} part(s))", by, paid, bill.getSalesCode(), rows.size());
+        offlineOps.claim("PAY_BILL", bill.getUid());
         return new Response<>(saved);
     }
 

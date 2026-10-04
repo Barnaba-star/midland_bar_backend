@@ -12,4 +12,6 @@ public class PayStockAndPurchaseDTO {
     private Integer amount;
     private LocalDate weekDate;
     private String description;
+    /** How it was paid out (cash when not given). */
+    private String method;
 }

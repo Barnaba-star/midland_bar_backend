@@ -37,3 +37,4 @@ build/
 .env
 local-env.sh
 .DS_Store
+local-test-accounts.md

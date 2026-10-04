@@ -38,6 +38,10 @@ public class StaffCommissions extends TenantEntity {
     @Column(name = "remaining_amount")
     private Integer remainingAmount=0;
 
+    /** Handover shortages charged to this day (StaffLoss) - already taken off remainingAmount. */
+    @Column(name = "loss_amount")
+    private Integer lossAmount=0;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "bar_staff_uid")
     @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})

@@ -125,4 +125,8 @@ public interface BarServiceRepository extends JpaRepository<BarServiceEntity, St
             @Param("search") String search,
             @Param("countedOnly") boolean countedOnly
     );
+
+    /** Everything counted in the store - what a stock take goes through. */
+    @Query("SELECT s FROM BarServiceEntity s WHERE s.branchUid = :branchUID AND s.isActive = true AND s.trackStock = true ORDER BY s.serviceName")
+    java.util.List<BarServiceEntity> findCountable(@Param("branchUID") String branchUID);
 }

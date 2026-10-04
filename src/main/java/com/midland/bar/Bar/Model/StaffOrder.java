@@ -63,6 +63,20 @@ public class StaffOrder extends TenantEntity {
     @Column(name = "reject_reason", length = 255)
     private String rejectReason;
 
+    /**
+     * Written at Staff Sell while there was no internet: it went straight onto
+     * the bill (no supervisor could see it) and was sent when the line came
+     * back. The supervisor looks it over afterwards.
+     */
+    @Column(name = "offline_received")
+    private Boolean offline = false;
+
+    @Column(name = "reviewed_by")
+    private String reviewedBy;
+
+    @Column(name = "reviewed_at")
+    private LocalDateTime reviewedAt;
+
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     @OrderBy("createdAt ASC")
     private List<StaffOrderLine> lines = new ArrayList<>();

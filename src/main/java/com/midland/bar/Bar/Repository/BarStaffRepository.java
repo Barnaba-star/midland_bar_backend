@@ -29,7 +29,7 @@ public interface BarStaffRepository extends JpaRepository<BarStaff, String> {
 
     @Query("""
              SELECT s.uid as uid, s.staffCode as staffCode, s.firstName as firstName, s.middleName as middleName, s.lastName as lastName, s.dateOfBirth as dateOfBirth, s.phoneNumber as phoneNumber,
-             s.description as description, s.gender as gender, s.barCategory as barCategory, s.isActive as active FROM BarStaff s  WHERE s.branchUid=:branchUID AND s.isActive=true
+             s.description as description, s.gender as gender, s.barCategory as barCategory, s.isActive as active, s.userUid as userUid FROM BarStaff s  WHERE s.branchUid=:branchUID AND s.isActive=true
                AND (:category = '' OR s.barCategory = :category)
                AND (LOWER(CONCAT(COALESCE(s.firstName, ''), ' ', COALESCE(s.middleName, ''), ' ', COALESCE(s.lastName, ''))) LIKE :search ESCAPE '\\'
                     OR LOWER(COALESCE(s.phoneNumber, '')) LIKE :search ESCAPE '\\'
@@ -53,4 +53,28 @@ public interface BarStaffRepository extends JpaRepository<BarStaff, String> {
     /** Staff from before codes existed, oldest first, so they number in the order they joined. */
     @Query("SELECT s FROM BarStaff s WHERE s.staffCode IS NULL ORDER BY s.branchUid, s.createdAt, s.uid")
     List<BarStaff> findWithoutCode();
+
+    /** Every staff member that has a code, to find the typed ones (JAMES, K1) on startup. */
+    @Query("SELECT s FROM BarStaff s WHERE s.staffCode IS NOT NULL ORDER BY s.branchUid, s.createdAt, s.uid")
+    List<BarStaff> findWithCode();
+
+    /** Unpaid bills plus undecided Staff Sell orders a staff member still has open. */
+    @Query("""
+            SELECT (SELECT COUNT(b) FROM SalesOpened b WHERE b.staffUid = :staffUid AND b.paymentStatus = 'PENDING')
+                 + (SELECT COUNT(o) FROM StaffOrder o WHERE o.staffUid = :staffUid AND o.status IN ('DRAFT', 'SENT'))
+            FROM BarStaff s WHERE s.uid = :staffUid
+            """)
+    long countOpenWork(@Param("staffUid") String staffUid);
+
+    /**
+     * Whether a code is held in the branch by anyone else - removed staff
+     * included. Native SQL on purpose: the entity's is_active filter would
+     * hide staff who left, and their codes are never handed out again.
+     */
+    @Query(value = "SELECT COUNT(*) FROM bar_staffs WHERE branch_uid = :branchUID AND UPPER(staff_code) = UPPER(:code) AND (:selfUid IS NULL OR uid <> :selfUid)", nativeQuery = true)
+    long countCodeHolders(@Param("code") String code, @Param("branchUID") String branchUID, @Param("selfUid") String selfUid);
+
+    /** Every code ever given in the branch, removed staff included (see countCodeHolders). */
+    @Query(value = "SELECT staff_code FROM bar_staffs WHERE branch_uid = :branchUID AND staff_code IS NOT NULL", nativeQuery = true)
+    List<String> findAllStaffCodes(@Param("branchUID") String branchUID);
 }

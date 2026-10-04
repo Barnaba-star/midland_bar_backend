@@ -136,6 +136,8 @@ public class Initializer implements ApplicationRunner {
                         "VIEW_BRANCH",
                         // Changes the branch logo (ROOT could before; the owner can now too).
                         "MANAGE_SYSTEM_SETTINGS",
+                        // Decides what the Other commission pays for (POS Setting > Other).
+                        "MANAGE_OTHER_COMMISSION",
                         "SAVE_COMMISSION", "VIEW_COMMISSION", "DELETE_COMMISSION",
                         "VIEW_TABLE_SIZE",
                         "SAVE_SERVICE", "VIEW_SERVICE", "DELETE_SERVICE",
@@ -155,7 +157,8 @@ public class Initializer implements ApplicationRunner {
                         "SAVE_USER", "VIEW_USER",
                         "SAVE_SALES", "VIEW_SALES", "RECEIVE_ORDERS",
                         "SAVE_SERVICE", "VIEW_SERVICE",
-                        "SAVE_STAFF", "VIEW_STAFF",
+                        // DELETE_STAFF only makes a staff member inactive; their history stays.
+                        "SAVE_STAFF", "VIEW_STAFF", "DELETE_STAFF",
                         "VIEW_REPORT", "VIEW_EXPENSES", "VIEW_STOCK_AND_PURCHASE",
                         "SAVE_STORE", "VIEW_STORE", "DELETE_STORE"
                 )
@@ -167,10 +170,17 @@ public class Initializer implements ApplicationRunner {
                 List.of(
                         "VIEW_BRANCH",
                         "SAVE_SALES", "VIEW_SALES",
+                        // New Sale picks the staff member serving the bill.
+                        "VIEW_STAFF",
                         "VIEW_STORE",
                         "VIEW_SERVICE",
-                        // Staff report + Store report tabs under "Matumizi"
-                        "VIEW_REPORT"
+                        // "Expenses & Cash-up": the cashier hands out every
+                        // payment (on the manager's word), so what leaves the
+                        // drawer comes off their own cash-up.
+                        "VIEW_REPORT",
+                        "VIEW_EXPENSES", "SAVE_EXPENSES",
+                        "PAY_STAFF",
+                        "VIEW_STOCK_AND_PURCHASE", "SAVE_STOCK_AND_PURCHASE"
                 )
         );
 

@@ -22,6 +22,10 @@ public interface BarReportsRepository extends JpaRepository<BarReports, String> 
             """)
     Optional<BarReports> findBarReportByUID(String barReportUID, String branchUID);
 
+    /** The split written for one bill line. */
+    @Query("SELECT r FROM BarReports r WHERE r.barSales.uid = :salesUid")
+    List<BarReports> findBySalesLine(@org.springframework.data.repository.query.Param("salesUid") String salesUid);
+
     @Query("""
             SELECT r.uid as uid, r.traAmount as traAmount, r.ownerAmount as ownerAmount, r.staffAmount as staffAmount,
             r.emergencyAmount as emergencyAmount, r.othersAmount as othersAmount, r.maintenanceAmount as maintenanceAmount,

@@ -28,7 +28,12 @@ import java.util.List;
 @RequiredArgsConstructor
 public class BarController {
     private final BarService barService;
+    private final com.midland.bar.Bar.Service.OtherCommissionService otherCommissionService;
     private final StockService stockService;
+    private final com.midland.bar.Bar.Service.InsightService insightService;
+    private final com.midland.bar.Bar.Service.CashUpService cashUpService;
+    private final com.midland.bar.Bar.Service.WorkShiftService workShiftService;
+    private final com.midland.bar.Bar.Service.StockTakeService stockTakeService;
     private final BillCodeService billCodeService;
     private final BillPaymentService billPaymentService;
     private final com.midland.bar.Bar.Service.StaffSellService staffSellService;
@@ -56,7 +61,13 @@ public class BarController {
     @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_COMMISSION')")
     @PostMapping("/findServiceCommissionPage")
     public ResponsePage<ServiceCommissionProjection> findServiceCommissionPage(@RequestBody PageableParam pageableParam){
-        return barService.findServiceCommissionPage(pageableParam.getPage(), pageableParam.getSize(), pageableParam.getSearchParam());
+        return barService.findServiceCommissionPage(pageableParam.getPage(), pageableParam.getSize(), pageableParam.getSearchParam(), pageableParam.getFilter());
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_COMMISSION')")
+    @GetMapping("/countServicesWithoutCommission")
+    public Response<Long> countServicesWithoutCommission(){
+        return barService.countServicesWithoutCommission();
     }
 
     @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_COMMISSION')")
@@ -154,7 +165,7 @@ public class BarController {
     }
     @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_STAFF')")
     @PostMapping("/findBarStaffPage")
-    public ResponsePage<BarProjection> findBarStaffPage(@RequestBody PageableParam pageableParam){
+    public ResponsePage<StaffRowDTO> findBarStaffPage(@RequestBody PageableParam pageableParam){
         return barService.findBarStaffPage(pageableParam.getPage(), pageableParam.getSize(), pageableParam.getSearchParam(), pageableParam.getFilter());
     }
 
@@ -217,6 +228,25 @@ public class BarController {
     }
 
     /** Staff Sell: write an item onto the bill's order for the supervisor (not onto the bill). */
+    /** An order written at Staff Sell offline - straight onto the bill, for the supervisor to look over. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
+    @PostMapping("/staffOrders/offline")
+    public Response<com.midland.bar.Bar.Model.StaffOrder> staffOfflineOrder(@RequestBody com.midland.bar.Bar.Dto.StaffOfflineOrderDTO dto){
+        return staffOrderService.recordOffline(dto);
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('RECEIVE_ORDERS')")
+    @GetMapping("/staffOrders/offlineUnreviewed")
+    public Response<java.util.List<com.midland.bar.Bar.Model.StaffOrder>> staffOfflineUnreviewed(){
+        return staffOrderService.offlineUnreviewed();
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('RECEIVE_ORDERS')")
+    @PostMapping("/staffOrders/{orderUid}/review")
+    public Response<com.midland.bar.Bar.Model.StaffOrder> reviewStaffOrder(@PathVariable String orderUid){
+        return staffOrderService.review(orderUid);
+    }
+
     @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
     @PostMapping("/staffOrders/addItem")
     public Response<com.midland.bar.Bar.Model.StaffOrder> addStaffOrderItem(@Valid @RequestBody com.midland.bar.Bar.Dto.StaffOrderItemDTO dto){
@@ -277,6 +307,27 @@ public class BarController {
     @PostMapping("/staffSell/openBill")
     public Response<SalesOpened> openStaffBill(@Valid @RequestBody com.midland.bar.Bar.Dto.StaffBillDTO staffBillDTO){
         return staffSellService.openBill(staffBillDTO);
+    }
+
+    /** Take some or all of one line off an unpaid bill - undone everywhere, and recorded with a reason. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
+    @PostMapping("/removeBillLine")
+    public Response<SalesOpened> removeBillLine(@RequestBody com.midland.bar.Bar.Dto.RemoveBillLineDTO dto){
+        return barService.removeBillLine(dto);
+    }
+
+    /** A staff member's handover shortage - off their commission and the cashier's expected cash. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
+    @PostMapping("/staffLoss")
+    public Response<com.midland.bar.Bar.Model.StaffLoss> recordStaffLoss(@RequestBody com.midland.bar.Bar.Dto.StaffLossDTO dto){
+        return barService.recordStaffLoss(dto);
+    }
+
+    /** What was taken off bills in a period: everyone's for CEO/manager, a cashier's own otherwise. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_REPORT')")
+    @GetMapping("/billLineVoids/{filter}")
+    public ResponseList<com.midland.bar.Bar.Model.BillLineVoid> billLineVoids(@PathVariable String filter){
+        return barService.findBillLineVoids(filter);
     }
 
     @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
@@ -525,5 +576,139 @@ public class BarController {
     @GetMapping("/findStaffEarnings")
     public ResponseList<StaffEarningsProjection> findStaffEarnings() {
         return barService.findStaffEarnings();
+    }
+
+    /** What the branch's Other commission pays for - the CEO's list. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('MANAGE_OTHER_COMMISSION')")
+    @GetMapping("/otherCommissionItems")
+    public ResponseList<com.midland.bar.Bar.Model.OtherCommissionItem> otherCommissionItems(){
+        return otherCommissionService.findItems();
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('MANAGE_OTHER_COMMISSION')")
+    @PostMapping("/saveOtherCommissionItems")
+    public ResponseList<com.midland.bar.Bar.Model.OtherCommissionItem> saveOtherCommissionItems(@RequestBody java.util.List<com.midland.bar.Bar.Dto.OtherCommissionItemDTO> items){
+        return otherCommissionService.saveItems(items);
+    }
+
+    /** How the Other commission was split over a period - the table under Other in Reports. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_REPORT')")
+    @GetMapping("/otherSplitReport/{filter}")
+    public Response<java.util.Map<String, Object>> otherSplitReport(@PathVariable String filter){
+        return otherCommissionService.report(filter);
+    }
+
+    /*
+     CASH-UP - counting a closed shift. Whoever takes payments (SAVE_SALES) cashes
+     up their own; the list follows VIEW_REPORT, narrowed to a cashier's own unless a manager.
+     */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
+    @GetMapping("/cashUp/preview")
+    public Response<java.util.Map<String, Object>> cashUpPreview(){
+        return cashUpService.preview();
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
+    @PostMapping("/cashUp/submit")
+    public Response<com.midland.bar.Bar.Model.CashUp> cashUpSubmit(@RequestBody com.midland.bar.Bar.Dto.CashUpDTO dto){
+        return cashUpService.submit(dto);
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_REPORT')")
+    @GetMapping("/cashUp/list/{filter}")
+    public ResponseList<com.midland.bar.Bar.Model.CashUp> cashUps(@PathVariable String filter){
+        return cashUpService.findClosed(filter);
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_REPORT')")
+    @GetMapping("/cashUp/{uid}/lines")
+    public ResponseList<com.midland.bar.Bar.Model.CashUpLine> cashUpLines(@PathVariable String uid){
+        return cashUpService.findLines(uid);
+    }
+
+    /*
+     SHIFTS - a seller opens one before selling and closes it before the
+     cash-up. Opening and closing follow SAVE_SALES; the list (CEO/manager
+     see everyone's, a cashier their own) follows VIEW_REPORT.
+     */
+    // Only reads: anyone who can see sales may ask (the shift bar, main office looking in).
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_SALES')")
+    @GetMapping("/shift/current")
+    public Response<java.util.Map<String, Object>> currentShift(){
+        return workShiftService.current();
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
+    @PostMapping("/shift/open")
+    public Response<com.midland.bar.Bar.Model.WorkShift> openShift(){
+        return workShiftService.open();
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
+    @PostMapping("/shift/close")
+    public Response<com.midland.bar.Bar.Model.WorkShift> closeShift(){
+        return workShiftService.close();
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_REPORT')")
+    @GetMapping("/shift/list/{filter}")
+    public ResponseList<java.util.Map<String, Object>> shifts(@PathVariable String filter){
+        return workShiftService.list(filter);
+    }
+
+    /*
+     STOCK TAKE - counting the whole store at once (SAVE_STORE: CEO, MANAGER);
+     its history and the variance by product follow VIEW_STORE.
+     */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_STORE')")
+    @GetMapping("/stockTake/items")
+    public ResponseList<java.util.Map<String, Object>> stockTakeItems(){
+        return stockTakeService.countable();
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_STORE')")
+    @PostMapping("/stockTake/submit")
+    public Response<com.midland.bar.Bar.Model.StockTake> stockTakeSubmit(@RequestBody com.midland.bar.Bar.Dto.StockTakeDTO dto){
+        return stockTakeService.submit(dto);
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_STORE')")
+    @GetMapping("/stockTake/list/{filter}")
+    public ResponseList<com.midland.bar.Bar.Model.StockTake> stockTakes(@PathVariable String filter){
+        return stockTakeService.findTaken(filter);
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_STORE')")
+    @GetMapping("/stockTake/{uid}/lines")
+    public ResponseList<com.midland.bar.Bar.Model.StockTakeLine> stockTakeLines(@PathVariable String uid){
+        return stockTakeService.findLines(uid);
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_STORE')")
+    @GetMapping("/stockTake/variance/{filter}")
+    public ResponseList<java.util.Map<String, Object>> stockVariance(@PathVariable String filter){
+        return stockTakeService.varianceByProduct(filter);
+    }
+
+    /*
+     INSIGHTS - profit per product, best sellers and slow movers, peak hours,
+     and every pot's balance since the start. Report readers (VIEW_REPORT).
+     */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_REPORT')")
+    @GetMapping("/insights/products/{filter}")
+    public Response<java.util.Map<String, Object>> insightProducts(@PathVariable String filter){
+        return insightService.products(filter);
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_REPORT')")
+    @GetMapping("/insights/peak/{filter}")
+    public Response<java.util.Map<String, Object>> insightPeak(@PathVariable String filter){
+        return insightService.peakHours(filter);
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_REPORT')")
+    @GetMapping("/insights/ledger")
+    public Response<java.util.Map<String, Object>> insightLedger(){
+        return insightService.potsLedger();
     }
 }

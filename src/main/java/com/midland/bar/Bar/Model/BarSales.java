@@ -80,4 +80,15 @@ public class BarSales extends TenantEntity {
     /** Email of the logged-in user who rang the line up. */
     @Column(name = "sold_by")
     private String soldBy;
+
+    /** When the line was put on the bill, to the second - what the peak-hours report reads. */
+    @Column(name = "sold_at")
+    private java.time.LocalDateTime soldAt;
+
+    /**
+     * The X-Op-Id of the request that put this line on the bill. A device that
+     * added it offline can take it off again before it ever saw the line's uid.
+     */
+    @Column(name = "add_op_id")
+    private String addOpId;
 }

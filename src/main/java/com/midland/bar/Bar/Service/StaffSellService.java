@@ -37,6 +37,8 @@ import java.util.Set;
 @Slf4j
 public class StaffSellService {
 
+    /** Selling and paying out need the login's shift open. */
+    private final WorkShiftService workShiftService;
     private final BarStaffRepository barStaffRepository;
     private final SalesOpenedRepository salesOpenedRepository;
     private final BillPaymentRepository billPaymentRepository;
@@ -72,6 +74,13 @@ public class StaffSellService {
      * and K1-1 again once it is paid.
      */
     public Response<SalesOpened> openBill(StaffBillDTO dto) {
+        // Opened offline: the device's uid for it (its orders point there). Sent twice, the same bill.
+        if (dto.getClientUid() != null) {
+            Optional<SalesOpened> existing = salesOpenedRepository.findById(dto.getClientUid());
+            if (existing.isPresent())
+                return new Response<>((SalesOpened) org.hibernate.Hibernate.unproxy(existing.get()));
+        }
+        workShiftService.requireOpen();
         Optional<BarStaff> staff = byCode(dto.getStaffCode());
         if (staff.isEmpty())
             return new Response<>("No staff member has code " + clean(dto.getStaffCode()));
@@ -83,6 +92,9 @@ public class StaffSellService {
             n++;
 
         SalesOpened bill = new SalesOpened();
+        if (dto.getClientUid() != null)
+            bill.setUid(dto.getClientUid());
+        bill.setCreatedAt(com.midland.bar.Utils.Offline.OfflineContext.today());
         bill.setSalesCode(prefix + n);
         bill.setStaffUid(staff.get().getUid());
         bill.setStaffName(fullName(staff.get()));
@@ -94,6 +106,7 @@ public class StaffSellService {
 
     /** Hand the staff member's written orders to the supervisor - on switching staff, or Send. */
     public Response<Integer> sendOrders(String staffCode) {
+        workShiftService.requireOpen();
         Optional<BarStaff> staff = byCode(staffCode);
         if (staff.isEmpty())
             return new Response<>("No staff member has code " + clean(staffCode));

@@ -8,4 +8,6 @@ import lombok.Data;
 public class StaffBillDTO {
     @NotBlank(message = "Enter the staff code")
     private String staffCode;
+    /** A bill opened offline: the uid the device gave it. */
+    private String clientUid;
 }

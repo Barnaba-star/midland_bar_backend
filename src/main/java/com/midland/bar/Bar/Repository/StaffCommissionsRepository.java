@@ -32,6 +32,7 @@ public interface StaffCommissionsRepository extends JpaRepository<StaffCommissio
         s.totalAmount AS totalAmount,
         s.payedAmount AS paidAmount,
         s.remainingAmount AS remainingAmount,
+        COALESCE(s.lossAmount, 0) AS lossAmount,
         s.createdAt AS date,
         s.barStaff.firstName AS firstName,
         s.barStaff.middleName AS middleName,
@@ -40,6 +41,8 @@ public interface StaffCommissionsRepository extends JpaRepository<StaffCommissio
         s.weekDate AS weekDate,
 
         CASE
+            WHEN s.remainingAmount < 0
+                THEN 'OWES'
             WHEN s.remainingAmount = 0
                 THEN 'PAID'
             WHEN s.payedAmount = 0

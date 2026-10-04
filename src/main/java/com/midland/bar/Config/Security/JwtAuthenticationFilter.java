@@ -23,6 +23,7 @@ import java.util.Optional;
 @Component
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
+    private final BranchAccess branchAccess;
     private final JwtTokenUtil jwtTokenUtil;
     private final UserRepository userRepository;
 
@@ -53,10 +54,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String branchUID = jwtTokenUtil.extractBranchUID(token);
             if (user != null && branchUID != null && user.getHomeBranch() != null
                     && !branchUID.equals(user.getHomeBranch().getUid())) {
-                user.getWorkBranches().stream()
-                        .filter(b -> branchUID.equals(b.getUid()))
-                        .findFirst()
-                        .ifPresent(user::setActiveBranch);
+                branchAccess.find(user, branchUID).ifPresent(user::setActiveBranch);
             }
             List<SimpleGrantedAuthority> authorities;
             if (isRoot) {

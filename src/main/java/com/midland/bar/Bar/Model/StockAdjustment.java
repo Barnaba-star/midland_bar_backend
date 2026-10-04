@@ -57,4 +57,8 @@ public class StockAdjustment extends TenantEntity {
 
     @Column(name = "adjusted_at")
     private LocalDateTime adjustedAt;
+
+    /** Set when the adjustment came from a full stock take. */
+    @Column(name = "stock_take_uid")
+    private String stockTakeUid;
 }

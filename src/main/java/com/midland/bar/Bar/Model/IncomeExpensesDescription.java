@@ -63,5 +63,17 @@ public class IncomeExpensesDescription extends TenantEntity {
 
     @Column(name = "staff_name")
     private String staffName;
+
+    /** The login that recorded this payout - a cash-up takes it off that cashier's expected cash. */
+    @Column(name = "paid_by")
+    private String paidBy;
+
+    /** When it was recorded, to the second - so it falls in the right shift. */
+    @Column(name = "paid_at")
+    private java.time.LocalDateTime paidAt;
+
+    /** How it was paid out: cash, mpesa, tigopesa, airtelmoney, halopesa or bank - the cash-up takes it off that method. */
+    @Column(name = "method", length = 20)
+    private String method;
 }
 

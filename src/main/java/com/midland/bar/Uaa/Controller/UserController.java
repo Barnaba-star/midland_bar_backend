@@ -37,6 +37,7 @@ import java.util.List;
 public class UserController {
     @Autowired
     private  UserService userService;
+    private final com.midland.bar.Config.Security.BranchAccess branchAccess;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenUtil jwtTokenUtil;
@@ -114,9 +115,11 @@ public class UserController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(noRole);
         }
 
-        // Several branches: they choose one to work in, and this session is that branch.
-        List<Branch> workBranches = user.getWorkBranches();
-        if (!Boolean.TRUE.equals(user.getIsRoot()) && workBranches.size() > 1) {
+        // Several branches: they choose one to work in, and this session is that
+        // branch. ROOT and DIRECTOR may use any branch, STAFF the ones they
+        // registered - MIDLAND, their home, first and the default (BranchAccess).
+        List<Branch> workBranches = branchAccess.allowed(user);
+        if (workBranches.size() > 1) {
             String chosen = loginDTO.getBranchUID();
             if (chosen == null || chosen.isBlank()) {
                 List<Map<String, Object>> choices = new java.util.ArrayList<>();
@@ -125,7 +128,10 @@ public class UserController {
                     c.put("uid", b.getUid());
                     c.put("branchName", b.getBranchName());
                     c.put("branchCode", b.getBranchCode());
-                    c.put("home", b == user.getHomeBranch());
+                    boolean home = user.getHomeBranch() != null && b.getUid().equals(user.getHomeBranch().getUid());
+                    c.put("home", home);
+                    // STAFF in a customer's branch: look, don't touch.
+                    c.put("viewOnly", !home && !branchAccess.seesEveryBranch(user) && branchAccess.isMainOffice(user));
                     choices.add(c);
                 }
                 Map<String, Object> choose = new LinkedHashMap<>();
@@ -140,7 +146,7 @@ public class UserController {
                 notYours.put("code", "BRANCH_NOT_ALLOWED");
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).body(notYours);
             }
-            if (picked.get() != user.getHomeBranch())
+            if (user.getHomeBranch() == null || !picked.get().getUid().equals(user.getHomeBranch().getUid()))
                 user.setActiveBranch(picked.get());
         }
 
@@ -151,7 +157,8 @@ public class UserController {
         // unrestricted rather than locking brand new branches out before
         // anyone's had a chance to set one up.
         Branch branch = user.getBranch();
-        boolean exempt = Boolean.TRUE.equals(user.getIsRoot())
+        // Main office (ROOT, DIRECTOR, STAFF) comes in to help, lapsed or not.
+        boolean exempt = branchAccess.isMainOffice(user)
                 || (branch != null && "ROOT".equalsIgnoreCase(branch.getBranchCode()));
 
         // A grace period keeps a branch working for a few days past its end

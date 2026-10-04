@@ -351,7 +351,7 @@ public class UserService {
             Map.entry("branchCode", "b.branchCode")
     );
 
-    public ResponsePage<UserProjection> findUsers(PageableParam pageableParam){
+    public ResponsePage<java.util.Map<String, Object>> findUsers(PageableParam pageableParam){
         log.info(LoggerUser.getEmail() + "is Accessing Users");
         // field isiyojulikana ingeangusha query, kwa hiyo turudi kwenye createdAt
         pageableParam.setSortBy(USER_SORT_FIELDS.getOrDefault(pageableParam.getSortBy(), "u.createdAt"));
@@ -360,8 +360,27 @@ public class UserService {
         String search = pageableParam.getSearchParam() == null || pageableParam.getSearchParam().isBlank()
                 ? null
                 : pageableParam.getSearchParam().trim().toLowerCase();
-        return new ResponsePage<>(userRepository.findUsers(search, pageableParam.pageable(true)));
+        org.springframework.data.domain.Page<UserProjection> page = userRepository.findUsers(search, pageableParam.pageable(true));
+        // Each row also says what the user is - their role names - fetched for
+        // the whole page in one query.
+        java.util.Map<String, java.util.List<String>> roles = new java.util.HashMap<>();
+        java.util.List<String> uids = page.getContent().stream().map(UserProjection::getUid).toList();
+        if (!uids.isEmpty()) {
+            for (Object[] row : userRepository.findRoleNamesOf(uids))
+                roles.computeIfAbsent((String) row[0], k -> new java.util.ArrayList<>()).add((String) row[1]);
+        }
+        return new ResponsePage<>(page.map(p -> {
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Object> row = USER_ROWS.convertValue(p, java.util.LinkedHashMap.class);
+            row.put("roles", roles.getOrDefault(p.getUid(), java.util.List.of()));
+            return row;
+        }));
     }
+
+    private static final com.fasterxml.jackson.databind.ObjectMapper USER_ROWS = new com.fasterxml.jackson.databind.ObjectMapper()
+            .registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule())
+            .disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+
     public Response<User> assignOrUnAssignUserRole(AssignUserRoleDTO assignUserRoleDTO) {
         log.info(LoggerUser.getEmail() + " is accessing User");
         if (assignUserRoleDTO == null)

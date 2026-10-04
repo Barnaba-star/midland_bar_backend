@@ -10,6 +10,8 @@ import com.midland.bar.Setting.Service.PlatformSettingService;
 import com.midland.bar.Bar.Projection.*;
 import com.midland.bar.Bar.Repository.*;
 import com.midland.bar.Uaa.Model.User;
+import com.midland.bar.Setting.Model.Role;
+import com.midland.bar.Bar.Dto.StaffRowDTO;
 import com.midland.bar.Uaa.Repository.UserRepository;
 import com.midland.bar.Utils.Exceptions.BusinessException;
 import com.midland.bar.Utils.Responses.Response;
@@ -43,7 +45,19 @@ import java.util.Objects;
 @Log
 @RequiredArgsConstructor
 public class BarService {
+
+    /** Selling and paying out need the login's shift open. */
+    private final WorkShiftService workShiftService;
+  /** The payment methods a payout may go by - the same as a bill's. */
+  private static final java.util.Set<String> PAYOUT_METHODS = java.util.Set.of("cash", "mpesa", "tigopesa", "airtelmoney", "halopesa", "bank");
+
+  /** A payout's method, lower-case; cash when none (or an unknown one) was given. */
+  private static String payoutMethod(String method) {
+      String m = method == null ? "" : method.trim().toLowerCase();
+      return PAYOUT_METHODS.contains(m) ? m : "cash";
+  }
   private final BarServiceRepository barServiceRepository;
+  private final OtherCommissionService otherCommissionService;
   private final UserRepository userRepository;
   private final CommissionRepository commissionRepository;
   private final BarStaffRepository barStaffRepository;
@@ -63,6 +77,9 @@ public class BarService {
   private final BillCodeService billCodeService;
   private final StaffCodeService staffCodeService;
   private final StaffOrderRepository staffOrderRepository;
+  private final BillLineVoidRepository billLineVoidRepository;
+  private final StaffLossRepository staffLossRepository;
+  private final com.midland.bar.Utils.Offline.OfflineOps offlineOps;
 
     /*
    BAR SERVICE METHODS
@@ -380,9 +397,18 @@ public class BarService {
         log.info(LoggerUser.getEmail() + "Is accessing Commissions");
         return new ResponseList<>(commissionRepository.findCommissionList(LoggerUser.getBranchUID()));
     }
-    public ResponsePage<ServiceCommissionProjection> findServiceCommissionPage(Integer page, Integer size, String search){
+    /**
+     * Setting > Commission: every service on sale, the ones still without a
+     * split first (they cannot be sold until they have one); filter "MISSING"
+     * lists only those.
+     */
+    public ResponsePage<ServiceCommissionProjection> findServiceCommissionPage(Integer page, Integer size, String search, String filter){
         return new ResponsePage<>(commissionRepository.findServiceCommissionPage(
-                LoggerUser.getBranchUID(), likePattern(search), PageRequest.of(page, size)));
+                LoggerUser.getBranchUID(), likePattern(search), "MISSING".equals(filter), PageRequest.of(page, size)));
+    }
+
+    public Response<Long> countServicesWithoutCommission() {
+        return new Response<>(commissionRepository.countWithoutCommission(LoggerUser.getBranchUID()));
     }
     public ResponsePage<CommissionProjection> findCommissionPage(Integer page, Integer size){
         Pageable pageable = PageRequest.of(page, size);
@@ -435,18 +461,21 @@ public class BarService {
             barStaff = new BarStaff();
         }
 
-        // A typed code (K1) is checked and kept; left blank, a new staff member
-        // gets the next number and an existing one keeps theirs.
+        // A new staff member chooses their own code - the one they will tap on
+        // the Staff Sell keypad, so exactly three digits - and it must be free
+        // in the branch (codes of staff who left are never handed out again).
+        // Editing leaves the code alone unless a new one is sent.
         String code = StaffCodeService.normalise(barStaffDTO.getStaffCode());
+        boolean isNew = barStaff.getStaffCode() == null;
+        if (code.isEmpty() && isNew)
+            return new Response<>("Enter the staff member's code - 3 digits");
         if (!code.isEmpty()) {
-            if (!StaffCodeService.isValid(code))
-                return new Response<>("Staff code can only have letters, numbers and dashes (up to 10)");
-            Optional<BarStaff> holder = barStaffRepository.findByStaffCodeAnyStatus(code, LoggerUser.getBranchUIDOrMain());
-            if (holder.isPresent() && !holder.get().getUid().equals(barStaff.getUid()))
-                return new Response<>("Staff code " + code + " is already used by " + holder.get().getFirstName());
+            if (!code.matches("\\d{3}"))
+                return new Response<>("The staff code must be exactly 3 digits, e.g. 245");
+            // The code is secret: say it is taken, never by whom.
+            if (barStaffRepository.countCodeHolders(code, LoggerUser.getBranchUIDOrMain(), isNew ? null : barStaff.getUid()) > 0)
+                return new Response<>("Code " + code + " is already taken - choose another");
             barStaff.setStaffCode(code);
-        } else if (barStaff.getStaffCode() == null) {
-            barStaff.setStaffCode(staffCodeService.nextCode(LoggerUser.getBranchUIDOrMain()));
         }
 
         barStaff.setDateOfBirth(barStaffDTO.getDateOfBirth());
@@ -479,10 +508,54 @@ public class BarService {
      * search matches any name or the phone number; category, when given, is
      * one StaffCategory name (WAITER...). Either may be blank.
      */
-    public ResponsePage<BarProjection> findBarStaffPage(Integer page, Integer size, String search, String category){
+    public ResponsePage<StaffRowDTO> findBarStaffPage(Integer page, Integer size, String search, String category){
         Pageable pageable = PageRequest.of(page, size);
         String categoryFilter = StaffCategory.isValid(category) ? category : "";
-        return new ResponsePage<>(barStaffRepository.findBarStaffPage(pageable, LoggerUser.getBranchUID(), likePattern(search), categoryFilter));
+        String branchUID = LoggerUser.getBranchUID();
+        Page<BarProjection> staff = barStaffRepository.findBarStaffPage(pageable, branchUID, likePattern(search), categoryFilter);
+        LoginMatcher logins = new LoginMatcher(branchUID);
+        return new ResponsePage<>(staff.map(s -> StaffRowDTO.of(s,
+                logins.rolesOf(s.getUserUid(), s.getFirstName(), s.getLastName()))));
+    }
+
+    /**
+     * Finds the login behind a staff member: the one their row is linked to,
+     * or else the only user of the branch with the same first and last name
+     * (staff typed in by hand before they were given a login are not linked).
+     */
+    private class LoginMatcher {
+        private final Map<String, User> byUid = new HashMap<>();
+        private final Map<String, User> byName = new HashMap<>();
+
+        LoginMatcher(String branchUID) {
+            Map<String, Integer> nameCount = new HashMap<>();
+            List<User> users = userRepository.findAllUsersWithBranchAndRoles(branchUID);
+            for (User user : users) {
+                byUid.put(user.getUid(), user);
+                nameCount.merge(nameKey(user.getFirstName(), user.getLastName()), 1, Integer::sum);
+            }
+            for (User user : users) {
+                String key = nameKey(user.getFirstName(), user.getLastName());
+                if (nameCount.get(key) == 1)
+                    byName.put(key, user);
+            }
+        }
+
+        List<String> rolesOf(String userUid, String firstName, String lastName) {
+            User user = null;
+            if (userUid != null)
+                user = byUid.containsKey(userUid) ? byUid.get(userUid) : userRepository.findById(userUid).orElse(null);
+            if (user == null)
+                user = byName.get(nameKey(firstName, lastName));
+            if (user == null || user.getRoles() == null || !Boolean.TRUE.equals(user.getIsActive()))
+                return List.of();
+            return user.getRoles().stream().map(Role::getCode).filter(Objects::nonNull).sorted().toList();
+        }
+
+        private String nameKey(String firstName, String lastName) {
+            return (firstName == null ? "" : firstName.trim().toLowerCase()) + " "
+                    + (lastName == null ? "" : lastName.trim().toLowerCase());
+        }
     }
 
     private static boolean isBlank(String value){
@@ -494,8 +567,23 @@ public class BarService {
         if(optionalBarStaff.isEmpty())
             return new Response<>("Staff Not Found");
         BarStaff barStaff = optionalBarStaff.get();
+        // Never a real delete: their sales, commissions and bills point at
+        // this row. They are made inactive instead, which takes them off
+        // Manage Staff, the sales staff list and Staff Sell, and leaves the
+        // history as it was.
+        // A bill still open in their name could not be paid once they are
+        // inactive, so those have to be closed first.
+        if (barStaffRepository.countOpenWork(barStaff.getUid()) > 0)
+            return new Response<>("Staff has unpaid bills or orders not yet received - close them first");
+        // Someone with a login role (CASHIER, SUPERVISOR...) would just sign
+        // in again; the CEO takes the role away first.
+        List<String> roles = new LoginMatcher(LoggerUser.getBranchUID())
+                .rolesOf(barStaff.getUserUid(), barStaff.getFirstName(), barStaff.getLastName());
+        if (!roles.isEmpty())
+            return new Response<>("Staff has a login role (" + String.join(", ", roles) + ") - the CEO must remove it first");
         try{
-            barStaffRepository.delete(optionalBarStaff.get());
+            barStaff.delete();
+            barStaffRepository.save(barStaff);
             return new Response<>(barStaff);
         } catch (Exception e) {
             e.printStackTrace();
@@ -509,6 +597,7 @@ public class BarService {
      */
     @Transactional
     public ResponseList<BarSales> saveBarSales(BarSalesDTO barSalesDTO) {
+        workShiftService.requireOpen();
         log.info("{} is saving bar sales"+ LoggerUser.getEmail());
         if (barSalesDTO == null) {
             return new ResponseList<>("Weka Taarifa za Mauzo");
@@ -587,6 +676,7 @@ public class BarService {
             staffBill.add(commission.getStaffPercent()* (service.getPrice()/100));
             bills.add(service.getPrice());
             BarSales sale = new BarSales();
+            sale.setSoldAt(java.time.LocalDateTime.now());
             sale.setBarStaff(staff);
             sale.setBarServiceEntity(service);
             sale.setSalesOpened(salesOpened);
@@ -722,6 +812,25 @@ public class BarService {
      */
     @Transactional
     public Response<SalesOpened> addSaleItems(SaleItemsDTO dto) {
+        // A queued add sent twice (the connection dropped on the answer) is applied once.
+        if (offlineOps.alreadyApplied().isPresent())
+            return salesOpenedRepository.findById(dto.getSalesOpenedUID())
+                    .map(b -> new Response<>((SalesOpened) org.hibernate.Hibernate.unproxy(b)))
+                    .orElseGet(() -> new Response<>("Open Sale Not Found"));
+        workShiftService.requireOpen();
+        Response<SalesOpened> result = addItemsToBill(dto);
+        if (result.getData() != null)
+            offlineOps.claim("ADD_ITEMS", dto.getSalesOpenedUID());
+        return result;
+    }
+
+    /**
+     * addSaleItems without the shift check, for the supervisor receiving a
+     * Staff Sell order: the order was written inside the seller's shift, and
+     * the supervisor takes no money.
+     */
+    @Transactional
+    public Response<SalesOpened> addItemsToBill(SaleItemsDTO dto) {
         String branchUID = LoggerUser.getBranchUID();
         SalesOpened bill = salesOpenedRepository.findById(dto.getSalesOpenedUID())
                 .filter(so -> Optional.ofNullable(branchUID).orElse("MAIN_OFFICE").equals(so.getBranchUid()))
@@ -769,14 +878,16 @@ public class BarService {
                         .orElseThrow(() -> new BusinessException("The staff member on bill " + bill.getSalesCode() + " is no longer active"))
                 : sellerStaff();
         String soldBy = LoggerUser.getEmail();
-        LocalDate today = LocalDate.now();
+        // When the sale happened - the device's time for one made offline.
+        java.time.LocalDateTime soldAt = com.midland.bar.Utils.Offline.OfflineContext.now();
+        LocalDate today = soldAt.toLocalDate();
         LocalDate weekStart = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
 
         List<BarSales> lines = new ArrayList<>();
         List<BarReports> reports = new ArrayList<>();
         List<Integer> sellerCuts = new ArrayList<>();
         List<IncomeExpenses> pots = new ArrayList<>();
-        Map<String, StockAndPurchase> purchasePots = getCurrentWeekByServices(services);
+        Map<String, StockAndPurchase> purchasePots = getWeekByServices(services, weekStart);
         int added = 0;
 
         for (BarServiceEntity service : services) {
@@ -799,7 +910,9 @@ public class BarService {
             int stockUnits = quantity * perSale;
             if (storeRow != null) {
                 int onHand = storeRow.getStockQuantity() == null ? 0 : storeRow.getStockQuantity();
-                if (onHand < stockUnits)
+                // A sale made offline already happened - the drinks are gone and
+                // paid for. It is taken even past zero; the negative shows at Stock-up.
+                if (onHand < stockUnits && !com.midland.bar.Utils.Offline.OfflineContext.isReplay())
                     throw new BusinessException(storeRow == service
                             ? "Only " + onHand + " " + service.getServiceName() + " left in the store"
                             : "Only " + onHand + " units of " + storeRow.getServiceName() + " left - "
@@ -818,6 +931,9 @@ public class BarService {
                     : Math.round((float) costRow.getBuyingPrice() * perSale / perPack);
 
             BarSales line = new BarSales();
+            line.setSoldAt(soldAt);
+            line.setCreatedAt(today);
+            line.setAddOpId(com.midland.bar.Utils.Offline.OfflineContext.opId());
             line.setBarStaff(seller);
             line.setBarServiceEntity(service);
             line.setSalesOpened(bill);
@@ -831,6 +947,7 @@ public class BarService {
             lines.add(line);
 
             BarReports report = new BarReports();
+            report.setCreatedAt(today);
             report.setBarStaff(seller);
             report.setBarSales(line);
             report.setBarServiceEntity(service);
@@ -857,7 +974,7 @@ public class BarService {
             addIncomeExpense("TRA", amount, commission.getTraPercent(), branchUID, weekStart, pots);
             addIncomeExpense("Emergency", amount, commission.getEmergencyPercent(), branchUID, weekStart, pots);
             addIncomeExpense("Maintenance", amount, commission.getMaintenancePercent(), branchUID, weekStart, pots);
-            addIncomeExpense("Other", amount, commission.getOtherPercent(), branchUID, weekStart, pots);
+            addOtherIncome(amount, commission.getOtherPercent(), branchUID, weekStart, pots, today);
             addIncomeExpense("LUKU", amount, commission.getLukuPercent(), branchUID, weekStart, pots);
             addIncomeExpense("Water", amount, commission.getWaterPercent(), branchUID, weekStart, pots);
             addIncomeExpense("Rent", amount, commission.getRentPercent(), branchUID, weekStart, pots);
@@ -868,6 +985,7 @@ public class BarService {
             StockAndPurchase pot = purchasePots.get(service.getUid());
             if (pot == null) {
                 pot = new StockAndPurchase();
+                pot.setWeekDate(weekStart);
                 pot.setBarService(service);
                 pot.setCommission(commission);
                 pot.setTotalAmount(toPurchasePot);
@@ -891,6 +1009,225 @@ public class BarService {
 
         log.info(soldBy + " added " + lines.size() + " line(s) worth " + added + " to bill " + bill.getSalesCode());
         return new Response<>(bill);
+    }
+
+    /**
+     * Takes some or all of one line off an unpaid bill - the Castle that should
+     * have been a Serengeti. Everything the sale wrote is undone for what comes
+     * off: the units go back to the store, the line's split report shrinks (or
+     * goes), the week's pots and the Other split, the seller's commission for
+     * that day, the week's stock-purchase pot, and the bill's total. The pots
+     * and commission are those of the day and week the line was sold. A
+     * BillLineVoid keeps who took what off, when and why.
+     */
+    @Transactional
+    public Response<SalesOpened> removeBillLine(RemoveBillLineDTO dto) {
+        // Sent twice from the offline queue: applied once.
+        Optional<String> done = offlineOps.alreadyApplied();
+        if (done.isPresent())
+            return salesOpenedRepository.findById(done.get())
+                    .map(b -> new Response<>((SalesOpened) org.hibernate.Hibernate.unproxy(b)))
+                    .orElseGet(() -> new Response<>("Open Sale Not Found"));
+        workShiftService.requireOpen();
+        String branchUID = LoggerUser.getBranchUID();
+        if (dto != null && dto.getBarSalesUID() == null && dto.getAddOpId() != null)
+            dto.setBarSalesUID(barSalesRepository.findAddedBy(dto.getAddOpId(), dto.getBarServiceUID(), dto.getSalesOpenedUID()).orElse(null));
+        if (dto == null || dto.getBarSalesUID() == null)
+            return new Response<>("Choose the item to take off");
+        String reason = dto.getReason() == null ? "" : dto.getReason().trim();
+        if (reason.isEmpty())
+            return new Response<>("Write why it is being taken off");
+
+        BarSales line = barSalesRepository.findById(dto.getBarSalesUID())
+                .filter(l -> Optional.ofNullable(branchUID).orElse("MAIN_OFFICE").equals(l.getBranchUid()))
+                .orElse(null);
+        if (line == null || line.getSalesOpened() == null)
+            return new Response<>("Item Not Found");
+        SalesOpened bill = salesOpenedRepository.findById(line.getSalesOpened().getUid()).orElse(null);
+        if (bill == null)
+            return new Response<>("Open Sale Not Found");
+        if ("PAID".equals(bill.getPaymentStatus()))
+            return new Response<>("Bill " + bill.getSalesCode() + " is already paid - it cannot be changed");
+
+        int lineQty = line.getQuantity() == null || line.getQuantity() < 1 ? 1 : line.getQuantity();
+        int qty = dto.getQuantity() == null ? lineQty : dto.getQuantity();
+        if (qty < 1 || qty > lineQty)
+            return new Response<>("You can take off between 1 and " + lineQty);
+        boolean whole = qty == lineQty;
+
+        BarServiceEntity service = line.getBarServiceEntity();
+        int unitPrice = line.getUnitPrice() != null ? line.getUnitPrice()
+                : (line.getLineTotal() != null ? line.getLineTotal() / lineQty : 0);
+        int amount = whole && line.getLineTotal() != null ? line.getLineTotal() : unitPrice * qty;
+
+        // The units go back where they came from.
+        if (line.getStockItemUid() != null && line.getStockUnits() != null) {
+            int units = whole ? line.getStockUnits() : (line.getStockUnits() / lineQty) * qty;
+            BarServiceEntity storeRow = barServiceRepository.findForUpdate(line.getStockItemUid(), branchUID).orElse(null);
+            if (storeRow != null && units > 0) {
+                storeRow.setStockQuantity((storeRow.getStockQuantity() == null ? 0 : storeRow.getStockQuantity()) + units);
+                barServiceRepository.save(storeRow);
+            }
+        }
+
+        // The same split the sale used, taken back off the day and week it was sold.
+        java.time.LocalDateTime soldAt = line.getSoldAt() != null ? line.getSoldAt()
+                : (line.getCreatedAt() != null ? line.getCreatedAt().atStartOfDay() : java.time.LocalDateTime.now());
+        LocalDate soldDay = soldAt.toLocalDate();
+        LocalDate soldWeek = soldDay.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        Commission commission = service == null ? null : loadCommissionsByService(List.of(service)).get(service.getUid());
+
+        List<BarReports> reports = barReportsRepository.findBySalesLine(line.getUid());
+        int sellerCut = 0;
+        for (BarReports report : reports) {
+            if (whole) {
+                sellerCut += report.getStaffAmount() == null ? 0 : report.getStaffAmount();
+            } else if (commission != null) {
+                int cut = calculatePercentage(commission.getStaffPercent(), amount);
+                sellerCut += cut;
+                report.setStaffAmount(minus(report.getStaffAmount(), cut));
+                report.setOwnerAmount(minus(report.getOwnerAmount(), calculatePercentage(commission.getOwnerPercent(), amount)));
+                report.setTraAmount(minus(report.getTraAmount(), calculatePercentage(commission.getTraPercent(), amount)));
+                report.setMaintenanceAmount(minus(report.getMaintenanceAmount(), calculatePercentage(commission.getMaintenancePercent(), amount)));
+                report.setEmergencyAmount(minus(report.getEmergencyAmount(), calculatePercentage(commission.getEmergencyPercent(), amount)));
+                report.setOthersAmount(minus(report.getOthersAmount(), calculatePercentage(commission.getOtherPercent(), amount)));
+                report.setRentAmount(minus(report.getRentAmount(), calculatePercentage(commission.getRentPercent(), amount)));
+                report.setLoanAmount(minus(report.getLoanAmount(), calculatePercentage(commission.getLoanPercent(), amount)));
+                report.setLukuAmount(minus(report.getLukuAmount(), calculatePercentage(commission.getLukuPercent(), amount)));
+                report.setWaterAmount(minus(report.getWaterAmount(), calculatePercentage(commission.getWaterPercent(), amount)));
+                report.setStockPurchaseAmount(minus(report.getStockPurchaseAmount(), calculatePercentage(commission.getStockPurchasePercent(), amount)));
+            }
+        }
+
+        if (commission != null) {
+            BigDecimal back = BigDecimal.valueOf(-amount);
+            List<IncomeExpenses> pots = new ArrayList<>();
+            addIncomeExpense("Staff", back, commission.getStaffPercent(), branchUID, soldWeek, pots);
+            addIncomeExpense("Owner", back, commission.getOwnerPercent(), branchUID, soldWeek, pots);
+            addIncomeExpense("TRA", back, commission.getTraPercent(), branchUID, soldWeek, pots);
+            addIncomeExpense("Emergency", back, commission.getEmergencyPercent(), branchUID, soldWeek, pots);
+            addIncomeExpense("Maintenance", back, commission.getMaintenancePercent(), branchUID, soldWeek, pots);
+            addOtherIncome(back, commission.getOtherPercent(), branchUID, soldWeek, pots, soldDay);
+            addIncomeExpense("LUKU", back, commission.getLukuPercent(), branchUID, soldWeek, pots);
+            addIncomeExpense("Water", back, commission.getWaterPercent(), branchUID, soldWeek, pots);
+            addIncomeExpense("Rent", back, commission.getRentPercent(), branchUID, soldWeek, pots);
+            addIncomeExpense("Loan", back, commission.getLoanPercent(), branchUID, soldWeek, pots);
+            addIncomeExpense("Stock Purchase", back, commission.getStockPurchasePercent(), branchUID, soldWeek, pots);
+
+            int fromPurchasePot = calculatePercentage(commission.getStockPurchasePercent(), amount);
+            for (StockAndPurchase pot : stockAndPurchaseRepository.findCurrentWeekByServices(branchUID, List.of(service.getUid()), soldWeek)) {
+                pot.setTotalAmount(minus(pot.getTotalAmount(), fromPurchasePot));
+                pot.setRemainingAmount(minus(pot.getRemainingAmount(), fromPurchasePot));
+                stockAndPurchaseRepository.save(pot);
+                break;
+            }
+            if (!whole && sellerCut == 0)
+                sellerCut = calculatePercentage(commission.getStaffPercent(), amount);
+        }
+        if (line.getBarStaff() != null && sellerCut != 0)
+            addStaffCommission(line.getBarStaff().getUid(), branchUID, soldDay, List.of(-sellerCut));
+
+        BillLineVoid record = new BillLineVoid();
+        record.setBillUid(bill.getUid());
+        record.setSalesCode(bill.getSalesCode());
+        record.setServiceName(service == null ? null : service.getServiceName());
+        record.setQuantity(qty);
+        record.setUnitPrice(unitPrice);
+        record.setAmount(amount);
+        BarStaff seller = line.getBarStaff();
+        record.setStaffName(seller == null ? null
+                : ((seller.getFirstName() == null ? "" : seller.getFirstName()) + " " + (seller.getLastName() == null ? "" : seller.getLastName())).trim());
+        record.setSoldAt(soldAt);
+        record.setReason(reason.length() > 300 ? reason.substring(0, 300) : reason);
+        record.setVoidedBy(LoggerUser.getEmail());
+        record.setVoidedByName(CashUpService.nameOf(LoggerUser.getUser()));
+        record.setVoidedAt(com.midland.bar.Utils.Offline.OfflineContext.now());
+        billLineVoidRepository.save(record);
+
+        if (whole) {
+            barReportsRepository.deleteAll(reports);
+            barSalesRepository.delete(line);
+        } else {
+            barReportsRepository.saveAll(reports);
+            line.setQuantity(lineQty - qty);
+            line.setLineTotal((line.getLineTotal() == null ? unitPrice * lineQty : line.getLineTotal()) - amount);
+            if (line.getStockUnits() != null)
+                line.setStockUnits(line.getStockUnits() - (line.getStockUnits() / lineQty) * qty);
+            barSalesRepository.save(line);
+        }
+
+        bill.setBill(Math.max(0, (bill.getBill() == null ? 0 : bill.getBill()) - amount));
+        bill.update();
+        salesOpenedRepository.save(bill);
+        log.info(LoggerUser.getEmail() + " took " + qty + " x " + record.getServiceName() + " off bill " + bill.getSalesCode() + ": " + reason);
+        offlineOps.claim("REMOVE_LINE", bill.getUid());
+        // The bill was reached through the line, so it is a lazy proxy - Jackson can't write one.
+        return new Response<>((SalesOpened) org.hibernate.Hibernate.unproxy(bill));
+    }
+
+    private static Integer minus(Integer value, int by) {
+        return (value == null ? 0 : value) - by;
+    }
+
+    /**
+     * A staff member hands in less than their bills came to. The shortage comes
+     * off today's commission for them (lossAmount, and remainingAmount - which
+     * can go below zero, meaning they owe) and, through the StaffLoss row, off
+     * the expected cash of whoever took the handover.
+     */
+    @Transactional
+    public Response<StaffLoss> recordStaffLoss(StaffLossDTO dto) {
+        Optional<String> done = offlineOps.alreadyApplied();
+        if (done.isPresent())
+            return staffLossRepository.findById(done.get()).map(Response::new).orElseGet(() -> new Response<>("Shortage not found"));
+        workShiftService.requireOpen();
+        String branchUID = LoggerUser.getBranchUID();
+        if (dto == null || dto.getStaffCode() == null || dto.getStaffCode().isBlank())
+            return new Response<>("Choose the staff member");
+        int expected = dto.getExpectedAmount() == null ? 0 : dto.getExpectedAmount();
+        int handed = dto.getHandedAmount() == null ? 0 : dto.getHandedAmount();
+        if (expected < 0 || handed < 0)
+            return new Response<>("Amounts cannot be below zero");
+        int loss = expected - handed;
+        if (loss <= 0)
+            return new Response<>("Nothing is short - what was handed in covers the bills");
+        BarStaff staff = barStaffRepository.findByStaffCode(dto.getStaffCode().trim(), branchUID)
+                .orElse(null);
+        if (staff == null)
+            return new Response<>("Staff Not Found");
+
+        // The day it happened - the device's, for one recorded offline.
+        StaffCommissions commission = addStaffCommission(staff.getUid(), branchUID, com.midland.bar.Utils.Offline.OfflineContext.today(), List.of(0));
+        commission.setLossAmount((commission.getLossAmount() == null ? 0 : commission.getLossAmount()) + loss);
+        commission.setRemainingAmount((commission.getRemainingAmount() == null ? 0 : commission.getRemainingAmount()) - loss);
+        commission.update();
+        commission = staffCommissionsRepository.save(commission);
+
+        StaffLoss record = new StaffLoss();
+        record.setStaffUid(staff.getUid());
+        record.setStaffCode(staff.getStaffCode());
+        record.setStaffName(((staff.getFirstName() == null ? "" : staff.getFirstName()) + " "
+                + (staff.getLastName() == null ? "" : staff.getLastName())).trim());
+        record.setExpectedAmount(expected);
+        record.setHandedAmount(handed);
+        record.setAmount(loss);
+        String note = dto.getNote() == null ? null : dto.getNote().trim();
+        record.setNote(note == null || note.isEmpty() ? null : (note.length() > 300 ? note.substring(0, 300) : note));
+        record.setCommissionUid(commission.getUid());
+        record.setRecordedBy(LoggerUser.getEmail());
+        record.setRecordedByName(CashUpService.nameOf(LoggerUser.getUser()));
+        record.setRecordedAt(com.midland.bar.Utils.Offline.OfflineContext.now());
+        log.info(LoggerUser.getEmail() + " recorded a " + loss + " shortage for " + record.getStaffName());
+        StaffLoss saved = staffLossRepository.save(record);
+        offlineOps.claim("STAFF_LOSS", saved.getUid());
+        return new Response<>(saved);
+    }
+
+    /** What was taken off bills in a Reports period: everyone's for CEO/manager, a cashier's own otherwise. */
+    public ResponseList<BillLineVoid> findBillLineVoids(String filter) {
+        LocalDateTime[] range = ReportRange.of(filter);
+        String email = CashUpService.seesAll() ? null : LoggerUser.getEmail();
+        return new ResponseList<>(billLineVoidRepository.findIn(LoggerUser.getBranchUID(), range[0], range[1], email));
     }
 
     /**
@@ -973,12 +1310,20 @@ public class BarService {
     }
 
     public Response<SalesOpened> saveOpenSale(SaleOpenedDTO saleOpenedDTO) {
+        workShiftService.requireOpen();
         log.info(LoggerUser.getEmail() + " is Opening Sale");
         if (saleOpenedDTO == null) {
             return new Response<>("Provide Data For Opening new sale");
         }
         SalesOpened salesOpened;
         boolean wasAlreadyPaid = false;
+        // A bill opened offline arrives with the uid the device gave it (its
+        // queued items and payment point at that uid). Sent twice, it is the same bill.
+        if (saleOpenedDTO.getUid() == null && saleOpenedDTO.getClientUid() != null) {
+            Optional<SalesOpened> existing = salesOpenedRepository.findById(saleOpenedDTO.getClientUid());
+            if (existing.isPresent())
+                return new Response<>((SalesOpened) org.hibernate.Hibernate.unproxy(existing.get()));
+        }
         if (saleOpenedDTO.getUid() != null) {
             Optional<SalesOpened> optionalSalesOpened = salesOpenedRepository.findById(saleOpenedDTO.getUid())
                     // Another branch's bill is as good as missing.
@@ -993,9 +1338,19 @@ public class BarService {
         } else {
             // A new bill takes one of the codes from POS Setting that no
             // unpaid bill is holding.
-            if (!billCodeService.isAvailable(saleOpenedDTO.getSalesCode()))
-                return new Response<>("Code " + saleOpenedDTO.getSalesCode() + " is not available - choose a free code");
+            if (!billCodeService.isAvailable(saleOpenedDTO.getSalesCode())) {
+                if (!com.midland.bar.Utils.Offline.OfflineContext.isReplay())
+                    return new Response<>("Code " + saleOpenedDTO.getSalesCode() + " is not available - choose a free code");
+                // Opened offline on a code another till took meanwhile: the bill
+                // is real (it has drinks on it), so it takes a free code instead.
+                List<String> free = billCodeService.findAvailable().getData();
+                String uidPart = saleOpenedDTO.getClientUid() == null ? "X" : saleOpenedDTO.getClientUid().substring(0, 4).toUpperCase();
+                saleOpenedDTO.setSalesCode(free != null && !free.isEmpty() ? free.get(0) : saleOpenedDTO.getSalesCode() + "-" + uidPart);
+            }
             salesOpened = new SalesOpened();
+            if (saleOpenedDTO.getClientUid() != null)
+                salesOpened.setUid(saleOpenedDTO.getClientUid());
+            salesOpened.setCreatedAt(com.midland.bar.Utils.Offline.OfflineContext.today());
         }
         // Paying goes through /payBill, which works the amount out from the
         // bill's lines. Taking method, amount or PAID from here let the
@@ -1266,14 +1621,7 @@ public class BarService {
              * OTHER
              * =========================
              */
-            addIncomeExpense(
-                    "Other",
-                    amount,
-                    commission.getOtherPercent(),
-                    branchUID,
-                    weekStartDate,
-                    result
-            );
+            addOtherIncome(amount, commission.getOtherPercent(), branchUID, weekStartDate, result, today);
 
             /*
              * =========================
@@ -1351,6 +1699,26 @@ public class BarService {
         );
     }
 
+
+    /**
+     * The Other bucket. With the branch's own list set (POS Setting > Other),
+     * its amount is shared across those items, each into a pot of its own;
+     * without one it stays the single "Other" pot it always was.
+     */
+    private void addOtherIncome(BigDecimal amount, Integer percent, String branchUID, LocalDate weekStartDate, List<IncomeExpenses> result, LocalDate day) {
+        if (percent == null || percent <= 0) {
+            return;
+        }
+        BigDecimal other = amount.multiply(BigDecimal.valueOf(percent)).divide(BigDecimal.valueOf(100));
+        java.util.Map<String, BigDecimal> parts = otherCommissionService.split(other, branchUID);
+        if (parts.isEmpty()) {
+            addIncomeExpense("Other", amount, percent, branchUID, weekStartDate, result);
+            return;
+        }
+        // Each share is already in shillings - taken at 100% it lands as it is.
+        parts.forEach((pot, share) -> addIncomeExpense(pot, share, 100, branchUID, weekStartDate, result));
+        otherCommissionService.record(parts, day);
+    }
 
     private void addIncomeExpense(String name, BigDecimal amount, Integer percent, String branchUID, LocalDate weekStartDate, List<IncomeExpenses> result) {
 
@@ -1611,6 +1979,7 @@ public class BarService {
     }
     @Transactional
     public Response<IncomeExpenses> addSpend(SpendDTO spendDTO) {
+        workShiftService.requireOpenForPayout();
 
         log.info(LoggerUser.getEmail() + " is Saving Spend");
 
@@ -1631,15 +2000,19 @@ public class BarService {
             return new Response<>("Provide Spend Description");
         }
 
+        if (spendDTO.getMethod() != null && !spendDTO.getMethod().isBlank() && !PAYOUT_METHODS.contains(spendDTO.getMethod().trim().toLowerCase())) {
+            return new Response<>("Choose how it was paid");
+        }
+
 
         // ==============================
         // FIND INCOME EXPENSE
         // ==============================
 
+        // Only a pot of the user's own branch - a uid from another branch is not found.
         Optional<IncomeExpenses> optionalIncomeExpenses =
-                incomeExpensesRepository.findById(
-                        spendDTO.getUid()
-                );
+                incomeExpensesRepository.findById(spendDTO.getUid())
+                        .filter(pot -> java.util.Objects.equals(pot.getBranchUid(), LoggerUser.getBranchUID()));
 
         if (optionalIncomeExpenses.isEmpty()) {
             return new Response<>("Income Expenses Not Found");
@@ -1693,6 +2066,9 @@ public class BarService {
 
         IncomeExpensesDescription spend =
                 new IncomeExpensesDescription();
+        spend.setPaidBy(LoggerUser.getEmail());
+        spend.setPaidAt(java.time.LocalDateTime.now());
+        spend.setMethod(payoutMethod(spendDTO.getMethod()));
 
         spend.setDescription(
                 spendDTO.getDescription().trim()
@@ -1705,6 +2081,14 @@ public class BarService {
         spend.setSpendAmount(
                 spendAmount
         );
+
+        // Who recorded the payment, for the spending history.
+        com.midland.bar.Uaa.Model.User payer = LoggerUser.getUser();
+        if (payer != null) {
+            String fullName = ((payer.getFirstName() == null ? "" : payer.getFirstName()) + " "
+                    + (payer.getLastName() == null ? "" : payer.getLastName())).trim();
+            spend.setStaffName(fullName.isEmpty() ? payer.getUsername() : fullName);
+        }
 
         spend.setIncomeExpenses(
                 incomeExpenses
@@ -2517,7 +2901,11 @@ public class BarService {
                 endDate
         ));
     }
+    // One transaction: the commission row is saved before the pots are found,
+    // so a failure there used to leave it marked paid with no money moved.
+    @Transactional
     public Response<StaffCommissions> payStaffCommission(StaffCommissionDTO staffCommissionDTO){
+        workShiftService.requireOpenForPayout();
         log.info(LoggerUser.getEmail() + "Is Paying Staff Commission");
         if(staffCommissionDTO == null)
             return new Response<>("Weka Details za Malipo");
@@ -2531,6 +2919,11 @@ public class BarService {
         staffCommissions.update();
         if(staffCommissionDTO.getAmount() == null)
             return new Response<>("Weka Kiasi kinacholipwa");
+        // What they are owed is after any handover shortage - never pay past it.
+        int owed = staffCommissions.getRemainingAmount() == null ? 0 : staffCommissions.getRemainingAmount();
+        if (staffCommissionDTO.getAmount() <= 0 || staffCommissionDTO.getAmount() > owed)
+            return new Response<>(owed <= 0 ? "Nothing to pay - after the shortage this staff member is owed nothing"
+                    : "You can pay at most " + owed);
         staffCommissions.setPayedAmount(staffCommissionDTO.getAmount() + staffCommissions.getPayedAmount());
         staffCommissions.setRemainingAmount(staffCommissions.getRemainingAmount() - staffCommissionDTO.getAmount());
         List<IncomeExpenses> incomeExpenses = getIncomeExpensesFilter(staffCommissionDTO.getFilter(), staffCommissionDTO.getWeekDate());
@@ -2562,6 +2955,9 @@ public class BarService {
         for (int i = 0; i < incomeExpenses.size(); i++) {
             IncomeExpenses expenses = incomeExpenses.get(i);
             IncomeExpensesDescription incomeExpensesDescription = new IncomeExpensesDescription();
+            incomeExpensesDescription.setPaidBy(LoggerUser.getEmail());
+            incomeExpensesDescription.setPaidAt(java.time.LocalDateTime.now());
+            incomeExpensesDescription.setMethod(payoutMethod(staffCommissionDTO.getMethod()));
             expenses.setDescriptions("Staff Commission");
             BigDecimal amountPerExpense = baseAmount;
             if (i == incomeExpenses.size() - 1) {
@@ -2998,6 +3394,11 @@ public class BarService {
     // Same week-row lookup as above, but for every service on a sale at once.
     // Rows come back newest first, so the first one seen per service wins.
     private Map<String, StockAndPurchase> getCurrentWeekByServices(List<BarServiceEntity> services) {
+        return getWeekByServices(services, LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)));
+    }
+
+    /** The stock-purchase pots of the week starting weekDate, by service. */
+    private Map<String, StockAndPurchase> getWeekByServices(List<BarServiceEntity> services, LocalDate weekDate) {
         List<String> serviceUids = services.stream()
                 .filter(Objects::nonNull)
                 .map(BarServiceEntity::getUid)
@@ -3005,8 +3406,6 @@ public class BarService {
         if (serviceUids.isEmpty()) {
             return Map.of();
         }
-        LocalDate weekDate = LocalDate.now()
-                .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
         Map<String, StockAndPurchase> byService = new HashMap<>();
         for (StockAndPurchase purchase : stockAndPurchaseRepository.findCurrentWeekByServices(
                 LoggerUser.getBranchUID(),
@@ -3169,6 +3568,7 @@ public class BarService {
     }
     @Transactional
     public Response<StockAndPurchase> payStockAndPurchase(PayStockAndPurchaseDTO dto) {
+        workShiftService.requireOpenForPayout();
 
         log.info(LoggerUser.getEmail() + " Is Paying Stock and Purchase");
 
@@ -3324,6 +3724,9 @@ public class BarService {
         // ==============================
 
         IncomeExpensesDescription incomeExpensesDescription=new IncomeExpensesDescription();
+        incomeExpensesDescription.setPaidBy(LoggerUser.getEmail());
+        incomeExpensesDescription.setPaidAt(java.time.LocalDateTime.now());
+        incomeExpensesDescription.setMethod(payoutMethod(dto.getMethod()));
 
         log.info(" Stock And Purchase NAME  :" + savedStock.getBarService().getServiceName());
 

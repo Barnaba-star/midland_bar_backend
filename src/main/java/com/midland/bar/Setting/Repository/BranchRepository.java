@@ -142,4 +142,7 @@ public interface BranchRepository extends JpaRepository<Branch, String> {
 
     @Query("SELECT COUNT(b) FROM Branch b WHERE UPPER(b.region) = UPPER(:region)")
     long countByRegion(@Param("region") String region);
+
+    /** The branches a STAFF login registered - they may log in to these. */
+    List<Branch> findAllByCreatedBy(String createdBy);
 }
