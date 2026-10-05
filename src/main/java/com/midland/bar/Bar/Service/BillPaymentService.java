@@ -178,6 +178,37 @@ public class BillPaymentService {
         return new Response<>(salesOpenedRepository.save(bill));
     }
 
+    /**
+     * Every bill noted "paid by phone" between two days (inclusive), for the
+     * manager to check the names against the M-Pesa / Tigo Pesa messages:
+     * who paid, how, the reference, the bill and its amount, whose bill it
+     * is, and whether the cashier has taken the payment yet.
+     */
+    public com.midland.bar.Utils.Responses.ResponseList<Map<String, Object>> paymentNotes(java.time.LocalDate from, java.time.LocalDate to) {
+        String branchUID = LoggerUser.getBranchUIDOrMain();
+        java.time.LocalDate start = from == null ? java.time.LocalDate.now() : from;
+        java.time.LocalDate end = to == null || to.isBefore(start) ? start : to;
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (SalesOpened bill : salesOpenedRepository.findPaymentNotes(branchUID, start.atStartOfDay(), end.plusDays(1).atStartOfDay())) {
+            Map<String, Object> row = new java.util.LinkedHashMap<>();
+            row.put("billUid", bill.getUid());
+            row.put("salesCode", bill.getSalesCode());
+            row.put("method", bill.getPaymentNoteMethod());
+            row.put("payerName", bill.getPaymentNotePayer());
+            row.put("reference", bill.getPaymentNoteRef());
+            row.put("notedAt", bill.getPaymentNoteAt());
+            row.put("notedBy", bill.getPaymentNoteBy());
+            row.put("amount", "PAID".equals(bill.getPaymentStatus()) && bill.getBill() != null ? bill.getBill() : barSalesRepository.billTotal(bill.getUid()));
+            row.put("owner", bill.getStaffCode() != null ? bill.getStaffCode() + " · " + bill.getStaffName()
+                    : bill.getOpenedByName() != null ? bill.getOpenedByName() : bill.getOpenedBy());
+            row.put("paymentStatus", bill.getPaymentStatus());
+            row.put("paidMethod", bill.getPaymentMethod());
+            row.put("paidAt", bill.getPaidAt());
+            rows.add(row);
+        }
+        return new com.midland.bar.Utils.Responses.ResponseList<>(rows);
+    }
+
     public Response<Map<String, Object>> receipt(String billUid) {
         String branchUID = Optional.ofNullable(LoggerUser.getBranchUID()).orElse("MAIN_OFFICE");
         SalesOpened bill = salesOpenedRepository.findById(billUid)

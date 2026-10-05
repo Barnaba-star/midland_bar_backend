@@ -214,6 +214,15 @@ public class BarController {
         return billPaymentService.payBill(payBillDTO);
     }
 
+    /** Every bill noted "paid by phone" between two days (yyyy-MM-dd, inclusive) - the names for the manager to check. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_SALES')")
+    @GetMapping("/paymentNotes")
+    public com.midland.bar.Utils.Responses.ResponseList<java.util.Map<String, Object>> paymentNotes(
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate from,
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate to){
+        return billPaymentService.paymentNotes(from, to);
+    }
+
     /** "Paid by phone, from this name" on an unpaid bill - for the cashier to check at handover. */
     @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
     @PostMapping("/bills/{billUid}/paymentNote")

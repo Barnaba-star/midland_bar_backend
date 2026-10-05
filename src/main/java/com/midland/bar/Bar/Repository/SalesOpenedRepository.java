@@ -11,6 +11,13 @@ import java.util.List;
 
 @Repository
 public interface SalesOpenedRepository extends JpaRepository<SalesOpened, String> {
+    /** Bills noted "paid by phone" in [from, to), newest first - cancelled ones left out. */
+    @org.springframework.data.jpa.repository.Query("SELECT s FROM SalesOpened s WHERE s.branchUid = :branchUID AND s.paymentNoteMethod IS NOT NULL " +
+            "AND s.paymentNoteAt >= :from AND s.paymentNoteAt < :to AND (s.paymentStatus IS NULL OR s.paymentStatus <> 'CANCELLED') ORDER BY s.paymentNoteAt DESC")
+    java.util.List<SalesOpened> findPaymentNotes(@org.springframework.data.repository.query.Param("branchUID") String branchUID,
+                                                 @org.springframework.data.repository.query.Param("from") java.time.LocalDateTime from,
+                                                 @org.springframework.data.repository.query.Param("to") java.time.LocalDateTime to);
+
     /**
      * Every unpaid bill in the branch, whatever day it was opened - an
      * unpaid bill from last night still holds its code and still owes.
