@@ -28,7 +28,9 @@ public class WebSecurityConfiguration {
     private JwtAuthenticationFilter authenticationFilter;
 
     /** See app.cors.allowed-origin - the saloon and the bar serve on
-     *  different ports, so this cannot be a constant. */
+     *  different ports, so this cannot be a constant. A comma-separated
+     *  list is accepted: the own domain and the Railway address can both
+     *  be served while people move over. */
     @org.springframework.beans.factory.annotation.Value("${app.cors.allowed-origin:http://localhost:4300}")
     private String allowedOrigin;
 
@@ -44,7 +46,8 @@ public class WebSecurityConfiguration {
         corsConfiguration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         corsConfiguration.setAllowCredentials(true);
         corsConfiguration.setExposedHeaders(List.of("Authorization"));
-        corsConfiguration.setAllowedOrigins(List.of(allowedOrigin));
+        corsConfiguration.setAllowedOrigins(java.util.Arrays.stream(allowedOrigin.split(","))
+                .map(String::trim).filter(o -> !o.isEmpty()).toList());
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", corsConfiguration);
         return source;
