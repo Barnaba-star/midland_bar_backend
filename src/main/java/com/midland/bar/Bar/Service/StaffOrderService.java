@@ -82,9 +82,10 @@ public class StaffOrderService {
             o.setStaffName(bill.getStaffName());
             return o;
         });
-        // The same service twice is one line.
+        String serving = StaffOrderLine.serving(dto.getServing());
+        // The same service twice is one line - cold and warm stay apart.
         Optional<StaffOrderLine> same = order.getLines().stream()
-                .filter(l -> l.getBarServiceUid().equals(service.getUid()))
+                .filter(l -> l.getBarServiceUid().equals(service.getUid()) && java.util.Objects.equals(l.getServing(), serving))
                 .findFirst();
         if (same.isPresent()) {
             same.get().setQuantity(same.get().getQuantity() + dto.getQuantity());
@@ -96,6 +97,7 @@ public class StaffOrderService {
             line.setServiceName(service.getServiceName());
             line.setQuantity(dto.getQuantity());
             line.setUnitPrice(service.getPrice());
+            line.setServing(serving);
             order.getLines().add(line);
         }
         return new Response<>(staffOrderRepository.save(order));
@@ -248,6 +250,7 @@ public class StaffOrderService {
             line.setServiceName(service.getServiceName());
             line.setQuantity(qty);
             line.setUnitPrice(service.getPrice());
+            line.setServing(StaffOrderLine.serving(it.getServing()));
             order.getLines().add(line);
             SaleItemsDTO.Item item = new SaleItemsDTO.Item();
             item.setBarServiceUID(service.getUid());

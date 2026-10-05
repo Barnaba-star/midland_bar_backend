@@ -53,6 +53,7 @@ class StaffSellFlowTest {
     @Autowired BillPaymentService billPaymentService;
     @Autowired BCryptPasswordEncoder passwordEncoder;
     @Autowired com.midland.bar.Bar.Service.WorkShiftService workShiftService;
+    @Autowired com.midland.bar.Bar.Service.StaffOrderService staffOrderService;
 
     @BeforeEach
     void signIn() {
@@ -299,6 +300,33 @@ class StaffSellFlowTest {
 
         assertNotNull(staffSellService.receiveHandover(receive(code, "airtelmoney", Map.of(phone.getUid(), (long) p))).getData());
         assertEquals(0L, ((Map<String, Object>) staffSellService.handover(code).getData().get("open")).get("total"));
+    }
+
+    @Test
+    void coldAndWarmOfTheSameDrinkAreSeparateLinesForTheSupervisor() {
+        workShiftService.open();
+        String code = freeCode();
+        SalesOpened bill = open(code);
+        write(bill, 2, "cold");
+        write(bill, 1, "WARM");
+        write(bill, 1, " Cold ");
+        var order = write(bill, 1, "hot"); // not a choice: as if nothing was said
+
+        Map<String, Integer> byServing = new java.util.HashMap<>();
+        order.getLines().forEach(l -> byServing.merge(String.valueOf(l.getServing()), l.getQuantity(), Integer::sum));
+        assertEquals(Map.of("COLD", 3, "WARM", 1, "null", 1), byServing);
+        assertEquals(3, order.getLines().size());
+    }
+
+    private com.midland.bar.Bar.Model.StaffOrder write(SalesOpened bill, int qty, String serving) {
+        com.midland.bar.Bar.Dto.StaffOrderItemDTO dto = new com.midland.bar.Bar.Dto.StaffOrderItemDTO();
+        dto.setSalesOpenedUID(bill.getUid());
+        dto.setBarServiceUID(MSHIKAKI);
+        dto.setQuantity(qty);
+        dto.setServing(serving);
+        var res = staffOrderService.addItem(dto);
+        assertNotNull(res.getData(), res.getMessage());
+        return res.getData();
     }
 
     private static com.midland.bar.Bar.Dto.HandoverReceiveDTO receive(String code, String method, Map<String, Long> bills) {

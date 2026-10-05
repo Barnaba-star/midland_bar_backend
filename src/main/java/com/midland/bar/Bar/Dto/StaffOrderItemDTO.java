@@ -17,4 +17,7 @@ public class StaffOrderItemDTO {
     @NotNull(message = "Enter how many")
     @Min(value = 1, message = "Quantity must be at least 1")
     private Integer quantity;
+
+    /** COLD or WARM for a drink, as the customer asked; empty = not said. */
+    private String serving;
 }

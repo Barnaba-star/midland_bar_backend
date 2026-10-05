@@ -31,4 +31,16 @@ public class StaffOrderLine extends TenantEntity {
 
     @Column(name = "unit_price")
     private Integer unitPrice;
+
+    /** How the customer wants a drink: COLD or WARM; null = not said. For the supervisor to have it ready. */
+    @Column(name = "serving")
+    private String serving;
+
+    /** COLD / WARM as sent by a screen ("cold", " Warm "), anything else = not said. */
+    public static String serving(String raw) {
+        if (raw == null)
+            return null;
+        String v = raw.trim().toUpperCase();
+        return "COLD".equals(v) || "WARM".equals(v) ? v : null;
+    }
 }

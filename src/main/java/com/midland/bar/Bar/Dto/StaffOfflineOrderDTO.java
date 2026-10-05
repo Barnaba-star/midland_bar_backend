@@ -15,5 +15,7 @@ public class StaffOfflineOrderDTO {
     public static class Item {
         private String barServiceUID;
         private Integer quantity;
+        /** COLD / WARM, as at addItem. */
+        private String serving;
     }
 }
