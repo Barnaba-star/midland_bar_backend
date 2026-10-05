@@ -53,6 +53,28 @@ public class SalesOpened extends TenantEntity {
     @Column(name = "opened_by_name")
     private String openedByName;
 
+    /*
+     * The customer says they paid by phone (or bank): the staff member notes
+     * how and under what name, so the cashier can check it at handover. Only
+     * a note - the bill is still PENDING until the cashier takes the payment.
+     */
+    @Column(name = "payment_note_method")
+    private String paymentNoteMethod;
+
+    /** The name the money came from (the M-Pesa / Tigo Pesa account holder). */
+    @Column(name = "payment_note_payer")
+    private String paymentNotePayer;
+
+    /** The transaction reference, when they have it. */
+    @Column(name = "payment_note_ref")
+    private String paymentNoteRef;
+
+    @Column(name = "payment_note_by")
+    private String paymentNoteBy;
+
+    @Column(name = "payment_note_at")
+    private java.time.LocalDateTime paymentNoteAt;
+
     @Column(name = "payment_method")
     private String paymentMethod;
 

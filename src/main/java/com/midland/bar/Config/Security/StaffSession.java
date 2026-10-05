@@ -39,6 +39,8 @@ public final class StaffSession {
             // Printing a bill: the receipt (own bills only - see BillPaymentService.receipt) and the branch logo on it.
             new Route("GET", Pattern.compile("^/bar/findBillReceipt/[^/]+$")),
             new Route("GET", Pattern.compile("^/systemSetting/logo$")),
+            // "Paid by phone, from this name" on their own bill.
+            new Route("POST", Pattern.compile("^/bar/bills/[^/]+/paymentNote$")),
             new Route("GET", Pattern.compile("^/uploads/.+$"))
     );
 

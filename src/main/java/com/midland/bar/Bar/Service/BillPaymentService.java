@@ -131,6 +131,53 @@ public class BillPaymentService {
     }
 
     /** Everything a printed receipt shows, for a paid bill (or a pro-forma of an open one). */
+    /**
+     * Notes on an unpaid bill that the customer paid by phone or bank: the
+     * method and the name the money came from (and the reference, if any),
+     * so the cashier can match it at handover. It marks nothing as paid.
+     * A staff member signed in with their code may note only their own bills.
+     */
+    @Transactional
+    public Response<SalesOpened> paymentNote(String billUid, com.midland.bar.Bar.Dto.PaymentNoteDTO dto) {
+        String branchUID = LoggerUser.getBranchUIDOrMain();
+        SalesOpened bill = salesOpenedRepository.findById(billUid)
+                .filter(b -> branchUID.equals(b.getBranchUid()))
+                .orElse(null);
+        if (bill == null)
+            return new Response<>("Open Sale Not Found");
+        com.midland.bar.Config.Security.StaffSession.requireOwnBill(bill);
+        if (!"PENDING".equals(bill.getPaymentStatus()))
+            return new Response<>("Bill " + bill.getSalesCode() + " is already paid");
+
+        String method = dto == null || dto.getMethod() == null ? "" : dto.getMethod().trim().toLowerCase();
+        if (method.isEmpty()) {
+            bill.setPaymentNoteMethod(null);
+            bill.setPaymentNotePayer(null);
+            bill.setPaymentNoteRef(null);
+            bill.setPaymentNoteBy(null);
+            bill.setPaymentNoteAt(null);
+            return new Response<>(salesOpenedRepository.save(bill));
+        }
+        // Cash is handed to the cashier, not noted.
+        if (!METHODS.contains(method) || "cash".equals(method))
+            return new Response<>("Choose how they paid (M-Pesa, Tigo Pesa, Airtel Money, HaloPesa or bank)");
+        String payer = dto.getPayerName() == null ? "" : dto.getPayerName().trim().replaceAll("\\s+", " ");
+        if (payer.isEmpty())
+            return new Response<>("Enter the name the payment came from");
+        if (payer.length() > 80)
+            return new Response<>("The name is too long");
+        String ref = dto.getReference() == null ? "" : dto.getReference().trim();
+        if (ref.length() > 40)
+            return new Response<>("The reference is too long");
+
+        bill.setPaymentNoteMethod(method);
+        bill.setPaymentNotePayer(payer.toUpperCase());
+        bill.setPaymentNoteRef(ref.isEmpty() ? null : ref.toUpperCase());
+        bill.setPaymentNoteBy(LoggerUser.getEmail());
+        bill.setPaymentNoteAt(com.midland.bar.Utils.Offline.OfflineContext.now());
+        return new Response<>(salesOpenedRepository.save(bill));
+    }
+
     public Response<Map<String, Object>> receipt(String billUid) {
         String branchUID = Optional.ofNullable(LoggerUser.getBranchUID()).orElse("MAIN_OFFICE");
         SalesOpened bill = salesOpenedRepository.findById(billUid)

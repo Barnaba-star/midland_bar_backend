@@ -214,6 +214,13 @@ public class BarController {
         return billPaymentService.payBill(payBillDTO);
     }
 
+    /** "Paid by phone, from this name" on an unpaid bill - for the cashier to check at handover. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
+    @PostMapping("/bills/{billUid}/paymentNote")
+    public Response<com.midland.bar.Bar.Model.SalesOpened> paymentNote(@PathVariable String billUid, @RequestBody com.midland.bar.Bar.Dto.PaymentNoteDTO dto){
+        return billPaymentService.paymentNote(billUid, dto);
+    }
+
     @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_SALES')")
     @GetMapping("/findBillReceipt/{billUid}")
     public Response<java.util.Map<String, Object>> findBillReceipt(@PathVariable String billUid){
