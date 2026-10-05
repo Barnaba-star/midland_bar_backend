@@ -267,6 +267,53 @@ class StaffSellFlowTest {
         assertNull(staffSellService.handover("ZZ-NOBODY").getData());
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void cashierReceivesAMethodsBillsInOneGoOnlyAsTheSummaryShowedThem() {
+        workShiftService.open();
+        String code = freeCode();
+        SalesOpened cash1 = open(code), cash2 = open(code), phone = open(code);
+        int c1 = sell(cash1, 1), c2 = sell(cash2, 2), p = sell(phone, 1);
+        com.midland.bar.Bar.Dto.PaymentNoteDTO note = new com.midland.bar.Bar.Dto.PaymentNoteDTO();
+        note.setMethod("airtelmoney");
+        note.setPayerName("ASHA");
+        billPaymentService.paymentNote(phone.getUid(), note);
+
+        assertEquals(3, staffSellService.sendHandover(code).getData());
+        assertNotNull(staffSellService.handover(code).getData().get("sentAt"));
+
+        // The summary showed only cash1 - cash2 is left out, so nothing is paid.
+        var stale = staffSellService.receiveHandover(receive(code, "cash", Map.of(cash1.getUid(), (long) c1)));
+        assertNull(stale.getData());
+        assertTrue(stale.getMessage().contains("changed"), stale.getMessage());
+
+        var ok = staffSellService.receiveHandover(receive(code, "cash", Map.of(cash1.getUid(), (long) c1, cash2.getUid(), (long) c2)));
+        assertNotNull(ok.getData(), ok.getMessage());
+        assertEquals((long) c1 + c2, ok.getData().get("amount"));
+
+        Map<String, Object> h = staffSellService.handover(code).getData();
+        Map<String, Object> open = (Map<String, Object>) h.get("open");
+        assertEquals((long) p, open.get("total"));
+        Map<String, Object> paid = (Map<String, Object>) h.get("paid");
+        assertEquals(List.of(Map.of("method", "cash", "amount", (long) c1 + c2, "bills", 2L)), paid.get("byMethod"));
+
+        assertNotNull(staffSellService.receiveHandover(receive(code, "airtelmoney", Map.of(phone.getUid(), (long) p))).getData());
+        assertEquals(0L, ((Map<String, Object>) staffSellService.handover(code).getData().get("open")).get("total"));
+    }
+
+    private static com.midland.bar.Bar.Dto.HandoverReceiveDTO receive(String code, String method, Map<String, Long> bills) {
+        com.midland.bar.Bar.Dto.HandoverReceiveDTO dto = new com.midland.bar.Bar.Dto.HandoverReceiveDTO();
+        dto.setStaffCode(code);
+        dto.setMethod(method);
+        dto.setBills(bills.entrySet().stream().map(e -> {
+            com.midland.bar.Bar.Dto.HandoverReceiveDTO.Bill b = new com.midland.bar.Bar.Dto.HandoverReceiveDTO.Bill();
+            b.setUid(e.getKey());
+            b.setAmount(e.getValue());
+            return b;
+        }).toList());
+        return dto;
+    }
+
     /** A staff member under today's rules (3-digit code, PIN), on the first code nobody holds. */
     private String freeCode() {
         for (int c = 900; c <= 999; c++) {

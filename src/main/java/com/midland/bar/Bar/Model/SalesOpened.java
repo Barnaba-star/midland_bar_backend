@@ -75,6 +75,10 @@ public class SalesOpened extends TenantEntity {
     @Column(name = "payment_note_at")
     private java.time.LocalDateTime paymentNoteAt;
 
+    /** When the staff member sent this bill for handover from Staff Sell; null = not sent. */
+    @Column(name = "handover_sent_at")
+    private java.time.LocalDateTime handoverSentAt;
+
     @Column(name = "payment_method")
     private String paymentMethod;
 

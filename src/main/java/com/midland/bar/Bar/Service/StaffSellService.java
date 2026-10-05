@@ -45,6 +45,8 @@ public class StaffSellService {
     private final UserRepository userRepository;
     private final BCryptPasswordEncoder passwordEncoder;
     private final StaffOrderService staffOrderService;
+    private final com.midland.bar.Bar.Repository.BarSalesRepository barSalesRepository;
+    private final BillPaymentService billPaymentService;
 
     /** Roles whose login may take the screen back from Staff Sell to POS. */
     private static final Set<String> UNLOCK_ROLES = Set.of("ROOT", "STAFF", "DIRECTOR", "CEO", "MANAGER");
@@ -123,10 +125,13 @@ public class StaffSellService {
         openByMethod.put("cash", new long[2]);
         List<Map<String, Object>> openBills = new ArrayList<>();
         long openTotal = 0;
+        LocalDateTime sentAt = null;
         for (SalesOpened b : salesOpenedRepository.findOpenBillsByStaff(staff.get().getUid(), branchUID)) {
-            long amount = b.getBill() == null ? 0 : b.getBill();
-            String note = b.getPaymentNoteMethod();
-            String method = note == null || note.isBlank() ? "cash" : note.trim().toLowerCase();
+            // What paying will charge - the lines, not the stored figure.
+            long amount = barSalesRepository.billTotal(b.getUid());
+            String method = handoverMethod(b);
+            if (b.getHandoverSentAt() != null && (sentAt == null || b.getHandoverSentAt().isAfter(sentAt)))
+                sentAt = b.getHandoverSentAt();
             long[] m = openByMethod.computeIfAbsent(method, k -> new long[2]);
             m[0] += amount;
             m[1]++;
@@ -137,6 +142,7 @@ public class StaffSellService {
             line.put("amount", amount);
             line.put("method", method);
             line.put("payer", b.getPaymentNotePayer());
+            line.put("sentAt", b.getHandoverSentAt());
             openBills.add(line);
         }
 
@@ -154,8 +160,83 @@ public class StaffSellService {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("staff", summary(staff.get()));
         out.put("since", since);
+        out.put("sentAt", sentAt);
         out.put("open", Map.of("byMethod", methodRows(openByMethod), "total", openTotal, "bills", openBills));
         out.put("paid", Map.of("byMethod", methodRows(paidByMethod), "total", paidTotal));
+        return new Response<>(out);
+    }
+
+    /** Where an unpaid bill counts at handover: the method of its "paid by phone" note, else cash. */
+    private static String handoverMethod(SalesOpened bill) {
+        String note = bill.getPaymentNoteMethod();
+        return note == null || note.isBlank() ? "cash" : note.trim().toLowerCase();
+    }
+
+    /** The staff member is ready to hand over: their unpaid bills are marked for the cashier. */
+    public Response<Integer> sendHandover(String code) {
+        com.midland.bar.Config.Security.StaffSession.requireOwnCode(code);
+        Optional<BarStaff> staff = byCode(code);
+        if (staff.isEmpty())
+            return new Response<>("No staff member has code " + clean(code));
+        List<SalesOpened> bills = salesOpenedRepository.findOpenBillsByStaff(staff.get().getUid(), LoggerUser.getBranchUIDOrMain())
+                .stream().filter(b -> barSalesRepository.billTotal(b.getUid()) > 0).toList();
+        if (bills.isEmpty())
+            return new Response<>("You have no bills to hand over");
+        LocalDateTime now = LocalDateTime.now();
+        bills.forEach(b -> b.setHandoverSentAt(now));
+        salesOpenedRepository.saveAll(bills);
+        log.info("{} sent {} bill(s) of staff {} for handover", LoggerUser.getEmail(), bills.size(), staff.get().getStaffCode());
+        return new Response<>(bills.size());
+    }
+
+    /**
+     * The cashier took one method's money at handover: every bill of the staff
+     * member in that method is paid in full by it, all or none. The bills and
+     * amounts must be the ones the summary showed - a bill opened, changed or
+     * paid since means the cashier looks again.
+     */
+    @org.springframework.transaction.annotation.Transactional
+    public Response<Map<String, Object>> receiveHandover(com.midland.bar.Bar.Dto.HandoverReceiveDTO dto) {
+        if (com.midland.bar.Config.Security.StaffSession.active())
+            throw new com.midland.bar.Utils.Exceptions.BusinessException("Only the cashier can receive a handover");
+        workShiftService.requireOpen();
+        Optional<BarStaff> staff = byCode(dto.getStaffCode());
+        if (staff.isEmpty())
+            return new Response<>("No staff member has code " + clean(dto.getStaffCode()));
+        String method = dto.getMethod().trim().toLowerCase();
+        if (!BillPaymentService.METHODS.contains(method))
+            return new Response<>("Unknown payment method: " + dto.getMethod());
+
+        Map<String, Long> now = new LinkedHashMap<>();
+        for (SalesOpened b : salesOpenedRepository.findOpenBillsByStaff(staff.get().getUid(), LoggerUser.getBranchUIDOrMain())) {
+            long amount = barSalesRepository.billTotal(b.getUid());
+            if (amount > 0 && method.equals(handoverMethod(b)))
+                now.put(b.getUid(), amount);
+        }
+        Map<String, Long> shown = new LinkedHashMap<>();
+        dto.getBills().forEach(b -> shown.put(b.getUid(), b.getAmount()));
+        if (!now.equals(shown))
+            return new Response<>("The bills have changed since the summary was opened - refresh it and check again");
+
+        long total = 0;
+        for (Map.Entry<String, Long> e : now.entrySet()) {
+            com.midland.bar.Bar.Dto.PayBillDTO pay = new com.midland.bar.Bar.Dto.PayBillDTO();
+            pay.setSalesOpenedUID(e.getKey());
+            com.midland.bar.Bar.Dto.PayBillDTO.Part part = new com.midland.bar.Bar.Dto.PayBillDTO.Part();
+            part.setMethod(method);
+            part.setAmount(e.getValue().intValue());
+            pay.setPayments(List.of(part));
+            Response<SalesOpened> paid = billPaymentService.payBill(pay);
+            // One refused bill undoes the ones already paid here.
+            if (paid.getData() == null)
+                throw new com.midland.bar.Utils.Exceptions.BusinessException(paid.getMessage());
+            total += e.getValue();
+        }
+        log.info("{} received {} {} from staff {} for {} bill(s)", LoggerUser.getEmail(), total, method, staff.get().getStaffCode(), now.size());
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("method", method);
+        out.put("bills", now.size());
+        out.put("amount", total);
         return new Response<>(out);
     }
 

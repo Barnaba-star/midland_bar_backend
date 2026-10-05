@@ -250,6 +250,20 @@ public class BarController {
         return staffSellService.handover(staffCode);
     }
 
+    /** Staff Sell: the staff member is ready to hand over - their unpaid bills are marked for the cashier. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
+    @PostMapping("/staffSell/handover/{staffCode}/send")
+    public Response<Integer> sendStaffHandover(@PathVariable String staffCode){
+        return staffSellService.sendHandover(staffCode);
+    }
+
+    /** Sales: the cashier took one method's money from a staff member - all their bills in it are paid. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
+    @PostMapping("/staffSell/handover/receive")
+    public Response<java.util.Map<String, Object>> receiveStaffHandover(@Valid @RequestBody com.midland.bar.Bar.Dto.HandoverReceiveDTO dto){
+        return staffSellService.receiveHandover(dto);
+    }
+
     /** Staff Sell: write an item onto the bill's order for the supervisor (not onto the bill). */
     /** An order written at Staff Sell offline - straight onto the bill, for the supervisor to look over. */
     @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
