@@ -37,6 +37,7 @@ public class BarController {
     private final BillCodeService billCodeService;
     private final BillPaymentService billPaymentService;
     private final com.midland.bar.Bar.Service.StaffSellService staffSellService;
+    private final com.midland.bar.Bar.Live.LiveEvents liveEvents;
     private final com.midland.bar.Bar.Service.StaffOrderService staffOrderService;
     private final UserService userService;
 
@@ -234,6 +235,13 @@ public class BarController {
     @GetMapping("/findBillReceipt/{billUid}")
     public Response<java.util.Map<String, Object>> findBillReceipt(@PathVariable String billUid){
         return billPaymentService.receipt(billUid);
+    }
+
+    /** Live nudges for the branch's open screens: "orders" / "bills" changed - fetch again. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_SALES')")
+    @GetMapping(value = "/live", produces = org.springframework.http.MediaType.TEXT_EVENT_STREAM_VALUE)
+    public org.springframework.web.servlet.mvc.method.annotation.SseEmitter live(){
+        return liveEvents.subscribe(com.midland.bar.Config.Security.LoggerUser.getBranchUIDOrMain());
     }
 
     /** Staff Sell: the staff member behind a code, and their unpaid bills. */

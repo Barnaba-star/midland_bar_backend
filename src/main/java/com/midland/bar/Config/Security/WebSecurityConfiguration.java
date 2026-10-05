@@ -69,6 +69,8 @@ public class WebSecurityConfiguration {
 
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/authentication/**").permitAll()
+                        // The closing dispatch of a live stream already authorised when it opened.
+                        .dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ASYNC).permitAll()
                         // Snippe posts these server-to-server with no JWT - trust is
                         // established via HMAC signature verification instead (see
                         // SnippeWebhookController / SnippeClient.verifyWebhookSignature).
