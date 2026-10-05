@@ -31,6 +31,8 @@ public class LivePublishInterceptor implements HandlerInterceptor {
     );
 
     private final LiveEvents liveEvents;
+    private final com.midland.bar.Bar.Repository.StaffOrderRepository staffOrderRepository;
+    private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
     @Override
     public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) {
@@ -40,12 +42,24 @@ public class LivePublishInterceptor implements HandlerInterceptor {
         for (Rule r : RULES) {
             if (r.path().matcher(path).matches()) {
                 String branch = LoggerUser.getBranchUIDOrMain();
-                liveEvents.publish(branch, r.topic());
-                // Receiving or rejecting an order changes the bill as well.
-                if ("orders".equals(r.topic()))
+                if ("orders".equals(r.topic())) {
+                    publishPending(branch);
+                    // Receiving or rejecting an order changes the bill as well.
                     liveEvents.publish(branch, "bills");
+                } else {
+                    liveEvents.publish(branch, r.topic());
+                }
                 return;
             }
+        }
+    }
+
+    /** The queue goes with the nudge: the supervisor's screen shows it without fetching. */
+    private void publishPending(String branch) {
+        try {
+            liveEvents.publishPending(branch, objectMapper.writeValueAsString(staffOrderRepository.findPending(branch)));
+        } catch (Exception e) {
+            liveEvents.publish(branch, "orders");
         }
     }
 }

@@ -241,7 +241,9 @@ public class BarController {
     @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_SALES')")
     @GetMapping(value = "/live", produces = org.springframework.http.MediaType.TEXT_EVENT_STREAM_VALUE)
     public org.springframework.web.servlet.mvc.method.annotation.SseEmitter live(){
-        return liveEvents.subscribe(com.midland.bar.Config.Security.LoggerUser.getBranchUIDOrMain());
+        boolean seesOrders = !com.midland.bar.Config.Security.StaffSession.active()
+                && new com.midland.bar.Config.Security.AuthChecker().hasPermissionOrRoot("RECEIVE_ORDERS");
+        return liveEvents.subscribe(com.midland.bar.Config.Security.LoggerUser.getBranchUIDOrMain(), seesOrders);
     }
 
     /** Staff Sell: the staff member behind a code, and their unpaid bills. */
