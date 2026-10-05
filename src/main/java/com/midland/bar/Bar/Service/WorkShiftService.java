@@ -197,6 +197,16 @@ public class WorkShiftService {
     }
 
     /** Any cashier's OPEN shift in the branch - what a staff code session sells on. */
+    /** When the branch's earliest open shift began - where a staff member's handover summary counts from. */
+    public Optional<LocalDateTime> branchShiftStart(String branchUID) {
+        if (branchUID == null)
+            return Optional.empty();
+        return shiftRepository.findAllUnfinished(branchUID, null).stream()
+                .filter(s -> WorkShift.OPEN.equals(s.getStatus()) && s.getOpenedAt() != null)
+                .map(WorkShift::getOpenedAt)
+                .min(LocalDateTime::compareTo);
+    }
+
     private Optional<WorkShift> branchOpenShift(String branchUID) {
         if (branchUID == null)
             return Optional.empty();

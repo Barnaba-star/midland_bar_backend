@@ -52,6 +52,7 @@ class StaffSellFlowTest {
     @Autowired StaffCommissionsRepository staffCommissionsRepository;
     @Autowired BillPaymentService billPaymentService;
     @Autowired BCryptPasswordEncoder passwordEncoder;
+    @Autowired com.midland.bar.Bar.Service.WorkShiftService workShiftService;
 
     @BeforeEach
     void signIn() {
@@ -227,6 +228,69 @@ class StaffSellFlowTest {
         assertEquals(Map.of("cash", (long) due - 1, "mpesa", 1L), after.get("byMethod"));
         assertEquals(1L, after.get("paidBills"));
         assertEquals(0L, after.get("openBills"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void handoverSplitsUnpaidBillsIntoCashAndPhoneAndListsWhatIsPaid() {
+        workShiftService.open(); // already open is fine - selling just needs one
+        String code = freeCode();
+        SalesOpened cashBill = open(code);
+        SalesOpened phoneBill = open(code);
+        SalesOpened paidBill = open(code);
+        int cashDue = sell(cashBill, 1), phoneDue = sell(phoneBill, 2), paidDue = sell(paidBill, 1);
+
+        com.midland.bar.Bar.Dto.PaymentNoteDTO note = new com.midland.bar.Bar.Dto.PaymentNoteDTO();
+        note.setMethod("tigopesa");
+        note.setPayerName("JUMA ALI");
+        assertNotNull(billPaymentService.paymentNote(phoneBill.getUid(), note).getData());
+
+        PayBillDTO pay = new PayBillDTO();
+        pay.setSalesOpenedUID(paidBill.getUid());
+        PayBillDTO.Part mpesa = new PayBillDTO.Part();
+        mpesa.setMethod("mpesa");
+        mpesa.setAmount(paidDue);
+        pay.setPayments(List.of(mpesa));
+        assertNotNull(billPaymentService.payBill(pay).getData());
+
+        Map<String, Object> h = staffSellService.handover(code).getData();
+        Map<String, Object> open = (Map<String, Object>) h.get("open");
+        assertEquals((long) cashDue + phoneDue, open.get("total"));
+        assertEquals(List.of(Map.of("method", "cash", "amount", (long) cashDue, "bills", 1L),
+                             Map.of("method", "tigopesa", "amount", (long) phoneDue, "bills", 1L)), open.get("byMethod"));
+        assertEquals(2, ((List<?>) open.get("bills")).size());
+
+        Map<String, Object> paid = (Map<String, Object>) h.get("paid");
+        assertEquals((long) paidDue, paid.get("total"));
+        assertEquals(List.of(Map.of("method", "mpesa", "amount", (long) paidDue, "bills", 1L)), paid.get("byMethod"));
+
+        assertNull(staffSellService.handover("ZZ-NOBODY").getData());
+    }
+
+    /** A staff member under today's rules (3-digit code, PIN), on the first code nobody holds. */
+    private String freeCode() {
+        for (int c = 900; c <= 999; c++) {
+            BarStaffDTO dto = new BarStaffDTO();
+            dto.setFirstName("Maiko");
+            dto.setLastName("Test");
+            dto.setPhoneNumber("0700000000");
+            dto.setBarCategory(com.midland.bar.Bar.Model.StaffCategory.values()[0].name());
+            dto.setStaffCode(String.valueOf(c));
+            dto.setPin("4826");
+            if (barService.saveBarStaff(dto).getData() != null)
+                return String.valueOf(c);
+        }
+        throw new AssertionError("no free staff code in 900-999");
+    }
+
+    private int sell(SalesOpened bill, int quantity) {
+        SaleItemsDTO sale = new SaleItemsDTO();
+        sale.setSalesOpenedUID(bill.getUid());
+        SaleItemsDTO.Item item = new SaleItemsDTO.Item();
+        item.setBarServiceUID(MSHIKAKI);
+        item.setQuantity(quantity);
+        sale.setItems(List.of(item));
+        return barService.addSaleItems(sale).getData().getBill();
     }
 
     private static Map<String, Object> k9(List<Map<String, Object>> rows) {

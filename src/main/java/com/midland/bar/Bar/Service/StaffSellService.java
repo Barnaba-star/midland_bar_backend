@@ -106,6 +106,65 @@ public class StaffSellService {
         return new Response<>(saved);
     }
 
+    /**
+     * What a staff member has to hand over, by payment method. Unpaid bills
+     * count as cash unless noted "paid by phone" (then under that method);
+     * bills the cashier already took are listed by how they were paid, from
+     * the start of the branch's open shift (or today, with none open).
+     */
+    public Response<Map<String, Object>> handover(String code) {
+        com.midland.bar.Config.Security.StaffSession.requireOwnCode(code);
+        Optional<BarStaff> staff = byCode(code);
+        if (staff.isEmpty())
+            return new Response<>("No staff member has code " + clean(code));
+        String branchUID = LoggerUser.getBranchUIDOrMain();
+
+        Map<String, long[]> openByMethod = new LinkedHashMap<>();
+        openByMethod.put("cash", new long[2]);
+        List<Map<String, Object>> openBills = new ArrayList<>();
+        long openTotal = 0;
+        for (SalesOpened b : salesOpenedRepository.findOpenBillsByStaff(staff.get().getUid(), branchUID)) {
+            long amount = b.getBill() == null ? 0 : b.getBill();
+            String note = b.getPaymentNoteMethod();
+            String method = note == null || note.isBlank() ? "cash" : note.trim().toLowerCase();
+            long[] m = openByMethod.computeIfAbsent(method, k -> new long[2]);
+            m[0] += amount;
+            m[1]++;
+            openTotal += amount;
+            Map<String, Object> line = new LinkedHashMap<>();
+            line.put("uid", b.getUid());
+            line.put("salesCode", b.getSalesCode());
+            line.put("amount", amount);
+            line.put("method", method);
+            line.put("payer", b.getPaymentNotePayer());
+            openBills.add(line);
+        }
+
+        LocalDateTime since = workShiftService.branchShiftStart(branchUID).orElse(LocalDate.now().atStartOfDay());
+        Map<String, long[]> paidByMethod = new LinkedHashMap<>();
+        long paidTotal = 0;
+        for (Object[] r : billPaymentRepository.paidByStaffSince(branchUID, staff.get().getUid(), since)) {
+            String method = r[0] == null ? "other" : ((String) r[0]).toLowerCase();
+            long[] m = paidByMethod.computeIfAbsent(method, k -> new long[2]);
+            m[0] += ((Number) r[1]).longValue();
+            m[1] += ((Number) r[2]).longValue();
+            paidTotal += ((Number) r[1]).longValue();
+        }
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("staff", summary(staff.get()));
+        out.put("since", since);
+        out.put("open", Map.of("byMethod", methodRows(openByMethod), "total", openTotal, "bills", openBills));
+        out.put("paid", Map.of("byMethod", methodRows(paidByMethod), "total", paidTotal));
+        return new Response<>(out);
+    }
+
+    private static List<Map<String, Object>> methodRows(Map<String, long[]> byMethod) {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        byMethod.forEach((method, m) -> rows.add(Map.of("method", method, "amount", m[0], "bills", m[1])));
+        return rows;
+    }
+
     /** Hand the staff member's written orders to the supervisor - on switching staff, or Send. */
     public Response<Integer> sendOrders(String staffCode) {
         com.midland.bar.Config.Security.StaffSession.requireOwnCode(staffCode);

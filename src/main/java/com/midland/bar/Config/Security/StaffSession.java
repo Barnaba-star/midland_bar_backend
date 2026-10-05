@@ -28,6 +28,7 @@ public final class StaffSession {
     private static final List<Route> ALLOWED = List.of(
             new Route("GET", Pattern.compile("^/bar/staffSell/[^/]+$")),
             new Route("POST", Pattern.compile("^/bar/staffSell/openBill$")),
+            new Route("GET", Pattern.compile("^/bar/staffSell/handover/[^/]+$")),
             new Route("POST", Pattern.compile("^/bar/staffOrders/addItem$")),
             new Route("POST", Pattern.compile("^/bar/staffOrders/[^/]+/removeLine/[^/]+$")),
             new Route("POST", Pattern.compile("^/bar/staffOrders/send/[^/]+$")),

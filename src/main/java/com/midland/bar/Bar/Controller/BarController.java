@@ -243,6 +243,13 @@ public class BarController {
         return staffSellService.findByCode(staffCode);
     }
 
+    /** Staff Sell: the staff member's cash and phone money to hand over, and what is already paid. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_SALES')")
+    @GetMapping("/staffSell/handover/{staffCode}")
+    public Response<java.util.Map<String, Object>> staffSellHandover(@PathVariable String staffCode){
+        return staffSellService.handover(staffCode);
+    }
+
     /** Staff Sell: write an item onto the bill's order for the supervisor (not onto the bill). */
     /** An order written at Staff Sell offline - straight onto the bill, for the supervisor to look over. */
     @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")

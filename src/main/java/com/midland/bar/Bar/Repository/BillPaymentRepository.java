@@ -38,4 +38,12 @@ public interface BillPaymentRepository extends JpaRepository<BillPayment, String
                                        @org.springframework.data.repository.query.Param("from") java.time.LocalDateTime from,
                                        @org.springframework.data.repository.query.Param("to") java.time.LocalDateTime to);
 
+    /** One staff member's bills paid since a time, per method: [method, amount, bills] - Staff Sell's summary. */
+    @Query("SELECT b.method, COALESCE(SUM(b.amount), 0), COUNT(DISTINCT b.salesOpened.uid) FROM BillPayment b " +
+           "WHERE b.branchUid = :branchUID AND b.salesOpened.staffUid = :staffUid AND b.isActive = true " +
+           "AND b.receivedAt >= :from GROUP BY b.method")
+    java.util.List<Object[]> paidByStaffSince(@Param("branchUID") String branchUID,
+                                              @Param("staffUid") String staffUid,
+                                              @Param("from") java.time.LocalDateTime from);
+
 }
