@@ -126,9 +126,11 @@ public class StaffSellService {
         List<Map<String, Object>> openBills = new ArrayList<>();
         long openTotal = 0;
         LocalDateTime sentAt = null;
-        for (SalesOpened b : salesOpenedRepository.findOpenBillsByStaff(staff.get().getUid(), branchUID)) {
+        List<SalesOpened> open = salesOpenedRepository.findOpenBillsByStaff(staff.get().getUid(), branchUID);
+        Map<String, Long> totals = billTotals(open);
+        for (SalesOpened b : open) {
             // What paying will charge - the lines, not the stored figure.
-            long amount = barSalesRepository.billTotal(b.getUid());
+            long amount = totals.getOrDefault(b.getUid(), 0L);
             String method = handoverMethod(b);
             if (b.getHandoverSentAt() != null && (sentAt == null || b.getHandoverSentAt().isAfter(sentAt)))
                 sentAt = b.getHandoverSentAt();
@@ -164,6 +166,16 @@ public class StaffSellService {
         out.put("open", Map.of("byMethod", methodRows(openByMethod), "total", openTotal, "bills", openBills));
         out.put("paid", Map.of("byMethod", methodRows(paidByMethod), "total", paidTotal));
         return new Response<>(out);
+    }
+
+    /** What paying each bill will charge, in one query. */
+    private Map<String, Long> billTotals(List<SalesOpened> bills) {
+        Map<String, Long> out = new java.util.HashMap<>();
+        if (bills.isEmpty())
+            return out;
+        for (Object[] r : barSalesRepository.billTotals(bills.stream().map(SalesOpened::getUid).toList()))
+            out.put((String) r[0], ((Number) r[1]).longValue());
+        return out;
     }
 
     /** Where an unpaid bill counts at handover: the method of its "paid by phone" note, else cash. */
@@ -208,8 +220,10 @@ public class StaffSellService {
             return new Response<>("Unknown payment method: " + dto.getMethod());
 
         Map<String, Long> now = new LinkedHashMap<>();
-        for (SalesOpened b : salesOpenedRepository.findOpenBillsByStaff(staff.get().getUid(), LoggerUser.getBranchUIDOrMain())) {
-            long amount = barSalesRepository.billTotal(b.getUid());
+        List<SalesOpened> open = salesOpenedRepository.findOpenBillsByStaff(staff.get().getUid(), LoggerUser.getBranchUIDOrMain());
+        Map<String, Long> totals = billTotals(open);
+        for (SalesOpened b : open) {
+            long amount = totals.getOrDefault(b.getUid(), 0L);
             if (amount > 0 && method.equals(handoverMethod(b)))
                 now.put(b.getUid(), amount);
         }
