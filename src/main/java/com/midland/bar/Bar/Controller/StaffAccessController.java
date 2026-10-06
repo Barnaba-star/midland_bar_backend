@@ -87,9 +87,15 @@ public class StaffAccessController {
         List<BarStaff> candidates;
         if (chosenBranch != null)
             candidates = byCode(dto.getStaffCode(), chosenBranch).map(List::of).orElse(List.of());
-        else if (deviceBranch != null)
+        else if (deviceBranch != null) {
             candidates = byCode(dto.getStaffCode(), deviceBranch).map(List::of).orElse(List.of());
-        else
+            // The phone was registered in another branch (someone else signed in
+            // on it): if this code and PIN are not that branch's, look in every
+            // branch rather than turn the staff member away.
+            String typed = dto.getPin() == null ? "" : dto.getPin().trim();
+            if (candidates.stream().noneMatch(c -> c.hasPin() && passwordEncoder.matches(typed, c.getPinHash())))
+                candidates = byCodeAnyBranch(dto.getStaffCode());
+        } else
             candidates = byCodeAnyBranch(dto.getStaffCode());
         // One answer for "no such code" and "wrong PIN": the reply must not
         // tell a guesser which codes exist.

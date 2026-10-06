@@ -55,6 +55,8 @@ class StaffSellFlowTest {
     @Autowired com.midland.bar.Bar.Service.WorkShiftService workShiftService;
     @Autowired com.midland.bar.Bar.Service.StaffOrderService staffOrderService;
     @Autowired com.midland.bar.Setting.Repository.RoleRepository roleRepository;
+    @Autowired com.midland.bar.Bar.Controller.StaffAccessController staffAccessController;
+    @Autowired com.midland.bar.Config.Security.JwtTokenUtil jwtTokenUtil;
 
     @BeforeEach
     void signIn() {
@@ -317,6 +319,21 @@ class StaffSellFlowTest {
         order.getLines().forEach(l -> byServing.merge(String.valueOf(l.getServing()), l.getQuantity(), Integer::sum));
         assertEquals(Map.of("COLD", 3, "WARM", 1, "null", 1), byServing);
         assertEquals(3, order.getLines().size());
+    }
+
+    @Test
+    void aPhoneRegisteredInAnotherBranchStillLetsTheStaffMemberIn() {
+        String code = freeCode(); // PIN 4826, in this login's branch
+        // Someone from another branch signed in on this phone earlier.
+        String otherDevice = jwtTokenUtil.generateDeviceToken("another-branch-uid", "someone@else");
+
+        com.midland.bar.Bar.Dto.StaffLoginDTO dto = new com.midland.bar.Bar.Dto.StaffLoginDTO();
+        dto.setDeviceToken(otherDevice);
+        dto.setStaffCode(code);
+        dto.setPin("4826");
+        var res = staffAccessController.staffLogin(dto);
+        assertEquals(200, res.getStatusCode().value(), String.valueOf(res.getBody()));
+        assertNotNull(res.getBody().get("token"));
     }
 
     /** Serengeti Lite - a drink in the local branch. */
