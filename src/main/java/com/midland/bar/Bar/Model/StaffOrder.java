@@ -47,6 +47,10 @@ public class StaffOrder extends TenantEntity {
     @Column(name = "staff_name")
     private String staffName;
 
+    /** COUNTER (drinks) or CHEF (food) - who receives it; null = any station (older and mixed offline orders). */
+    @Column(name = "station", length = 12)
+    private String station;
+
     @Column(name = "status", length = 12, nullable = false)
     private String status = DRAFT;
 

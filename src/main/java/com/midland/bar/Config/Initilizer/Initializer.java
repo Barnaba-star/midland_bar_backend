@@ -184,16 +184,20 @@ public class Initializer implements ApplicationRunner {
                 )
         );
 
-        // Receives what staff write at Staff Sell before the drinks leave the
-        // counter. Lands on the Supervisor screen and nothing else.
+        // Receive what waiters write at Staff Sell before it leaves: drinks at
+        // the COUNTER, food by the CHEF (kitchen). Each lands on the orders
+        // screen and sees only their own station. (SUPERVISOR, which received
+        // everything, is no longer seeded or offered; an existing one keeps
+        // working and sees every station until the CEO gives a new role.)
         seedRoleWithPermissions(
-                "SUPERVISOR",
-                "Receives staff orders before drinks leave the counter",
-                List.of(
-                        "VIEW_BRANCH",
-                        "VIEW_SALES",
-                        "RECEIVE_ORDERS"
-                )
+                "COUNTER",
+                "Counter - receives waiters' drink orders before they leave the counter",
+                List.of("VIEW_BRANCH", "VIEW_SALES", "RECEIVE_ORDERS")
+        );
+        seedRoleWithPermissions(
+                "CHEF",
+                "Chef (kitchen) - receives waiters' food orders before they leave the kitchen",
+                List.of("VIEW_BRANCH", "VIEW_SALES", "RECEIVE_ORDERS")
         );
 
         // Main office: answers the branches and publishes guidance to them -

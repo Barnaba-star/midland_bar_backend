@@ -243,7 +243,8 @@ public class BarController {
     public org.springframework.web.servlet.mvc.method.annotation.SseEmitter live(){
         boolean seesOrders = !com.midland.bar.Config.Security.StaffSession.active()
                 && new com.midland.bar.Config.Security.AuthChecker().hasPermissionOrRoot("RECEIVE_ORDERS");
-        return liveEvents.subscribe(com.midland.bar.Config.Security.LoggerUser.getBranchUIDOrMain(), seesOrders);
+        String station = seesOrders ? com.midland.bar.Bar.Service.OrderStation.mine() : null;
+        return liveEvents.subscribe(com.midland.bar.Config.Security.LoggerUser.getBranchUIDOrMain(), seesOrders, station);
     }
 
     /** Staff Sell: the staff member behind a code, and their unpaid bills. */

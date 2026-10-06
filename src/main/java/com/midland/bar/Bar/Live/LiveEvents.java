@@ -26,13 +26,14 @@ public class LiveEvents {
     /** A screen stays connected this long, then reconnects by itself. */
     private static final long TIMEOUT_MS = 30 * 60 * 1000L;
 
-    private record Sub(SseEmitter emitter, boolean seesOrders) {}
+    /** station: null = every station (or none, for screens that may not see orders). */
+    private record Sub(SseEmitter emitter, boolean seesOrders, String station) {}
 
     private final Map<String, Set<Sub>> byBranch = new ConcurrentHashMap<>();
 
-    public SseEmitter subscribe(String branchUID, boolean seesOrders) {
+    public SseEmitter subscribe(String branchUID, boolean seesOrders, String station) {
         SseEmitter emitter = new SseEmitter(TIMEOUT_MS);
-        Sub sub = new Sub(emitter, seesOrders);
+        Sub sub = new Sub(emitter, seesOrders, station);
         Set<Sub> set = byBranch.computeIfAbsent(branchUID, k -> new CopyOnWriteArraySet<>());
         set.add(sub);
         Runnable drop = () -> set.remove(sub);
@@ -51,15 +52,25 @@ public class LiveEvents {
         set.forEach(s -> send(set, s, "change", topic));
     }
 
-    /** The supervisor's queue (JSON) to screens that may see it; "orders changed" to the rest. */
-    public void publishPending(String branchUID, String pendingJson) {
+    /**
+     * The order queue to screens that may see it - each only its own station's
+     * orders (the counter its drinks, the kitchen its food) - and "orders
+     * changed" to every screen.
+     */
+    public void publishPending(String branchUID, java.util.List<com.midland.bar.Bar.Model.StaffOrder> pending,
+                               java.util.function.Function<Object, String> toJson) {
         Set<Sub> set = byBranch.get(branchUID);
         log.info("live: orders changed in {} - {} screen(s) connected", branchUID, set == null ? 0 : set.size());
         if (set == null)
             return;
+        Map<String, String> jsonByStation = new java.util.HashMap<>();
         set.forEach(s -> {
-            if (s.seesOrders())
-                send(set, s, "pending", pendingJson);
+            if (s.seesOrders()) {
+                String key = s.station() == null ? "*" : s.station();
+                String json = jsonByStation.computeIfAbsent(key, k -> toJson.apply(s.station() == null ? pending
+                        : pending.stream().filter(o -> com.midland.bar.Bar.Service.OrderStation.sees(s.station(), o.getStation())).toList()));
+                send(set, s, "pending", json);
+            }
             send(set, s, "change", "orders");
         });
     }

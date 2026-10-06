@@ -57,7 +57,13 @@ public class LivePublishInterceptor implements HandlerInterceptor {
     /** The queue goes with the nudge: the supervisor's screen shows it without fetching. */
     private void publishPending(String branch) {
         try {
-            liveEvents.publishPending(branch, objectMapper.writeValueAsString(staffOrderRepository.findPending(branch)));
+            liveEvents.publishPending(branch, staffOrderRepository.findPending(branch), o -> {
+                try {
+                    return objectMapper.writeValueAsString(o);
+                } catch (Exception e) {
+                    throw new IllegalStateException(e);
+                }
+            });
         } catch (Exception e) {
             liveEvents.publish(branch, "orders");
         }

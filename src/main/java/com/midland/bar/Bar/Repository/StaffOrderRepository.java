@@ -16,8 +16,9 @@ import java.util.Optional;
 @Repository
 public interface StaffOrderRepository extends JpaRepository<StaffOrder, String> {
 
-    @Query("SELECT o FROM StaffOrder o WHERE o.salesOpenedUid = :billUid AND o.branchUid = :branchUID AND o.status = 'DRAFT'")
-    Optional<StaffOrder> findDraft(@Param("billUid") String billUid, @Param("branchUID") String branchUID);
+    /** The bill's draft for one station - a bill writes drinks and food onto separate orders. Older drafts with no station are the counter's. */
+    @Query("SELECT o FROM StaffOrder o WHERE o.salesOpenedUid = :billUid AND o.branchUid = :branchUID AND o.status = 'DRAFT' AND COALESCE(o.station, 'COUNTER') = :station")
+    Optional<StaffOrder> findDraft(@Param("billUid") String billUid, @Param("branchUID") String branchUID, @Param("station") String station);
 
     @Query("SELECT o FROM StaffOrder o WHERE o.uid = :uid AND o.branchUid = :branchUID")
     Optional<StaffOrder> findByUid(@Param("uid") String uid, @Param("branchUID") String branchUID);

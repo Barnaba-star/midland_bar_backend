@@ -73,8 +73,11 @@ public class StaffOrderService {
         if (service.getPrice() == null || service.getPrice() <= 0)
             return new Response<>("No selling price set for " + service.getServiceName());
 
-        StaffOrder order = staffOrderRepository.findDraft(bill.getUid(), branchUID).orElseGet(() -> {
+        // Drinks go to the counter, food to the kitchen: one draft per station.
+        String station = OrderStation.forCategory(service.getCategory());
+        StaffOrder order = staffOrderRepository.findDraft(bill.getUid(), branchUID, station).orElseGet(() -> {
             StaffOrder o = new StaffOrder();
+            o.setStation(station);
             o.setSalesOpenedUid(bill.getUid());
             o.setSalesCode(bill.getSalesCode());
             o.setStaffUid(bill.getStaffUid());
@@ -144,7 +147,19 @@ public class StaffOrderService {
 
     /** What the supervisor still has to decide, oldest first. */
     public Response<List<StaffOrder>> pending() {
-        return new Response<>(staffOrderRepository.findPending(branch()));
+        return new Response<>(forMyStation(staffOrderRepository.findPending(branch())));
+    }
+
+    /** A COUNTER login sees counter orders only, a CHEF kitchen orders only; wider roles see all. */
+    private static List<StaffOrder> forMyStation(List<StaffOrder> orders) {
+        String mine = OrderStation.mine();
+        return mine == null ? orders : orders.stream().filter(o -> OrderStation.sees(mine, o.getStation())).toList();
+    }
+
+    private static void requireMyStation(StaffOrder order) {
+        if (!OrderStation.sees(OrderStation.mine(), order.getStation()))
+            throw new BusinessException("Order on " + order.getSalesCode() + " is for the "
+                    + (OrderStation.CHEF.equals(order.getStation()) ? "kitchen" : "counter"));
     }
 
     /**
@@ -160,6 +175,7 @@ public class StaffOrderService {
             return new Response<>("Order Not Found");
         if (!StaffOrder.SENT.equals(order.getStatus()))
             return new Response<>("Order on " + order.getSalesCode() + " has already been " + order.getStatus().toLowerCase());
+        requireMyStation(order);
 
         SaleItemsDTO sale = new SaleItemsDTO();
         sale.setSalesOpenedUID(order.getSalesOpenedUid());
@@ -191,6 +207,7 @@ public class StaffOrderService {
             return new Response<>("Order Not Found");
         if (!StaffOrder.SENT.equals(order.getStatus()))
             return new Response<>("Order on " + order.getSalesCode() + " has already been " + order.getStatus().toLowerCase());
+        requireMyStation(order);
         order.setStatus(StaffOrder.REJECTED);
         order.setRejectReason(dto.getReason().trim());
         order.setDecidedAt(LocalDateTime.now());
@@ -239,10 +256,12 @@ public class StaffOrderService {
         SaleItemsDTO sale = new SaleItemsDTO();
         sale.setSalesOpenedUID(bill.getUid());
         List<SaleItemsDTO.Item> items = new ArrayList<>();
+        java.util.Set<String> stations = new java.util.HashSet<>();
         for (com.midland.bar.Bar.Dto.StaffOfflineOrderDTO.Item it : dto.getItems()) {
             BarServiceEntity service = barServiceRepository.findBarServiceByUID(it.getBarServiceUID(), branchUID).orElse(null);
             if (service == null)
                 return new Response<>("Service Not Found");
+            stations.add(OrderStation.forCategory(service.getCategory()));
             int qty = it.getQuantity() == null || it.getQuantity() < 1 ? 1 : it.getQuantity();
             StaffOrderLine line = new StaffOrderLine();
             line.setOrder(order);
@@ -258,6 +277,7 @@ public class StaffOrderService {
             items.add(item);
         }
         sale.setItems(items);
+        order.setStation(stations.size() == 1 ? stations.iterator().next() : null);
         Response<SalesOpened> result = barService.addItemsToBill(sale);
         if (result.getData() == null)
             throw new BusinessException(result.getMessage());
@@ -268,7 +288,7 @@ public class StaffOrderService {
 
     /** Offline orders still to be looked over by the supervisor, oldest first. */
     public Response<List<StaffOrder>> offlineUnreviewed() {
-        return new Response<>(staffOrderRepository.findOfflineUnreviewed(branch()));
+        return new Response<>(forMyStation(staffOrderRepository.findOfflineUnreviewed(branch())));
     }
 
     /** The supervisor has looked an offline order over. */

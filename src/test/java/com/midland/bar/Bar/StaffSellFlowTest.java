@@ -54,6 +54,7 @@ class StaffSellFlowTest {
     @Autowired BCryptPasswordEncoder passwordEncoder;
     @Autowired com.midland.bar.Bar.Service.WorkShiftService workShiftService;
     @Autowired com.midland.bar.Bar.Service.StaffOrderService staffOrderService;
+    @Autowired com.midland.bar.Setting.Repository.RoleRepository roleRepository;
 
     @BeforeEach
     void signIn() {
@@ -316,6 +317,60 @@ class StaffSellFlowTest {
         order.getLines().forEach(l -> byServing.merge(String.valueOf(l.getServing()), l.getQuantity(), Integer::sum));
         assertEquals(Map.of("COLD", 3, "WARM", 1, "null", 1), byServing);
         assertEquals(3, order.getLines().size());
+    }
+
+    /** Serengeti Lite - a drink in the local branch. */
+    private static final String SERENGETI = "cc2090bd-079c-4d82-ac49-8c6d4876e9c5";
+
+    @Test
+    void drinksGoToTheCounterAndFoodToTheChefEachSeeingOnlyTheirOwn() {
+        workShiftService.open();
+        String code = freeCode();
+        SalesOpened bill = open(code);
+        var drinkOrder = writeItem(bill, SERENGETI);
+        var foodOrder = writeItem(bill, MSHIKAKI);
+        assertNotEquals(drinkOrder.getUid(), foodOrder.getUid(), "drinks and food are separate orders");
+        assertEquals("COUNTER", drinkOrder.getStation());
+        assertEquals("CHEF", foodOrder.getStation());
+        assertEquals(2, staffSellService.sendOrders(code).getData());
+
+        // The manager-level login sees both.
+        java.util.Set<String> all = new java.util.HashSet<>();
+        staffOrderService.pending().getData().forEach(o -> all.add(o.getUid()));
+        assertTrue(all.containsAll(java.util.List.of(drinkOrder.getUid(), foodOrder.getUid())));
+
+        // A COUNTER-only login: its drinks, never the kitchen's food.
+        actAs("COUNTER");
+        var counterSees = staffOrderService.pending().getData().stream().map(o -> o.getUid()).toList();
+        assertTrue(counterSees.contains(drinkOrder.getUid()));
+        assertFalse(counterSees.contains(foodOrder.getUid()));
+        var refused = assertThrows(com.midland.bar.Utils.Exceptions.BusinessException.class,
+                () -> staffOrderService.receive(foodOrder.getUid()));
+        assertTrue(refused.getMessage().contains("kitchen"), refused.getMessage());
+
+        // And the CHEF the other way round.
+        actAs("CHEF");
+        var chefSees = staffOrderService.pending().getData().stream().map(o -> o.getUid()).toList();
+        assertTrue(chefSees.contains(foodOrder.getUid()));
+        assertFalse(chefSees.contains(drinkOrder.getUid()));
+    }
+
+    private com.midland.bar.Bar.Model.StaffOrder writeItem(SalesOpened bill, String serviceUid) {
+        com.midland.bar.Bar.Dto.StaffOrderItemDTO dto = new com.midland.bar.Bar.Dto.StaffOrderItemDTO();
+        dto.setSalesOpenedUID(bill.getUid());
+        dto.setBarServiceUID(serviceUid);
+        dto.setQuantity(1);
+        var res = staffOrderService.addItem(dto);
+        assertNotNull(res.getData(), res.getMessage());
+        return res.getData();
+    }
+
+    /** The same login, holding only this role (the test rolls back, so nothing sticks). */
+    private void actAs(String roleCode) {
+        User user = userRepository.findByUsernameForAuthentication(LOGIN);
+        user.setIsRoot(false);
+        user.setRoles(new java.util.ArrayList<>(java.util.List.of(roleRepository.findByCode(roleCode))));
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(user, null, List.of()));
     }
 
     private com.midland.bar.Bar.Model.StaffOrder write(SalesOpened bill, int qty, String serving) {
