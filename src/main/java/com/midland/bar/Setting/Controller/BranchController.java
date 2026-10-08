@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 public class BranchController {
     private final BranchService branchService;
+    private final com.midland.bar.Setting.Service.BranchPeriodPurgeService branchPeriodPurgeService;
 
     @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_BRANCH')")
     @PostMapping("/saveBranch")
@@ -68,5 +69,28 @@ public class BranchController {
     @GetMapping("/findExpiringBranches")
     public ResponseList<ExpiringBranchDTO> findExpiringBranches(@RequestParam(required = false) Integer days) {
         return branchService.findExpiringBranches(days);
+    }
+
+    /**
+     * Clears a branch's records dated from..to (yyyy-MM-dd, both included).
+     * ROOT only. {"from", "to", "dryRun": true} counts what would go;
+     * the real run also needs {"confirmCode": "<branch code>"}.
+     */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('ROOT')")
+    @PostMapping("/purgeBranchPeriod/{branchUID}")
+    public Response<java.util.Map<String, Integer>> purgeBranchPeriod(@PathVariable String branchUID,
+                                                            @RequestBody java.util.Map<String, Object> body) {
+        return branchPeriodPurgeService.purge(branchUID,
+                parseDay(body.get("from")), parseDay(body.get("to")),
+                body.get("confirmCode") == null ? null : body.get("confirmCode").toString(),
+                Boolean.TRUE.equals(body.get("dryRun")));
+    }
+
+    private static java.time.LocalDate parseDay(Object value) {
+        try {
+            return value == null ? null : java.time.LocalDate.parse(value.toString().trim());
+        } catch (java.time.format.DateTimeParseException e) {
+            return null;
+        }
     }
 }
