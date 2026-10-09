@@ -121,7 +121,7 @@ public class StaffAccessController {
 
     /**
      * First sign-in of a staff member the system gave a code and PIN: with
-     * that code and PIN, they set their own code (3 digits nobody in the
+     * that code and PIN, they set their own code (4 digits nobody in any
      * branch holds, or keep theirs) and their own PIN, and are signed in.
      */
     @PostMapping("/authentication/staffSetup")
