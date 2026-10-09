@@ -82,6 +82,17 @@ public class BarStaff extends TenantEntity {
     @Column(name = "pin_locked_until")
     private java.time.LocalDateTime pinLockedUntil;
 
+    /**
+     * Added with a code and PIN the system chose: at their first code
+     * sign-in they pick their own code (from free ones offered) and PIN.
+     */
+    @Column(name = "must_set_code")
+    private Boolean mustSetCode;
+
+    /** The PIN the system chose, sent back once when the staff member is added - never stored. */
+    @Transient
+    private String issuedPin;
+
     /** For the staff list: whether they can sign in with their code yet. */
     @JsonProperty("hasPin")
     public boolean hasPin() {

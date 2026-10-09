@@ -48,21 +48,56 @@ public class StaffCodeService implements ApplicationRunner {
      * included, since codes are never reused). Once all 900 are taken it
      * falls back to the number after the highest.
      */
-    public String nextCode(String branchUID) {
-        List<String> codes = barStaffRepository.findAllStaffCodes(branchUID);
+    /** New codes: 4 digits, unique across ALL branches. Older 3-digit codes keep working. */
+    public static final int NEW_CODE_MIN = 1000, NEW_CODE_MAX = 9999;
+
+    /** True for a code a staff member may be given or choose now: 4 digits. */
+    public static boolean isNewCode(String code) {
+        return code != null && code.matches("\\d{4}");
+    }
+
+    /** Every code held anywhere (removed staff included - codes are never reused). */
+    private Set<String> takenAnywhere() {
         Set<String> taken = new HashSet<>();
-        for (String code : codes)
+        for (String code : barStaffRepository.findAllStaffCodesAnyBranch())
             taken.add(normalise(code));
+        return taken;
+    }
+
+    /** Up to [count] different free 4-digit codes, picked at random - offered to choose from. */
+    public List<String> freeCodes(int count) {
+        Set<String> taken = takenAnywhere();
         List<String> free = new ArrayList<>();
-        for (int n = 100; n <= 999; n++) {
+        for (int n = NEW_CODE_MIN; n <= NEW_CODE_MAX; n++) {
             String candidate = String.valueOf(n);
             if (!taken.contains(candidate))
                 free.add(candidate);
         }
-        if (free.isEmpty())
-            return format(highest(codes) + 1);
-        return free.get(RANDOM.nextInt(free.size()));
+        java.util.Collections.shuffle(free, RANDOM);
+        return new ArrayList<>(free.subList(0, Math.min(count, free.size())));
     }
+
+    /** A 4-digit PIN that passes StaffPinRules, for the staff member to change at first sign-in. */
+    public static String randomPin() {
+        while (true) {
+            String pin = String.format("%04d", RANDOM.nextInt(10000));
+            if (StaffPinRules.problem(pin) == null)
+                return pin;
+        }
+    }
+
+    /**
+     * A random free 4-digit code - nobody in any branch holds it, so no two
+     * staff anywhere share one. (The branch is kept for callers; it no longer
+     * narrows the choice.)
+     */
+    public String nextCode(String branchUID) {
+        List<String> free = freeCodes(1);
+        if (free.isEmpty())
+            throw new IllegalStateException("No free staff codes left");
+        return free.get(0);
+    }
+
 
     @Override
     @Transactional

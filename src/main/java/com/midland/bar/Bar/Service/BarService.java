@@ -468,13 +468,22 @@ public class BarService {
         // Editing leaves the code alone unless a new one is sent.
         String code = StaffCodeService.normalise(barStaffDTO.getStaffCode());
         boolean isNew = barStaff.getStaffCode() == null;
-        if (code.isEmpty() && isNew)
-            return new Response<>("Enter the staff member's code - 3 digits");
+        // Added without a code or PIN: the system gives a free code and a
+        // temporary PIN, shown once to the manager; at their first sign-in
+        // the staff member picks their own code and PIN.
+        boolean chosenBySystem = false;
+        if (code.isEmpty() && isNew) {
+            code = staffCodeService.nextCode(LoggerUser.getBranchUIDOrMain());
+            chosenBySystem = true;
+        }
         if (!code.isEmpty()) {
-            if (!code.matches("\\d{3}"))
-                return new Response<>("The staff code must be exactly 3 digits, e.g. 245");
+            // A code sent (editing) must be a new-style one: 4 digits, unique
+            // across every branch. Keeping one's own older code is fine.
+            boolean unchanged = !isNew && code.equals(StaffCodeService.normalise(barStaff.getStaffCode()));
+            if (!unchanged && !StaffCodeService.isNewCode(code))
+                return new Response<>("The staff code must be exactly 4 digits, e.g. 2458");
             // The code is secret: say it is taken, never by whom.
-            if (barStaffRepository.countCodeHolders(code, LoggerUser.getBranchUIDOrMain(), isNew ? null : barStaff.getUid()) > 0)
+            if (!unchanged && barStaffRepository.countCodeHoldersAnyBranch(code, isNew ? null : barStaff.getUid()) > 0)
                 return new Response<>("Code " + code + " is already taken - choose another");
             barStaff.setStaffCode(code);
         }
@@ -482,8 +491,14 @@ public class BarService {
         // Their PIN for signing in with the code. New staff must have one; an
         // edit changes it only when a new one is sent (and clears any lock).
         String pin = barStaffDTO.getPin() == null ? "" : barStaffDTO.getPin().trim();
-        if (pin.isEmpty() && isNew)
-            return new Response<>("Enter a 4-digit PIN for the staff member");
+        String issuedPin = null;
+        if (pin.isEmpty() && isNew) {
+            pin = StaffCodeService.randomPin();
+            issuedPin = pin;
+            chosenBySystem = true;
+        }
+        if (isNew)
+            barStaff.setMustSetCode(chosenBySystem);
         if (!pin.isEmpty()) {
             String problem = StaffPinRules.problem(pin);
             if (problem != null)
@@ -503,7 +518,10 @@ public class BarService {
         barStaff.setDescription(barStaffDTO.getDescription());
         barStaff.setGender(barStaffDTO.getGender());
         try{
-            return new Response<>(barStaffRepository.save(barStaff));
+            BarStaff saved = barStaffRepository.save(barStaff);
+            // Shown once in the "code and PIN" dialog; never stored in the clear.
+            saved.setIssuedPin(issuedPin);
+            return new Response<>(saved);
         } catch (Exception e) {
             e.printStackTrace();
             return new Response<>("Error in Saving Staff");

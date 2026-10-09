@@ -79,6 +79,14 @@ public interface BarStaffRepository extends JpaRepository<BarStaff, String> {
     @Query(value = "SELECT COUNT(*) FROM bar_staffs WHERE branch_uid = :branchUID AND UPPER(staff_code) = UPPER(:code) AND (:selfUid IS NULL OR uid <> :selfUid)", nativeQuery = true)
     long countCodeHolders(@Param("code") String code, @Param("branchUID") String branchUID, @Param("selfUid") String selfUid);
 
+    /** Holders of a code in ANY branch (removed staff included): codes are unique across all branches. */
+    @Query(value = "SELECT COUNT(*) FROM bar_staffs WHERE UPPER(staff_code) = UPPER(:code) AND (:selfUid IS NULL OR uid <> :selfUid)", nativeQuery = true)
+    long countCodeHoldersAnyBranch(@Param("code") String code, @Param("selfUid") String selfUid);
+
+    /** Every code ever given, in every branch. */
+    @Query(value = "SELECT staff_code FROM bar_staffs WHERE staff_code IS NOT NULL", nativeQuery = true)
+    List<String> findAllStaffCodesAnyBranch();
+
     /** Every code ever given in the branch, removed staff included (see countCodeHolders). */
     @Query(value = "SELECT staff_code FROM bar_staffs WHERE branch_uid = :branchUID AND staff_code IS NOT NULL", nativeQuery = true)
     List<String> findAllStaffCodes(@Param("branchUID") String branchUID);

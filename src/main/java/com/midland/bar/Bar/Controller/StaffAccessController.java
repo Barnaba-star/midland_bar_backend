@@ -1,7 +1,9 @@
 package com.midland.bar.Bar.Controller;
 
 import com.midland.bar.Bar.Dto.StaffLoginDTO;
+import com.midland.bar.Bar.Dto.StaffSetupDTO;
 import com.midland.bar.Bar.Model.BarStaff;
+import com.midland.bar.Bar.Service.StaffPinRules;
 import com.midland.bar.Bar.Repository.BarStaffRepository;
 import com.midland.bar.Bar.Service.StaffCodeService;
 import com.midland.bar.Config.Security.JwtTokenUtil;
@@ -52,6 +54,7 @@ public class StaffAccessController {
     private final BranchRepository branchRepository;
     private final PlatformSettingService platformSettingService;
     private final BCryptPasswordEncoder passwordEncoder;
+    private final com.midland.bar.Bar.Service.StaffCodeService staffCodeService;
     private final org.springframework.beans.factory.ObjectProvider<com.midland.bar.Bar.Service.BarService> barServiceProvider;
 
     /**
@@ -100,6 +103,85 @@ public class StaffAccessController {
      */
     @PostMapping("/authentication/staffLogin")
     public ResponseEntity<Map<String, Object>> staffLogin(@RequestBody StaffLoginDTO dto) {
+        Object checked = authenticate(dto);
+        if (!(checked instanceof BarStaff staff))
+            return asResponse(checked);
+        // Added with a code and PIN the system chose: they pick their own
+        // first, from free codes offered (or keep the one they have).
+        if (Boolean.TRUE.equals(staff.getMustSetCode())) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("code", "SET_CODE");
+            body.put("currentCode", staff.getStaffCode());
+            body.put("suggestions", staffCodeService.freeCodes(3));
+            body.put("branchUID", staff.getBranchUid());
+            return ResponseEntity.ok(body);
+        }
+        return signedIn(staff);
+    }
+
+    /**
+     * First sign-in of a staff member the system gave a code and PIN: with
+     * that code and PIN, they set their own code (3 digits nobody in the
+     * branch holds, or keep theirs) and their own PIN, and are signed in.
+     */
+    @PostMapping("/authentication/staffSetup")
+    public ResponseEntity<Map<String, Object>> staffSetup(@RequestBody StaffSetupDTO dto) {
+        Object checked = authenticate(dto);
+        if (!(checked instanceof BarStaff staff))
+            return asResponse(checked);
+        if (!Boolean.TRUE.equals(staff.getMustSetCode()))
+            return refuse(HttpStatus.BAD_REQUEST, "ALREADY_SET", null);
+
+        String newCode = StaffCodeService.normalise(dto.getNewCode());
+        if (newCode.isEmpty())
+            newCode = staff.getStaffCode();
+        // Their own code: 4 digits nobody in ANY branch holds (or keep the one
+        // the system gave).
+        boolean keeping = newCode.equals(StaffCodeService.normalise(staff.getStaffCode()));
+        if (!keeping && !StaffCodeService.isNewCode(newCode))
+            return refuse(HttpStatus.BAD_REQUEST, "CODE_FORMAT", null);
+        // The code is secret: say it is taken, never by whom.
+        if (!keeping && barStaffRepository.countCodeHoldersAnyBranch(newCode, staff.getUid()) > 0)
+            return refuse(HttpStatus.CONFLICT, "CODE_TAKEN", null);
+
+        String newPin = dto.getNewPin() == null ? "" : dto.getNewPin().trim();
+        String problem = StaffPinRules.problem(newPin);
+        if (problem != null) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("status", 400);
+            body.put("code", "PIN_RULE");
+            body.put("message", problem);
+            return ResponseEntity.badRequest().body(body);
+        }
+        if (passwordEncoder.matches(newPin, staff.getPinHash()))
+            return refuse(HttpStatus.BAD_REQUEST, "PIN_SAME", null);
+
+        staff.setStaffCode(newCode);
+        staff.setPinHash(passwordEncoder.encode(newPin));
+        staff.setMustSetCode(false);
+        barStaffRepository.save(staff);
+        log.info("Staff {} set their own code and PIN in branch {}", newCode, staff.getBranchUid());
+        return signedIn(staff);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static ResponseEntity<Map<String, Object>> asResponse(Object o) {
+        return (ResponseEntity<Map<String, Object>>) o;
+    }
+
+    private ResponseEntity<Map<String, Object>> signedIn(BarStaff staff) {
+        String branchUID = staff.getBranchUid();
+        String fullName = Stream.of(staff.getFirstName(), staff.getMiddleName(), staff.getLastName())
+                .filter(x -> x != null && !x.isBlank()).map(String::trim).collect(Collectors.joining(" "));
+        log.info("Staff {} signed in with their code in branch {}", staff.getStaffCode(), branchUID);
+        return ResponseEntity.ok(Map.of("token", jwtTokenUtil.generateStaffToken(staff, branchUID, fullName)));
+    }
+
+    /**
+     * Code + PIN checked: the staff member (wrong-PIN count cleared), or the
+     * reply to send instead - a refusal, or CHOOSE_BRANCH.
+     */
+    private Object authenticate(StaffLoginDTO dto) {
         if (dto == null)
             return refuse(HttpStatus.UNAUTHORIZED, "INVALID_STAFF_LOGIN", null);
         String deviceBranch = jwtTokenUtil.deviceBranch(dto.getDeviceToken());
@@ -196,11 +278,7 @@ public class StaffAccessController {
 
         staff.setPinFailedAttempts(0);
         staff.setPinLockedUntil(null);
-        barStaffRepository.save(staff);
-        String fullName = Stream.of(staff.getFirstName(), staff.getMiddleName(), staff.getLastName())
-                .filter(x -> x != null && !x.isBlank()).map(String::trim).collect(Collectors.joining(" "));
-        log.info("Staff {} signed in with their code in branch {}", staff.getStaffCode(), branchUID);
-        return ResponseEntity.ok(Map.of("token", jwtTokenUtil.generateStaffToken(staff, branchUID, fullName)));
+        return barStaffRepository.save(staff);
     }
 
     private List<BarStaff> byCodeAnyBranch(String raw) {
