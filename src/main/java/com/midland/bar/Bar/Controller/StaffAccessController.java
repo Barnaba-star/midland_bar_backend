@@ -52,6 +52,7 @@ public class StaffAccessController {
     private final BranchRepository branchRepository;
     private final PlatformSettingService platformSettingService;
     private final BCryptPasswordEncoder passwordEncoder;
+    private final org.springframework.beans.factory.ObjectProvider<com.midland.bar.Bar.Service.BarService> barServiceProvider;
 
     /**
      * Ties this device to the signed-in user's branch, for staff code sign-in.
@@ -69,6 +70,26 @@ public class StaffAccessController {
         body.put("deviceToken", jwtTokenUtil.generateDeviceToken(branchUID, LoggerUser.getEmail()));
         body.put("branchName", branch == null ? null : branch.getBranchName());
         return ResponseEntity.ok(body);
+    }
+
+    /**
+     * The counter sells too: customers sitting at the counter order there.
+     * A COUNTER login gets a staff session as itself (its own staff row,
+     * made on first use) - the same limits as a waiter's code sign-in: its
+     * own bills only, orders, "paid by phone" notes and the handover to the
+     * cashier, never taking payment.
+     */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('COUNTER_SELL')")
+    @PostMapping("/bar/staffSell/mySession")
+    public ResponseEntity<Map<String, Object>> mySession() {
+        String branchUID = LoggerUser.getBranchUID();
+        if (branchUID == null)
+            return ResponseEntity.badRequest().body(Map.of("code", "NO_BRANCH"));
+        BarStaff staff = barServiceProvider.getObject().myStaff();
+        String fullName = Stream.of(staff.getFirstName(), staff.getMiddleName(), staff.getLastName())
+                .filter(x -> x != null && !x.isBlank()).map(String::trim).collect(Collectors.joining(" "));
+        log.info("{} sells at the counter as staff {}", LoggerUser.getEmail(), staff.getStaffCode());
+        return ResponseEntity.ok(Map.of("token", jwtTokenUtil.generateStaffToken(staff, branchUID, fullName)));
     }
 
     /**

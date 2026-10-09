@@ -191,8 +191,9 @@ public class Initializer implements ApplicationRunner {
         // working and sees every station until the CEO gives a new role.)
         seedRoleWithPermissions(
                 "COUNTER",
-                "Counter - receives waiters' drink orders before they leave the counter",
-                List.of("VIEW_BRANCH", "VIEW_SALES", "RECEIVE_ORDERS")
+                "Counter - receives waiters' drink orders before they leave the counter, and sells to customers at the counter on their own bills",
+                // COUNTER_SELL: their own bills, as a staff member would, handed to the cashier - never payment.
+                List.of("VIEW_BRANCH", "VIEW_SALES", "RECEIVE_ORDERS", "COUNTER_SELL")
         );
         seedRoleWithPermissions(
                 "CHEF",

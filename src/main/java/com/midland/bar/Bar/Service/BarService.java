@@ -1252,6 +1252,11 @@ public class BarService {
      * the first time they sell, so every seller has somewhere for their
      * commission to land without anyone setting it up by hand.
      */
+    /** The staff row the signed-in user sells as (made on first use) - for their own Staff Sell bills. */
+    public BarStaff myStaff() {
+        return sellerStaff();
+    }
+
     private BarStaff sellerStaff() {
         User user = LoggerUser.getUser();
         String branchUID = LoggerUser.getBranchUID();
