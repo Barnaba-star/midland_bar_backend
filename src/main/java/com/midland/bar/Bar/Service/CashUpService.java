@@ -198,7 +198,8 @@ public class CashUpService {
             shift.payouts.merge(method, amount, Long::sum);
         }
         // A staff member's handover shortage: their bills were paid in full,
-        // the cash for them was short - so the cashier's drawer expects less.
+        // the money for them was short - so the cashier expects less of that
+        // method (cash, or e.g. Tigo Pesa when the phone payment fell short).
         for (com.midland.bar.Bar.Model.StaffLoss loss : staffLossRepository.recordedBy(branchUID, email, from, to)) {
             long amount = loss.getAmount() == null ? 0 : loss.getAmount();
             Map<String, Object> payout = new LinkedHashMap<>();
@@ -207,10 +208,11 @@ public class CashUpService {
             payout.put("paidTo", loss.getStaffName());
             payout.put("amount", amount);
             payout.put("paidAt", loss.getRecordedAt());
-            payout.put("method", "cash");
+            String lossMethod = loss.getMethod() == null || loss.getMethod().isBlank() ? "cash" : loss.getMethod();
+            payout.put("method", lossMethod);
             shift.payoutRows.add(payout);
             shift.payoutsTotal += amount;
-            shift.payouts.merge("cash", amount, Long::sum);
+            shift.payouts.merge(lossMethod, amount, Long::sum);
         }
         return shift;
     }

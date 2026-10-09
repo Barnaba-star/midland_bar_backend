@@ -9,4 +9,6 @@ public class StaffLossDTO {
     private Integer expectedAmount;
     private Integer handedAmount;
     private String note;
+    /** The payment method that came in short; cash when left out. */
+    private String method;
 }

@@ -48,6 +48,10 @@ public class StaffLoss extends TenantEntity {
     @Column(name = "note", length = 300)
     private String note;
 
+    /** How the money that fell short was to come in (cash, mpesa, tigopesa...); null was cash. */
+    @Column(name = "method", length = 30)
+    private String method;
+
     /** The StaffCommissions row it came off. */
     @Column(name = "commission_uid")
     private String commissionUid;

@@ -25,6 +25,16 @@ public class HandoverReceiveDTO {
     @Valid
     private List<Bill> bills;
 
+    /**
+     * What was actually handed in for this method, when it fell short. The
+     * bills are still paid in full; the difference is recorded as the staff
+     * member's shortage, in this method. Left out = all of it came in.
+     */
+    private Long handedAmount;
+
+    /** Why it was short - kept on the shortage. */
+    private String note;
+
     @Data
     public static class Bill {
         @NotBlank

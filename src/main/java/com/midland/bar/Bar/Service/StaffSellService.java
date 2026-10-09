@@ -47,6 +47,8 @@ public class StaffSellService {
     private final StaffOrderService staffOrderService;
     private final com.midland.bar.Bar.Repository.BarSalesRepository barSalesRepository;
     private final BillPaymentService billPaymentService;
+    /** For a shortage recorded with the handover; looked up late to keep the services' wiring simple. */
+    private final org.springframework.beans.factory.ObjectProvider<BarService> barServiceProvider;
 
     /** Roles whose login may take the screen back from Staff Sell to POS. */
     private static final Set<String> UNLOCK_ROLES = Set.of("ROOT", "STAFF", "DIRECTOR", "CEO", "MANAGER");
@@ -247,10 +249,33 @@ public class StaffSellService {
             total += e.getValue();
         }
         log.info("{} received {} {} from staff {} for {} bill(s)", LoggerUser.getEmail(), total, method, staff.get().getStaffCode(), now.size());
+
+        // Handed in less than the bills: the bills are paid all the same and
+        // the difference is the staff member's shortage, in this method. Same
+        // transaction - a refused shortage leaves the bills unpaid too.
+        long shortage = 0;
+        if (dto.getHandedAmount() != null) {
+            long handed = dto.getHandedAmount();
+            if (handed < 0)
+                throw new com.midland.bar.Utils.Exceptions.BusinessException("Amounts cannot be below zero");
+            if (handed < total) {
+                com.midland.bar.Bar.Dto.StaffLossDTO loss = new com.midland.bar.Bar.Dto.StaffLossDTO();
+                loss.setStaffCode(staff.get().getStaffCode());
+                loss.setExpectedAmount((int) total);
+                loss.setHandedAmount((int) handed);
+                loss.setNote(dto.getNote());
+                loss.setMethod(method);
+                Response<com.midland.bar.Bar.Model.StaffLoss> recorded = barServiceProvider.getObject().recordStaffLoss(loss);
+                if (recorded.getData() == null)
+                    throw new com.midland.bar.Utils.Exceptions.BusinessException(recorded.getMessage());
+                shortage = total - handed;
+            }
+        }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("method", method);
         out.put("bills", now.size());
         out.put("amount", total);
+        out.put("shortage", shortage);
         return new Response<>(out);
     }
 

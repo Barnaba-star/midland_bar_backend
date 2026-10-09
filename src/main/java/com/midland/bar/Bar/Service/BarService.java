@@ -1228,6 +1228,8 @@ public class BarService {
         record.setAmount(loss);
         String note = dto.getNote() == null ? null : dto.getNote().trim();
         record.setNote(note == null || note.isEmpty() ? null : (note.length() > 300 ? note.substring(0, 300) : note));
+        String method = dto.getMethod() == null || dto.getMethod().isBlank() ? "cash" : dto.getMethod().trim().toLowerCase();
+        record.setMethod(BillPaymentService.METHODS.contains(method) ? method : "cash");
         record.setCommissionUid(commission.getUid());
         record.setRecordedBy(LoggerUser.getEmail());
         record.setRecordedByName(CashUpService.nameOf(LoggerUser.getUser()));
