@@ -195,6 +195,14 @@ public class Initializer implements ApplicationRunner {
                 // COUNTER_SELL: their own bills, as a staff member would, handed to the cashier - never payment.
                 List.of("VIEW_BRANCH", "VIEW_SALES", "RECEIVE_ORDERS", "COUNTER_SELL")
         );
+        // The store keeper: receives stock into the store and counts it at
+        // handover, the count recorded in their name - nothing on sales or
+        // money. Lands on the store.
+        seedRoleWithPermissions(
+                "STORE_KEEPER",
+                "Store keeper - receives stock into the store and counts it at handover",
+                List.of("VIEW_BRANCH", "VIEW_SERVICE", "VIEW_STORE", "SAVE_STORE")
+        );
         seedRoleWithPermissions(
                 "CHEF",
                 "Chef (kitchen) - receives waiters' food orders before they leave the kitchen",

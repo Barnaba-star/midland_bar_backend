@@ -110,7 +110,7 @@ public class RoleService {
     }
     // STAFF only manages the branch-operational roles; ROOT and DIRECTOR
     // see every role.
-    private static final List<String> STAFF_VISIBLE_ROLE_CODES = List.of("CEO", "MANAGER", "COUNTER", "CHEF", "CASHIER", "SUPERVISOR");
+    private static final List<String> STAFF_VISIBLE_ROLE_CODES = List.of("CEO", "MANAGER", "COUNTER", "CHEF", "CASHIER", "STORE_KEEPER", "SUPERVISOR");
 
     public ResponsePage<Role> findRolePage(int page, int size){
         log.info(LoggerUser.getEmail() + "is accessing Role");

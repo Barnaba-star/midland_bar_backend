@@ -414,7 +414,7 @@ public class UserService {
     }
     // Mirrors RoleService: ROOT and DIRECTOR manage every role, everyone
     // else only ever sees/handles the branch-operational ones.
-    private static final List<String> STAFF_VISIBLE_ROLE_CODES = List.of("CEO", "MANAGER", "COUNTER", "CHEF", "CASHIER", "SUPERVISOR");
+    private static final List<String> STAFF_VISIBLE_ROLE_CODES = List.of("CEO", "MANAGER", "COUNTER", "CHEF", "CASHIER", "STORE_KEEPER", "SUPERVISOR");
 
     private boolean seesAllRoles() {
         User loggedUser = LoggerUser.getUser();
