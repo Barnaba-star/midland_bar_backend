@@ -68,7 +68,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
        // Boolean isRoot = jwtTokenUtil.isRoot(token);
         boolean isRoot = Boolean.TRUE.equals(jwtTokenUtil.isRoot(token));
         if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-            User user = userRepository.findByUsernameForAuthentication(username);
+            // Kept 30 s (dropped on any change to users, roles, branches or staff).
+            User user = PrincipalCache.user(username, () -> userRepository.findByUsernameForAuthentication(username));
             // The branch chosen at login - honoured only while it is still one of theirs.
             String branchUID = jwtTokenUtil.extractBranchUID(token);
             if (user != null && branchUID != null && user.getHomeBranch() != null
@@ -137,14 +138,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String branchUID = claims.get("branchUID", String.class);
         String staffUid = claims.get("staffUid", String.class);
         String staffCode = claims.get("staffCode", String.class);
-        var branch = branchUID == null ? null : branchRepository.findById(branchUID).orElse(null);
+        var branch = branchUID == null ? null
+                : PrincipalCache.get("b:" + branchUID, () -> branchRepository.findById(branchUID).orElse(null));
         if (branch != null && branch.isBlocked()) {
             blocked(response);
             return;
         }
         // Removed (or moved) since signing in: the token no longer counts.
         boolean stillHere = branch != null && staffUid != null
-                && barStaffRepository.findBarStaffByUID(staffUid, branchUID).isPresent();
+                && Boolean.TRUE.equals(PrincipalCache.get("s:" + staffUid + ":" + branchUID,
+                        () -> barStaffRepository.findBarStaffByUID(staffUid, branchUID).isPresent() ? Boolean.TRUE : null));
         if (stillHere && SecurityContextHolder.getContext().getAuthentication() == null) {
             User standIn = new User();
             standIn.setUid("staff-" + staffUid);

@@ -19,6 +19,7 @@ import java.util.List;
 @AllArgsConstructor
 @NoArgsConstructor
 @Table(name = "roles")
+@jakarta.persistence.EntityListeners(com.midland.bar.Config.Security.PrincipalCache.Evict.class)
 public class Role extends BaseEntity {
 
     @Column(name = "name")

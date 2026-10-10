@@ -12,6 +12,11 @@ WORKDIR /app
 COPY --from=build /app/target/*.jar app.jar
 # Uploads live on a volume mounted here (UPLOAD_DIR=/data/uploads/ on Railway).
 RUN mkdir -p /data/uploads
-ENV JAVA_OPTS="-XX:MaxRAMPercentage=75 -XX:+UseContainerSupport"
+# Railway bills the memory the JVM holds, and its containers allow far more
+# than this app needs - with a percentage the heap grew to ~1.5 GB for one
+# branch. A fixed ceiling, and G1 hands unused heap back to the system every
+# minute. Raise -Xmx with the number of branches by setting JAVA_OPTS on the
+# Railway service (no rebuild needed).
+ENV JAVA_OPTS="-XX:+UseContainerSupport -Xms128m -Xmx768m -XX:+UseG1GC -XX:G1PeriodicGCInterval=60000 -XX:MaxMetaspaceSize=256m -XX:+ExitOnOutOfMemoryError"
 EXPOSE 8084
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]

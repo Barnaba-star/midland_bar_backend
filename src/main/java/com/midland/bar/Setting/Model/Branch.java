@@ -32,6 +32,7 @@ import java.time.LocalDate;
                 columnList = "subscription_status, close_subscription"
         )
 })
+@jakarta.persistence.EntityListeners(com.midland.bar.Config.Security.PrincipalCache.Evict.class)
 public class Branch extends BaseEntity {
 
     // UID of the user who registered this branch. STAFF only ever sees the

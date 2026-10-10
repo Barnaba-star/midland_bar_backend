@@ -28,6 +28,7 @@ import java.time.LocalDate;
 }, uniqueConstraints = {
         @UniqueConstraint(name = "uq_bar_staffs_branch_code", columnNames = {"branch_uid", "staff_code"})
 })
+@jakarta.persistence.EntityListeners(com.midland.bar.Config.Security.PrincipalCache.Evict.class)
 public class BarStaff extends TenantEntity {
     @Column(name = "first_name")
     private String firstName;

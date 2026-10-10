@@ -35,6 +35,7 @@ import java.util.List;
         // database can promise it across two registrations at once.
         @jakarta.persistence.UniqueConstraint(name = "uk_users_username", columnNames = "username")
 })
+@jakarta.persistence.EntityListeners(com.midland.bar.Config.Security.PrincipalCache.Evict.class)
 public class User extends BaseEntity {
 
     @Column(name = "username")
