@@ -22,6 +22,18 @@ public class BranchController {
     private final BranchService branchService;
     private final com.midland.bar.Setting.Service.BranchPeriodPurgeService branchPeriodPurgeService;
 
+    /**
+     * Main office: block a branch ({"blocked": true, "reason": "..."}) or
+     * unblock it ({"blocked": false}). Codes in message: BRANCH_NOT_FOUND,
+     * ROOT_BRANCH.
+     */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('BLOCK_BRANCH')")
+    @PostMapping("/blockBranch/{branchUID}")
+    public Response<Branch> blockBranch(@PathVariable String branchUID, @RequestBody java.util.Map<String, Object> body) {
+        return branchService.blockBranch(branchUID, Boolean.TRUE.equals(body.get("blocked")),
+                body.get("reason") == null ? null : body.get("reason").toString());
+    }
+
     @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_BRANCH')")
     @PostMapping("/saveBranch")
     public Response<Branch> saveBranch(@Valid @RequestBody BranchDTO branchDTO){

@@ -90,6 +90,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             SecurityContextHolder.getContext().setAuthentication(authToken);
         }
 
+        // Their branch was blocked by the main office after they signed in:
+        // turned away at once (the main office itself never is).
+        if (!isRoot && !isPasswordChangePath(request)
+                && SecurityContextHolder.getContext().getAuthentication() != null
+                && SecurityContextHolder.getContext().getAuthentication().getPrincipal() instanceof User signedIn
+                && signedIn.getBranch() != null && signedIn.getBranch().isBlocked()
+                && !"ROOT".equalsIgnoreCase(signedIn.getBranch().getBranchCode())
+                && !branchAccess.isMainOffice(signedIn)) {
+            blocked(response);
+            return;
+        }
+
         // An account still on its texted password holds a token that opens
         // one door only. Hiding the rest in the UI is not enough - the token
         // is a bearer credential, and whoever read that SMS has it too.
@@ -126,6 +138,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String staffUid = claims.get("staffUid", String.class);
         String staffCode = claims.get("staffCode", String.class);
         var branch = branchUID == null ? null : branchRepository.findById(branchUID).orElse(null);
+        if (branch != null && branch.isBlocked()) {
+            blocked(response);
+            return;
+        }
         // Removed (or moved) since signing in: the token no longer counts.
         boolean stillHere = branch != null && staffUid != null
                 && barStaffRepository.findBarStaffByUID(staffUid, branchUID).isPresent();
@@ -144,6 +160,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             SecurityContextHolder.getContext().setAuthentication(auth);
         }
         filterChain.doFilter(request, response);
+    }
+
+    private static void blocked(HttpServletResponse response) throws IOException {
+        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+        response.setContentType("application/json");
+        response.setCharacterEncoding("UTF-8");
+        response.getWriter().write("{\"status\":403,\"code\":\"BRANCH_BLOCKED\"}");
     }
 
     /**

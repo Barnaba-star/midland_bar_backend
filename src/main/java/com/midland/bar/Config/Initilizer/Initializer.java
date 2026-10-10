@@ -226,7 +226,7 @@ public class Initializer implements ApplicationRunner {
                 "DIRECTOR",
                 "System/settings management role",
                 List.of(
-                        "VIEW_BRANCH", "VIEW_ALL_BRANCHES", "SAVE_BRANCH", "DELETE_BRANCH",
+                        "VIEW_BRANCH", "VIEW_ALL_BRANCHES", "SAVE_BRANCH", "DELETE_BRANCH", "BLOCK_BRANCH",
                         "VIEW_USER", "SAVE_USER", "DELETE_USER", "ASSIGN_USER_ROLE",
                         "ENABLE_OR_DISABLE_USER", "ENABLE_OR_DISABLE_ACCOUNT",
                         "VIEW_ROLE", "SAVE_ROLE", "DELETE_ROLE",

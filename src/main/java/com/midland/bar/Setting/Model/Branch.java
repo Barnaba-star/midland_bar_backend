@@ -69,8 +69,26 @@ public class Branch extends BaseEntity {
     @Column(name = "phone")
     private String phone;
 
+    /** ACTIVE, or BLOCKED by the main office (nobody in the branch can sign in or work). */
     @Column(name = "status")
     private String status;
+
+    /** Why the main office blocked the branch - shown to its people at sign-in. */
+    @Column(name = "blocked_reason", length = 300)
+    private String blockedReason;
+
+    @Column(name = "blocked_at")
+    private java.time.LocalDateTime blockedAt;
+
+    @Column(name = "blocked_by")
+    private String blockedBy;
+
+    public static final String BLOCKED = "BLOCKED";
+
+    /** Blocked by the main office. */
+    public boolean isBlocked() {
+        return BLOCKED.equalsIgnoreCase(status);
+    }
 
     @Column(
             name = "description",

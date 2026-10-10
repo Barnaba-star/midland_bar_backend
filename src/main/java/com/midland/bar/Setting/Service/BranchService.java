@@ -154,9 +154,10 @@ public class BranchService {
                     branchDTO.getRegion()
             );
 
-            branch.setStatus(
-                    branchDTO.getStatus()
-            );
+            // Blocking and unblocking go through blockBranch only: an edit of
+            // the branch's details must never lift (or set) a block.
+            if (!branch.isBlocked() && !com.midland.bar.Setting.Model.Branch.BLOCKED.equalsIgnoreCase(branchDTO.getStatus()))
+                branch.setStatus(branchDTO.getStatus());
 
 
             /*
@@ -329,6 +330,36 @@ public class BranchService {
             rows.add(row);
         }
         return new ResponseList<>(rows);
+    }
+
+
+    /**
+     * Blocks (or unblocks) a branch: while blocked nobody in it can sign in -
+     * users or staff codes - and anyone signed in is turned away at their
+     * next request. Its data stays; unblocking puts everything back. Never
+     * the main (ROOT) branch.
+     */
+    @org.springframework.transaction.annotation.Transactional
+    public com.midland.bar.Utils.Responses.Response<com.midland.bar.Setting.Model.Branch> blockBranch(String branchUID, boolean blocked, String reason) {
+        com.midland.bar.Setting.Model.Branch branch = branchRepository.findById(branchUID).orElse(null);
+        if (branch == null)
+            return new com.midland.bar.Utils.Responses.Response<>("BRANCH_NOT_FOUND");
+        if ("ROOT".equalsIgnoreCase(branch.getBranchCode()))
+            return new com.midland.bar.Utils.Responses.Response<>("ROOT_BRANCH");
+        String why = reason == null ? "" : reason.trim();
+        if (blocked) {
+            branch.setStatus(com.midland.bar.Setting.Model.Branch.BLOCKED);
+            branch.setBlockedReason(why.isEmpty() ? null : (why.length() > 300 ? why.substring(0, 300) : why));
+            branch.setBlockedAt(java.time.LocalDateTime.now());
+            branch.setBlockedBy(com.midland.bar.Config.Security.LoggerUser.getEmail());
+        } else {
+            branch.setStatus("ACTIVE");
+            branch.setBlockedReason(null);
+            branch.setBlockedAt(null);
+            branch.setBlockedBy(null);
+        }
+        log.info(com.midland.bar.Config.Security.LoggerUser.getEmail() + (blocked ? " blocked" : " unblocked") + " branch " + branch.getBranchCode());
+        return new com.midland.bar.Utils.Responses.Response<>(branchRepository.save(branch));
     }
 
 }

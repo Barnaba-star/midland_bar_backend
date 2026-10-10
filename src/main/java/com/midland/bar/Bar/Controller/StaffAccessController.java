@@ -268,6 +268,10 @@ public class StaffAccessController {
         if (branch == null)
             return refuse(HttpStatus.UNAUTHORIZED, "INVALID_STAFF_LOGIN", null);
 
+        // Blocked by the main office: no staff code signs in there.
+        if (branch.isBlocked())
+            return refuse(HttpStatus.FORBIDDEN, "BRANCH_BLOCKED", null);
+
         // Same lapsed-subscription rule as an ordinary sign-in (ROOT branch exempt).
         Integer graceDays = platformSettingService.current().getGracePeriodDays();
         LocalDate lockoutDate = LocalDate.now().minusDays(graceDays == null ? 0 : graceDays);

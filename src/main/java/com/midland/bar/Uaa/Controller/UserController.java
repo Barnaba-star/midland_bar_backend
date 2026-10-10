@@ -167,6 +167,16 @@ public class UserController {
         Integer graceDays = platformSettingService.current().getGracePeriodDays();
         LocalDate lockoutDate = LocalDate.now().minusDays(graceDays == null ? 0 : graceDays);
 
+        // Blocked by the main office: nobody in the branch comes in.
+        if (!exempt && branch != null && branch.isBlocked()) {
+            Map<String, Object> blockedBody = new LinkedHashMap<>();
+            blockedBody.put("status", 403);
+            blockedBody.put("code", "BRANCH_BLOCKED");
+            blockedBody.put("branchName", branch.getBranchName());
+            blockedBody.put("reason", branch.getBlockedReason());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(blockedBody);
+        }
+
         if (!exempt
                 && branch != null
                 && branch.getCloseSubscription() != null
