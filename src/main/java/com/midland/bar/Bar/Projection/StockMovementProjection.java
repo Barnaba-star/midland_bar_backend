@@ -30,6 +30,13 @@ public interface StockMovementProjection {
     Long getAdjustedUnits();
     Long getAdjustedValue();
 
+    /**
+     * Of that, what stock counts found missing (the Stock variance report's
+     * loss for this item): units below zero, and their cost below zero.
+     */
+    Long getCountLossUnits();
+    Long getCountLossValue();
+
     /** Buying price (per pack) and pack size now, to value what is on hand. */
     Integer getBuyingPrice();
     String getUnit();

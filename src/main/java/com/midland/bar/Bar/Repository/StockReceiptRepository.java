@@ -44,6 +44,12 @@ public interface StockReceiptRepository extends JpaRepository<StockReceipt, Stri
                     WHERE a.barService = s AND a.adjustedAt >= :from AND a.adjustedAt < :to) AS adjustedUnits,
                   (SELECT COALESCE(SUM(a.costValue), 0) FROM StockAdjustment a
                     WHERE a.barService = s AND a.adjustedAt >= :from AND a.adjustedAt < :to) AS adjustedValue,
+                  (SELECT COALESCE(SUM(a.unitsChanged), 0) FROM StockAdjustment a
+                    WHERE a.barService = s AND a.reason = 'COUNT' AND a.unitsChanged < 0
+                      AND a.adjustedAt >= :from AND a.adjustedAt < :to) AS countLossUnits,
+                  (SELECT COALESCE(SUM(a.costValue), 0) FROM StockAdjustment a
+                    WHERE a.barService = s AND a.reason = 'COUNT' AND a.unitsChanged < 0
+                      AND a.adjustedAt >= :from AND a.adjustedAt < :to) AS countLossValue,
                   s.buyingPrice AS buyingPrice, s.unit AS unit, s.unitLadder AS unitLadder
            FROM BarServiceEntity s
            WHERE s.branchUid = :branchUID
