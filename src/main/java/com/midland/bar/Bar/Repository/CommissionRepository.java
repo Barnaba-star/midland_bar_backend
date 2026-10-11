@@ -54,6 +54,12 @@ public interface CommissionRepository extends JpaRepository<Commission, String> 
     @Query(value = """
             SELECT s.uid AS serviceUid, s.serviceName AS serviceName, s.serviceCode AS serviceCode,
                    s.category AS category, s.price AS price,
+                   COALESCE(src.buyingPrice, s.buyingPrice) AS buyingPrice,
+                   COALESCE(src.unitsPerPack, s.unitsPerPack) AS unitsPerPack,
+                   COALESCE(src.packUnit, s.packUnit) AS packUnit,
+                   COALESCE(src.unit, s.unit) AS unit,
+                   CASE WHEN src.uid IS NULL THEN 1 ELSE s.unitsPerSale END AS unitsPerSale,
+                   src.serviceName AS stockSourceName,
                    c.uid AS commissionUid,
                    c.staffPercent AS staffPercent, c.ownerPercent AS ownerPercent, c.traPercent AS traPercent,
                    c.maintenancePercent AS maintenancePercent, c.emergencyPercent AS emergencyPercent,
@@ -61,6 +67,7 @@ public interface CommissionRepository extends JpaRepository<Commission, String> 
                    c.lukuPercent AS lukuPercent, c.waterPercent AS waterPercent,
                    c.stockPurchasePercent AS stockPurchasePercent, c.totalPercent AS totalPercent
             FROM BarServiceEntity s
+            LEFT JOIN BarServiceEntity src ON src.uid = s.stockSourceUid AND src.branchUid = s.branchUid
             LEFT JOIN Commission c ON c.barService = s AND c.isActive = true AND c.branchUid = s.branchUid
             WHERE s.branchUid = :branchUID
               AND (s.kind IS NULL OR s.kind <> 'STOCK_ITEM')
