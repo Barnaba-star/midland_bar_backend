@@ -11,6 +11,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
@@ -25,9 +26,10 @@ public class GlobalExceptionHandler {
             BusinessException e,
             HttpServletRequest request) {
 
-        // A rejected business rule, not a crash - recorded at WARN so the two
-        // can be told apart in Settings.
-        errorLogService.recordBackendError(e, ErrorLogService.LEVEL_WARN, request);
+        // A rejected business rule ("open your shift before selling"), not a
+        // crash: the user is told why. Kept out of Admin > Makosa, where these
+        // buried the real errors - the server log still has it.
+        log.info("Refused " + request.getMethod() + " " + request.getRequestURI() + ": " + e.getMessage());
 
         return ResponseEntity
                 .badRequest()
@@ -43,6 +45,16 @@ public class GlobalExceptionHandler {
     @ExceptionHandler({AccessDeniedException.class, AuthenticationException.class})
     public void rethrowSecurityException(RuntimeException e) throws RuntimeException {
         throw e;
+    }
+
+    /**
+     * The phone or browser left a live (/bar/live) stream or a slow request
+     * before the answer was written - nobody is there to answer, and nothing
+     * went wrong on the server.
+     */
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public void handleClientGone(AsyncRequestNotUsableException e) {
+        // Nothing to send and nothing to record.
     }
 
     /** A request for a path that does not exist is a 404, not a crash. */

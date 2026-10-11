@@ -249,7 +249,13 @@ public class BranchService {
             return new Response<>("Branch Not Found");
         if (!canTouch(optionalBranch.get()))
             return new Response<>("Branch Not Found");
-        branchRepository.delete(optionalBranch.get());
+        try {
+            branchRepository.delete(optionalBranch.get());
+            branchRepository.flush();
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            // Users, bills or stock still point at it: say so instead of a 500.
+            return new Response<>("This branch still has users or records - block it, or delete it with all its data");
+        }
         return new Response<>(optionalBranch.get());
     }
     public ResponseList<BranchProjection> findBranchList(){
