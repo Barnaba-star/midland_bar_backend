@@ -74,7 +74,7 @@ public interface StaffCommissionsRepository extends JpaRepository<StaffCommissio
         s.barStaff.middleName AS middleName,
         s.barStaff.lastName AS lastName,
         s.barStaff.barCategory AS barCategory,
-        COUNT(s) AS days,
+        COUNT(DISTINCT s.createdAt) AS days,
         SUM(COALESCE(s.totalAmount, 0)) AS totalAmount,
         SUM(COALESCE(s.lossAmount, 0)) AS lossAmount,
         SUM(COALESCE(s.payedAmount, 0)) AS paidAmount,
