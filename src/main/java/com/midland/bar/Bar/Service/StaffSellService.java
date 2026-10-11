@@ -91,7 +91,9 @@ public class StaffSellService {
         if (staff.isEmpty())
             return new Response<>("No staff member has code " + clean(dto.getStaffCode()));
 
-        String prefix = staff.get().getStaffCode() + "-";
+        // The staff code is the staff member's secret: bills carry their
+        // initials instead (Juma Mussa → JM-1, JM-2).
+        String prefix = billPrefix(staff.get()) + "-";
         Set<String> held = new HashSet<>(salesOpenedRepository.findOpenBillCodes(LoggerUser.getBranchUIDOrMain()));
         int n = 1;
         while (held.contains(prefix + n))
@@ -171,6 +173,19 @@ public class StaffSellService {
         out.put("open", Map.of("byMethod", methodRows(openByMethod), "total", openTotal, "bills", openBills));
         out.put("paid", Map.of("byMethod", methodRows(paidByMethod), "total", paidTotal));
         return new Response<>(out);
+    }
+
+    /** First letters of the first and last name - never the staff code. */
+    static String billPrefix(BarStaff staff) {
+        StringBuilder b = new StringBuilder();
+        for (String part : new String[]{staff.getFirstName(), staff.getLastName()}) {
+            if (part == null)
+                continue;
+            String letters = part.replaceAll("[^\\p{L}]", "");
+            if (!letters.isEmpty())
+                b.append(Character.toUpperCase(letters.charAt(0)));
+        }
+        return b.length() == 0 ? "B" : b.toString();
     }
 
     /** What paying each bill will charge, in one query. */
