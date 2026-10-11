@@ -22,6 +22,9 @@ public interface StockReceiptRepository extends JpaRepository<StockReceipt, Stri
      * takes from Castle Lite, a mshikaki line from the beef it is made of
      * (quantity x units per sale). A line from before this was recorded
      * falls back to its own service and quantity.
+     *
+     * Loss (countLoss*) is everything that left the store unsold except the
+     * house's own use: counts found short, spoiled, broken, shrinkage, lost, other.
      */
     @Query(value = """
            SELECT s.uid AS uid, s.serviceName AS serviceName, s.serviceCode AS serviceCode,
@@ -45,10 +48,10 @@ public interface StockReceiptRepository extends JpaRepository<StockReceipt, Stri
                   (SELECT COALESCE(SUM(a.costValue), 0) FROM StockAdjustment a
                     WHERE a.barService = s AND a.adjustedAt >= :from AND a.adjustedAt < :to) AS adjustedValue,
                   (SELECT COALESCE(SUM(a.unitsChanged), 0) FROM StockAdjustment a
-                    WHERE a.barService = s AND a.reason = 'COUNT' AND a.unitsChanged < 0
+                    WHERE a.barService = s AND COALESCE(a.reason, '') <> 'INTERNAL_USE' AND a.unitsChanged < 0
                       AND a.adjustedAt >= :from AND a.adjustedAt < :to) AS countLossUnits,
                   (SELECT COALESCE(SUM(a.costValue), 0) FROM StockAdjustment a
-                    WHERE a.barService = s AND a.reason = 'COUNT' AND a.unitsChanged < 0
+                    WHERE a.barService = s AND COALESCE(a.reason, '') <> 'INTERNAL_USE' AND a.unitsChanged < 0
                       AND a.adjustedAt >= :from AND a.adjustedAt < :to) AS countLossValue,
                   s.buyingPrice AS buyingPrice, s.unit AS unit, s.unitLadder AS unitLadder
            FROM BarServiceEntity s
