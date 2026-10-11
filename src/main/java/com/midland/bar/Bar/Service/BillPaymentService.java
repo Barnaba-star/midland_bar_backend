@@ -199,7 +199,7 @@ public class BillPaymentService {
             row.put("notedAt", bill.getPaymentNoteAt());
             row.put("notedBy", bill.getPaymentNoteBy());
             row.put("amount", "PAID".equals(bill.getPaymentStatus()) && bill.getBill() != null ? bill.getBill() : barSalesRepository.billTotal(bill.getUid()));
-            row.put("owner", bill.getStaffCode() != null ? bill.getStaffCode() + " · " + bill.getStaffName()
+            row.put("owner", bill.getStaffName() != null ? bill.getStaffName() // never the staff code - it is secret
                     : bill.getOpenedByName() != null ? bill.getOpenedByName() : bill.getOpenedBy());
             row.put("paymentStatus", bill.getPaymentStatus());
             row.put("paidMethod", bill.getPaymentMethod());
