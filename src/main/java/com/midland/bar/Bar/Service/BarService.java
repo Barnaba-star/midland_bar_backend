@@ -2873,11 +2873,11 @@ public class BarService {
         }
         return staffCommissionsRepository.save(commission);
     }
-    public ResponsePage<BarProjection> findStaffCommissionPage(String range, Integer page, Integer size) {
+    /** The days a Staff report filter covers: a date (d-M-yyyy) or TODAY, THIS_WEEK, LAST_MONTH... */
+    private LocalDate[] staffCommissionRange(String range) {
         LocalDate today = LocalDate.now();
         LocalDate startDate;
         LocalDate endDate;
-        Pageable pageable = PageRequest.of(page, size);
         // Specific date: 05-8-2026, 5-8-2026, 05-08-2026, etc.
         if (range.matches("\\d{1,2}-\\d{1,2}-\\d{4}")) {
             try {
@@ -2942,7 +2942,14 @@ public class BarService {
                 default -> throw new IllegalArgumentException("Invalid date range: " + range);
             }
         }
+        return new LocalDate[]{startDate, endDate};
+    }
 
+    public ResponsePage<BarProjection> findStaffCommissionPage(String range, Integer page, Integer size) {
+        Pageable pageable = PageRequest.of(page, size);
+        LocalDate[] days = staffCommissionRange(range);
+        LocalDate startDate = days[0];
+        LocalDate endDate = days[1];
         return new ResponsePage<>(staffCommissionsRepository.findStaffCommissionPage(
                 pageable,
                 LoggerUser.getBranchUID(),
@@ -2950,6 +2957,55 @@ public class BarService {
                 endDate
         ));
     }
+    /** Staff report over a week, month or year: one row per staff member, the days added together. */
+    public ResponseList<com.midland.bar.Bar.Projection.StaffCommissionTotalProjection> findStaffCommissionTotals(String range) {
+        LocalDate[] days = staffCommissionRange(range);
+        return new ResponseList<>(staffCommissionsRepository.findStaffCommissionTotals(LoggerUser.getBranchUID(), days[0], days[1]));
+    }
+
+    /**
+     * Pays a staff member's total over the filter's range: the days still
+     * owed are paid oldest first, each through payStaffCommission so the
+     * pots move exactly as a day's payment does. All or none.
+     */
+    @Transactional
+    public Response<Integer> payStaffCommissionTotal(StaffCommissionDTO dto) {
+        if (dto == null || dto.getStaffUid() == null)
+            return new Response<>("Chagua mhudumu");
+        if (dto.getAmount() == null || dto.getAmount() <= 0)
+            return new Response<>("Weka Kiasi kinacholipwa");
+        LocalDate[] days = staffCommissionRange(dto.getFilter());
+        String branchUid = LoggerUser.getBranchUID();
+        // Net of the range: a day they owe on comes off what the other days are owed.
+        long net = staffCommissionsRepository.findStaffCommissionTotals(branchUid, days[0], days[1]).stream()
+                .filter(t -> dto.getStaffUid().equals(t.getStaffUid()))
+                .mapToLong(t -> t.getRemainingAmount() == null ? 0 : t.getRemainingAmount())
+                .sum();
+        if (dto.getAmount() > net)
+            return new Response<>(net <= 0 ? "Nothing to pay - after the shortage this staff member is owed nothing"
+                    : "You can pay at most " + net);
+        int left = dto.getAmount();
+        for (StaffCommissions day : staffCommissionsRepository.findOwedDays(dto.getStaffUid(), branchUid, days[0], days[1])) {
+            if (left <= 0)
+                break;
+            int part = Math.min(left, day.getRemainingAmount());
+            StaffCommissionDTO pay = new StaffCommissionDTO();
+            pay.setUid(day.getUid());
+            pay.setAmount(part);
+            pay.setFilter(dto.getFilter());
+            pay.setWeekDate(day.getWeekDate());
+            pay.setDescriptions(dto.getDescriptions());
+            pay.setMethod(dto.getMethod());
+            Response<StaffCommissions> paid = payStaffCommission(pay);
+            if (paid.getData() == null)
+                throw new BusinessException(paid.getMessage());
+            left -= part;
+        }
+        if (left > 0)
+            throw new BusinessException("You can pay at most " + (dto.getAmount() - left));
+        return new Response<>(dto.getAmount());
+    }
+
     // One transaction: the commission row is saved before the pots are found,
     // so a failure there used to leave it marked paid with no money moved.
     @Transactional

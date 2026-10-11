@@ -452,6 +452,18 @@ public class BarController {
         return barService.findStaffCommissionPage(pageableParam.getFilter(), pageableParam.getPage(), pageableParam.getSize());
     }
 
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_REPORT')")
+    @PostMapping("/findStaffCommissionTotals")
+    public ResponseList<com.midland.bar.Bar.Projection.StaffCommissionTotalProjection> findStaffCommissionTotals(@RequestBody PageableParam pageableParam) {
+        return barService.findStaffCommissionTotals(pageableParam.getFilter());
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('PAY_STAFF')")
+    @PostMapping("/payStaffCommissionTotal")
+    public Response<Integer> payStaffCommissionTotal(@RequestBody StaffCommissionDTO staffCommissionDTO){
+        return barService.payStaffCommissionTotal(staffCommissionDTO);
+    }
+
     @PreAuthorize("@authChecker.hasPermissionOrRoot('PAY_STAFF')")
     @PostMapping("/payStaffCommission")
     public Response<StaffCommissions> payStaffCommission(@RequestBody  StaffCommissionDTO staffCommissionDTO){

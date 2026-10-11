@@ -66,6 +66,46 @@ public interface StaffCommissionsRepository extends JpaRepository<StaffCommissio
 
     );
 
+    /** One row per staff member over the range: the days added together. */
+    @Query("""
+    SELECT
+        s.barStaff.uid AS staffUid,
+        s.barStaff.firstName AS firstName,
+        s.barStaff.middleName AS middleName,
+        s.barStaff.lastName AS lastName,
+        s.barStaff.barCategory AS barCategory,
+        COUNT(s) AS days,
+        SUM(COALESCE(s.totalAmount, 0)) AS totalAmount,
+        SUM(COALESCE(s.lossAmount, 0)) AS lossAmount,
+        SUM(COALESCE(s.payedAmount, 0)) AS paidAmount,
+        SUM(COALESCE(s.remainingAmount, 0)) AS remainingAmount
+    FROM StaffCommissions s
+    WHERE s.branchUid = :branchUid
+      AND s.createdAt >= :startDate
+      AND s.createdAt <= :endDate
+    GROUP BY s.barStaff.uid, s.barStaff.firstName, s.barStaff.middleName, s.barStaff.lastName, s.barStaff.barCategory
+    ORDER BY s.barStaff.firstName ASC
+""")
+    List<com.midland.bar.Bar.Projection.StaffCommissionTotalProjection> findStaffCommissionTotals(
+            @Param("branchUid") String branchUid,
+            @Param("startDate") LocalDate startDate,
+            @Param("endDate") LocalDate endDate);
+
+    /** A staff member's days in the range still owed something, oldest first - paid in that order. */
+    @Query("""
+    SELECT s FROM StaffCommissions s
+    WHERE s.barStaff.uid = :staffUid
+      AND s.branchUid = :branchUid
+      AND s.createdAt >= :startDate
+      AND s.createdAt <= :endDate
+      AND s.remainingAmount > 0
+    ORDER BY s.createdAt ASC
+""")
+    List<StaffCommissions> findOwedDays(@Param("staffUid") String staffUid,
+                                        @Param("branchUid") String branchUid,
+                                        @Param("startDate") LocalDate startDate,
+                                        @Param("endDate") LocalDate endDate);
+
 
     @Query("""
     SELECT s

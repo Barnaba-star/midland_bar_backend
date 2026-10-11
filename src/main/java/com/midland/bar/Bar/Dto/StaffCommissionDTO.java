@@ -9,6 +9,8 @@ import java.time.LocalDate;
 @Setter
 public class StaffCommissionDTO {
     private String uid;
+    /** Paying a staff member's total over the filter's range instead of one day's row. */
+    private String staffUid;
     private Integer amount;
     private String firstName;
     private String middleName;
