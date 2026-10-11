@@ -133,6 +133,9 @@ public class StaffSellService {
         for (SalesOpened b : open) {
             // What paying will charge - the lines, not the stored figure.
             long amount = totals.getOrDefault(b.getUid(), 0L);
+            // An empty bill has nothing to hand over - left off the summary.
+            if (amount <= 0)
+                continue;
             String method = handoverMethod(b);
             if (b.getHandoverSentAt() != null && (sentAt == null || b.getHandoverSentAt().isAfter(sentAt)))
                 sentAt = b.getHandoverSentAt();
