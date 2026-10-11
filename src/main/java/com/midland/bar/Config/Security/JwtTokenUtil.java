@@ -139,7 +139,9 @@ public class JwtTokenUtil {
     /** A staff member signed in with their code and PIN: Staff Sell, their own bills, nothing more. */
     public String generateStaffToken(com.midland.bar.Bar.Model.BarStaff staff, String branchUID, String fullName) {
         return Jwts.builder()
-                .setSubject("STAFF-" + staff.getStaffCode())
+                // Not the code: the subject lands wherever a login name is written (audit
+                // and error logs, sold-by), and the code is the staff member's secret.
+                .setSubject("STAFF-" + staff.getUid())
                 .claim("type", TYPE_STAFF)
                 .claim("isRoot", false)
                 .claim("roles", List.of("STAFF_SELLER"))

@@ -58,7 +58,7 @@ public class ErrorLogService {
             errorLog.setExceptionType(throwable.getClass().getName());
             errorLog.setStackTrace(SensitiveData.truncate(stackTraceOf(throwable), MAX_STACK_TRACE));
             if (request != null) {
-                errorLog.setPath(SensitiveData.truncate(request.getRequestURI(), 500));
+                errorLog.setPath(SensitiveData.truncate(SensitiveData.redactPath(request.getRequestURI()), 500));
                 errorLog.setHttpMethod(request.getMethod());
                 errorLog.setUserAgent(SensitiveData.truncate(request.getHeader("User-Agent"), 500));
                 errorLog.setQueryString(SensitiveData.truncate(request.getQueryString(), 2000));
@@ -83,7 +83,7 @@ public class ErrorLogService {
             errorLog.setMessage(SensitiveData.truncate(dto.getMessage(), MAX_MESSAGE));
             errorLog.setExceptionType(SensitiveData.truncate(dto.getExceptionType(), 255));
             errorLog.setStackTrace(SensitiveData.truncate(dto.getStackTrace(), MAX_STACK_TRACE));
-            errorLog.setPath(SensitiveData.truncate(dto.getPath(), 500));
+            errorLog.setPath(SensitiveData.truncate(SensitiveData.redactPath(dto.getPath()), 500));
             errorLog.setHttpMethod(dto.getHttpMethod());
             errorLog.setPayload(SensitiveData.truncate(SensitiveData.redact(dto.getPayload()), MAX_PAYLOAD));
             if (request != null) {
@@ -104,8 +104,18 @@ public class ErrorLogService {
                         blankToNull(source),
                         blankToNull(level),
                         pageableParam.pageable(false)
-                )
+                ).map(ErrorLogService::shown)
         );
+    }
+
+    /** A copy for the screen with staff codes masked; the stored row is left as it was (see AuditLogService.shown). */
+    private static ErrorLog shown(ErrorLog row) {
+        ErrorLog copy = new ErrorLog();
+        org.springframework.beans.BeanUtils.copyProperties(row, copy);
+        copy.setUsername(SensitiveData.redactLogin(row.getUsername()));
+        copy.setPath(SensitiveData.redactPath(row.getPath()));
+        copy.setPayload(SensitiveData.redact(row.getPayload()));
+        return copy;
     }
 
     /** Counters for the page header: how noisy the last day and week have been. */

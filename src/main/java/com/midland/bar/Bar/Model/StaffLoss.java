@@ -30,6 +30,8 @@ public class StaffLoss extends TenantEntity {
     @Column(name = "staff_name")
     private String staffName;
 
+    // Read when an order/record is posted, never sent back out: the code is the staff member's secret.
+    @com.fasterxml.jackson.annotation.JsonProperty(access = com.fasterxml.jackson.annotation.JsonProperty.Access.WRITE_ONLY)
     @Column(name = "staff_code")
     private String staffCode;
 

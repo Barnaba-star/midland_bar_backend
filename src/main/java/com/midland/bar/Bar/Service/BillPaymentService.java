@@ -255,7 +255,6 @@ public class BillPaymentService {
         // Stored as the cashier's sign-in name; the slip prints their name.
         receipt.put("paidBy", displayName(bill.getPaidBy()));
         // A Staff Sell bill was served by its staff member, not by whoever took the money.
-        receipt.put("staffCode", bill.getStaffCode());
         receipt.put("staffName", bill.getStaffName());
         receipt.put("paidAt", bill.getPaidAt());
         receipt.put("lines", lines);

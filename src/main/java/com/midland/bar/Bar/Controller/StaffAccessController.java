@@ -91,7 +91,7 @@ public class StaffAccessController {
         BarStaff staff = barServiceProvider.getObject().myStaff();
         String fullName = Stream.of(staff.getFirstName(), staff.getMiddleName(), staff.getLastName())
                 .filter(x -> x != null && !x.isBlank()).map(String::trim).collect(Collectors.joining(" "));
-        log.info("{} sells at the counter as staff {}", LoggerUser.getEmail(), staff.getStaffCode());
+        log.info("{} sells at the counter as staff {}", LoggerUser.getEmail(), staff.getUid());
         return ResponseEntity.ok(Map.of("token", jwtTokenUtil.generateStaffToken(staff, branchUID, fullName)));
     }
 
@@ -160,7 +160,7 @@ public class StaffAccessController {
         staff.setPinHash(passwordEncoder.encode(newPin));
         staff.setMustSetCode(false);
         barStaffRepository.save(staff);
-        log.info("Staff {} set their own code and PIN in branch {}", newCode, staff.getBranchUid());
+        log.info("Staff {} set their own code and PIN in branch {}", staff.getUid(), staff.getBranchUid());
         return signedIn(staff);
     }
 
@@ -173,7 +173,7 @@ public class StaffAccessController {
         String branchUID = staff.getBranchUid();
         String fullName = Stream.of(staff.getFirstName(), staff.getMiddleName(), staff.getLastName())
                 .filter(x -> x != null && !x.isBlank()).map(String::trim).collect(Collectors.joining(" "));
-        log.info("Staff {} signed in with their code in branch {}", staff.getStaffCode(), branchUID);
+        log.info("Staff {} signed in with their code in branch {}", staff.getUid(), branchUID);
         return ResponseEntity.ok(Map.of("token", jwtTokenUtil.generateStaffToken(staff, branchUID, fullName)));
     }
 
@@ -230,7 +230,7 @@ public class StaffAccessController {
                     c.setPinFailedAttempts(0);
                     c.setPinLockedUntil(now.plusMinutes(LOCK_MINUTES));
                     lockedNow = true;
-                    log.warn("Staff code {} locked in branch {} after {} wrong PINs", c.getStaffCode(), c.getBranchUid(), MAX_PIN_TRIES);
+                    log.warn("Staff {} locked in branch {} after {} wrong PINs", c.getUid(), c.getBranchUid(), MAX_PIN_TRIES);
                 } else {
                     c.setPinFailedAttempts(tries);
                 }

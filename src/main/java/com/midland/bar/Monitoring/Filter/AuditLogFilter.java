@@ -116,9 +116,9 @@ public class AuditLogFilter extends OncePerRequestFilter {
             AuditLog entry = new AuditLog();
             entry.setOccurredAt(LocalDateTime.now());
             entry.setHttpMethod(request.getMethod());
-            entry.setPath(truncate(request.getRequestURI(), 500));
+            entry.setPath(truncate(com.midland.bar.Monitoring.Support.SensitiveData.redactPath(request.getRequestURI()), 500));
             entry.setQueryString(truncate(request.getQueryString(), 2000));
-            entry.setAction(truncate(AuditLogService.describe(request.getMethod(), request.getRequestURI()), 255));
+            entry.setAction(truncate(AuditLogService.describe(request.getMethod(), com.midland.bar.Monitoring.Support.SensitiveData.redactPath(request.getRequestURI())), 255));
             String body = readBody(request);
             entry.setPayload(body);
             entry.setStatusCode(response.getStatus());

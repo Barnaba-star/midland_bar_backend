@@ -63,7 +63,7 @@ public class StaffSellService {
         com.midland.bar.Config.Security.StaffSession.requireOwnCode(code);
         Optional<BarStaff> staff = byCode(code);
         if (staff.isEmpty())
-            return new Response<>("No staff member has code " + clean(code));
+            return new Response<>("No staff member has that code");
         Map<String, Object> out = new LinkedHashMap<>();
         List<SalesOpened> bills = salesOpenedRepository.findOpenBillsByStaff(staff.get().getUid(), LoggerUser.getBranchUIDOrMain());
         out.put("staff", summary(staff.get()));
@@ -89,7 +89,7 @@ public class StaffSellService {
         workShiftService.requireOpen();
         Optional<BarStaff> staff = byCode(dto.getStaffCode());
         if (staff.isEmpty())
-            return new Response<>("No staff member has code " + clean(dto.getStaffCode()));
+            return new Response<>("No staff member has that code");
 
         // The staff code is the staff member's secret: bills carry their
         // initials instead (Juma Mussa → JM-1, JM-2).
@@ -108,7 +108,7 @@ public class StaffSellService {
         bill.setStaffName(fullName(staff.get()));
         bill.setStaffCode(staff.get().getStaffCode());
         SalesOpened saved = salesOpenedRepository.save(bill);
-        log.info("{} opened bill {} for staff {}", LoggerUser.getEmail(), saved.getSalesCode(), staff.get().getStaffCode());
+        log.info("{} opened bill {} for staff {}", LoggerUser.getEmail(), saved.getSalesCode(), staff.get().getUid());
         return new Response<>(saved);
     }
 
@@ -122,7 +122,7 @@ public class StaffSellService {
         com.midland.bar.Config.Security.StaffSession.requireOwnCode(code);
         Optional<BarStaff> staff = byCode(code);
         if (staff.isEmpty())
-            return new Response<>("No staff member has code " + clean(code));
+            return new Response<>("No staff member has that code");
         String branchUID = LoggerUser.getBranchUIDOrMain();
 
         Map<String, long[]> openByMethod = new LinkedHashMap<>();
@@ -209,7 +209,7 @@ public class StaffSellService {
         com.midland.bar.Config.Security.StaffSession.requireOwnCode(code);
         Optional<BarStaff> staff = byCode(code);
         if (staff.isEmpty())
-            return new Response<>("No staff member has code " + clean(code));
+            return new Response<>("No staff member has that code");
         List<SalesOpened> bills = salesOpenedRepository.findOpenBillsByStaff(staff.get().getUid(), LoggerUser.getBranchUIDOrMain())
                 .stream().filter(b -> barSalesRepository.billTotal(b.getUid()) > 0).toList();
         if (bills.isEmpty())
@@ -217,7 +217,7 @@ public class StaffSellService {
         LocalDateTime now = LocalDateTime.now();
         bills.forEach(b -> b.setHandoverSentAt(now));
         salesOpenedRepository.saveAll(bills);
-        log.info("{} sent {} bill(s) of staff {} for handover", LoggerUser.getEmail(), bills.size(), staff.get().getStaffCode());
+        log.info("{} sent {} bill(s) of staff {} for handover", LoggerUser.getEmail(), bills.size(), staff.get().getUid());
         return new Response<>(bills.size());
     }
 
@@ -234,7 +234,7 @@ public class StaffSellService {
         workShiftService.requireOpen();
         Optional<BarStaff> staff = byCode(dto.getStaffCode());
         if (staff.isEmpty())
-            return new Response<>("No staff member has code " + clean(dto.getStaffCode()));
+            return new Response<>("No staff member has that code");
         String method = dto.getMethod().trim().toLowerCase();
         if (!BillPaymentService.METHODS.contains(method))
             return new Response<>("Unknown payment method: " + dto.getMethod());
@@ -266,7 +266,7 @@ public class StaffSellService {
                 throw new com.midland.bar.Utils.Exceptions.BusinessException(paid.getMessage());
             total += e.getValue();
         }
-        log.info("{} received {} {} from staff {} for {} bill(s)", LoggerUser.getEmail(), total, method, staff.get().getStaffCode(), now.size());
+        log.info("{} received {} {} from staff {} for {} bill(s)", LoggerUser.getEmail(), total, method, staff.get().getUid(), now.size());
 
         // Handed in less than the bills: the bills are paid all the same and
         // the difference is the staff member's shortage, in this method. Same
@@ -309,7 +309,7 @@ public class StaffSellService {
         workShiftService.requireOpen();
         Optional<BarStaff> staff = byCode(staffCode);
         if (staff.isEmpty())
-            return new Response<>("No staff member has code " + clean(staffCode));
+            return new Response<>("No staff member has that code");
         return staffOrderService.send(staff.get());
     }
 
@@ -322,10 +322,6 @@ public class StaffSellService {
             return exact;
         // "1" and "01" are 001 - staff will not always type the zeros.
         return barStaffRepository.findByStaffCode(String.format("%03d", Integer.parseInt(c)), LoggerUser.getBranchUIDOrMain());
-    }
-
-    private static String clean(String code) {
-        return code == null ? "" : code.trim();
     }
 
     private static Map<String, Object> summary(BarStaff staff) {
@@ -407,13 +403,16 @@ public class StaffSellService {
         }
 
         List<Map<String, Object>> out = new ArrayList<>(rows.values());
-        // Staff by code, then the Sales page's own bills last.
+        // Staff by name, then the Sales page's own bills last.
         out.sort((a, b) -> {
-            String ca = (String) a.get("staffCode"), cb = (String) b.get("staffCode");
-            if (ca == null) return cb == null ? 0 : 1;
-            if (cb == null) return -1;
-            return ca.compareToIgnoreCase(cb);
+            boolean sa = a.get("staffCode") != null, sb = b.get("staffCode") != null;
+            if (!sa) return sb ? 1 : 0;
+            if (!sb) return -1;
+            return String.valueOf(a.get("staffName")).compareToIgnoreCase(String.valueOf(b.get("staffName")));
         });
+        // The code only grouped the rows: it is the staff member's secret, so it is not sent.
+        for (Map<String, Object> r : out)
+            r.put("staff", r.remove("staffCode") != null);
         return new Response<>(out);
     }
 

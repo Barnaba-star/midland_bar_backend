@@ -33,8 +33,7 @@ public interface BarStaffRepository extends JpaRepository<BarStaff, String> {
              (CASE WHEN s.pinHash IS NULL THEN false ELSE true END) as hasPin FROM BarStaff s  WHERE s.branchUid=:branchUID AND s.isActive=true
                AND (:category = '' OR s.barCategory = :category)
                AND (LOWER(CONCAT(COALESCE(s.firstName, ''), ' ', COALESCE(s.middleName, ''), ' ', COALESCE(s.lastName, ''))) LIKE :search ESCAPE '\\'
-                    OR LOWER(COALESCE(s.phoneNumber, '')) LIKE :search ESCAPE '\\'
-                    OR LOWER(COALESCE(s.staffCode, '')) LIKE :search ESCAPE '\\')
+                    OR LOWER(COALESCE(s.phoneNumber, '')) LIKE :search ESCAPE '\\')
              ORDER BY s.firstName, s.lastName
             """)
     Page<BarProjection> findBarStaffPage(Pageable pageable, String branchUID, String search, String category);

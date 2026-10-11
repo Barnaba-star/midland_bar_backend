@@ -130,7 +130,7 @@ public class StaffCodeService implements ApplicationRunner {
             if (normalise(staff.getStaffCode()).matches("\\d+"))
                 continue;
             if (barStaffRepository.countOpenWork(staff.getUid()) > 0) {
-                log.info("Staff {} keeps code {} until their open bills and orders are closed", staff.getUid(), staff.getStaffCode());
+                log.info("Staff {} keeps their code until their open bills and orders are closed", staff.getUid());
                 continue;
             }
             // Saved one at a time so the next nextCode sees this one as taken.

@@ -119,15 +119,15 @@ class StaffSellFlowTest {
 
         SalesOpened first = open("K9");
         SalesOpened second = open("k9");
-        assertEquals("K9-1", first.getSalesCode());
-        assertEquals("K9-2", second.getSalesCode());
+        assertEquals("MT-1", first.getSalesCode());
+        assertEquals("MT-2", second.getSalesCode());
         assertEquals(staff.getUid(), first.getStaffUid());
         assertEquals("Maiko Test", first.getStaffName());
         assertEquals("K9", first.getStaffCode());
 
         @SuppressWarnings("unchecked")
         List<SalesOpened> bills = (List<SalesOpened>) staffSellService.findByCode("K9").getData().get("bills");
-        assertEquals(List.of("K9-1", "K9-2"), bills.stream().map(SalesOpened::getSalesCode).toList());
+        assertEquals(List.of("MT-1", "MT-2"), bills.stream().map(SalesOpened::getSalesCode).toList());
 
         assertNull(staffSellService.findByCode("ZZ-NOBODY").getData());
     }
@@ -223,7 +223,7 @@ class StaffSellFlowTest {
 
         // The receipt names the staff member who served it, and still who took the money.
         Map<String, Object> receipt = billPaymentService.receipt(bill.getUid()).getData();
-        assertEquals("K9", receipt.get("staffCode"));
+        assertNull(receipt.get("staffCode"), "the code is the staff member's secret");
         assertEquals("Maiko Test", receipt.get("staffName"));
         assertEquals(LOGIN, receipt.get("paidBy"));
 
@@ -441,7 +441,7 @@ class StaffSellFlowTest {
     }
 
     private static Map<String, Object> k9(List<Map<String, Object>> rows) {
-        return rows.stream().filter(r -> "K9".equals(r.get("staffCode"))).findFirst()
+        return rows.stream().filter(r -> "Maiko Test".equals(r.get("staffName"))).findFirst()
                 .orElseThrow(() -> new AssertionError("no K9 row in " + rows));
     }
 }

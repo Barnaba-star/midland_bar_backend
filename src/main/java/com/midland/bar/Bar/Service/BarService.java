@@ -484,7 +484,7 @@ public class BarService {
                 return new Response<>("The staff code must be exactly 4 digits, e.g. 2458");
             // The code is secret: say it is taken, never by whom.
             if (!unchanged && barStaffRepository.countCodeHoldersAnyBranch(code, isNew ? null : barStaff.getUid()) > 0)
-                return new Response<>("Code " + code + " is already taken - choose another");
+                return new Response<>("That code is already taken - choose another");
             barStaff.setStaffCode(code);
         }
 

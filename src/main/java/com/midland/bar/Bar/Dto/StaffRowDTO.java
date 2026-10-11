@@ -15,7 +15,8 @@ import java.util.List;
 @Data
 public class StaffRowDTO {
     private String uid;
-    private String staffCode;
+    /** Whether they have a Staff Sell code - never the code itself, which is their secret. */
+    private Boolean hasCode;
     private String firstName;
     private String middleName;
     private String lastName;
@@ -32,7 +33,7 @@ public class StaffRowDTO {
     public static StaffRowDTO of(BarProjection staff, List<String> roles) {
         StaffRowDTO row = new StaffRowDTO();
         row.setUid(staff.getUid());
-        row.setStaffCode(staff.getStaffCode());
+        row.setHasCode(staff.getStaffCode() != null && !staff.getStaffCode().isBlank());
         row.setFirstName(staff.getFirstName());
         row.setMiddleName(staff.getMiddleName());
         row.setLastName(staff.getLastName());

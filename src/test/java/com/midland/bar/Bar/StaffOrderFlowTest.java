@@ -210,7 +210,7 @@ class StaffOrderFlowTest {
         item.setBarServiceUID(MSHIKAKI);
         item.setQuantity(1);
         assertNull(staffOrderService.addItem(item).getData(), "nor write onto this branch's bill");
-        assertTrue(staffSellService.summary(null).getData().stream().noneMatch(r -> "K9".equals(r.get("staffCode"))),
+        assertTrue(staffSellService.summary(null).getData().stream().noneMatch(r -> "Maiko Test".equals(r.get("staffName"))),
                 "nor see this branch's staff in the sales summary");
     }
 }

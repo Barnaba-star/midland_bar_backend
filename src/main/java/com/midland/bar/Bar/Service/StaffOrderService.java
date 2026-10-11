@@ -141,7 +141,7 @@ public class StaffOrderService {
             sent++;
         }
         if (sent > 0)
-            log.info("{} sent {} order(s) to the supervisor", staff.getStaffCode(), sent);
+            log.info("{} sent {} order(s) to the supervisor", staff.getUid(), sent);
         return new Response<>(sent);
     }
 
@@ -195,7 +195,7 @@ public class StaffOrderService {
         order.setStatus(StaffOrder.RECEIVED);
         order.setDecidedAt(LocalDateTime.now());
         order.setDecidedBy(LoggerUser.getEmail());
-        log.info("{} received order on {} from {}", order.getDecidedBy(), order.getSalesCode(), order.getStaffCode());
+        log.info("{} received order on {} from {}", order.getDecidedBy(), order.getSalesCode(), order.getStaffName());
         return new Response<>(staffOrderRepository.save(order));
     }
 
@@ -212,7 +212,7 @@ public class StaffOrderService {
         order.setRejectReason(dto.getReason().trim());
         order.setDecidedAt(LocalDateTime.now());
         order.setDecidedBy(LoggerUser.getEmail());
-        log.info("{} rejected order on {} from {}: {}", order.getDecidedBy(), order.getSalesCode(), order.getStaffCode(), order.getRejectReason());
+        log.info("{} rejected order on {} from {}: {}", order.getDecidedBy(), order.getSalesCode(), order.getStaffName(), order.getRejectReason());
         return new Response<>(staffOrderRepository.save(order));
     }
 

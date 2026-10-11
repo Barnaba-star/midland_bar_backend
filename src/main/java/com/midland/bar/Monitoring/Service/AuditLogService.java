@@ -103,14 +103,42 @@ public class AuditLogService {
     }
 
     public ResponsePage<AuditLog> findAuditPage(PageableParam pageableParam, String username, String outcome) {
+        // Old rows still hold staff codes in their paths and sign-in names, so
+        // a search by a bare number (or "STAFF-<number>") would point at whose
+        // code it is even with the rows masked: it finds nothing.
+        if (looksLikeStaffCode(pageableParam.getSearchParam()) || looksLikeStaffLogin(username))
+            pageableParam.setSearchParam("~no staff code search~");
         return new ResponsePage<>(
                 auditLogRepository.findAuditPage(
                         blankToNull(lower(username)),
                         blankToNull(outcome),
                         blankToNull(lower(pageableParam.getSearchParam())),
                         pageableParam.pageable(false)
-                )
+                ).map(AuditLogService::shown)
         );
+    }
+
+    private static boolean looksLikeStaffCode(String search) {
+        return search != null && search.trim().matches("\\d{1,10}");
+    }
+
+    private static boolean looksLikeStaffLogin(String username) {
+        return username != null && username.trim().toLowerCase().matches("staff-?\\d{1,10}");
+    }
+
+    /**
+     * A copy for the screen with staff codes masked. Rows written before codes
+     * were treated as secret still hold them (sign-in name, Staff Sell path,
+     * posted body); the stored row is left exactly as it was.
+     */
+    private static AuditLog shown(AuditLog row) {
+        AuditLog copy = new AuditLog();
+        org.springframework.beans.BeanUtils.copyProperties(row, copy);
+        copy.setUsername(SensitiveData.redactLogin(row.getUsername()));
+        copy.setPath(SensitiveData.redactPath(row.getPath()));
+        copy.setAction(SensitiveData.redactPath(row.getAction()));
+        copy.setPayload(SensitiveData.redact(row.getPayload()));
+        return copy;
     }
 
     public Response<Map<String, Long>> findAuditSummary() {
