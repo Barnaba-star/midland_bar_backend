@@ -66,6 +66,10 @@ public class ErrorLog extends BaseEntity {
     @Column(name = "branch_uid", length = 255)
     private String branchUid;
 
+    /** The branch's name, read with the row - Admin > Makosa says where it happened. */
+    @org.hibernate.annotations.Formula("(select b.branch_name from branches b where b.uid = branch_uid)")
+    private String branchName;
+
     @Column(name = "user_agent", length = 500)
     private String userAgent;
 
