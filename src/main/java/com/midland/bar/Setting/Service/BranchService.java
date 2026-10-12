@@ -41,6 +41,11 @@ public class BranchService {
     private final BranchCodeHelper branchCodeHelper;
     private final UserRepository userRepository;
     private final PlatformSettingService platformSettingService;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
+
+    /** Rows that belong to the branch itself rather than its business: they go with it. */
+    private static final java.util.Set<String> BRANCH_OWN_TABLES =
+            java.util.Set.of("users", "user_branches", "branch_messages", "audit_logs", "error_logs", "notifications");
     public Response<Branch> saveBranch(BranchDTO branchDTO) {
 
         log.info(LoggerUser.getEmail() + " is saving Branch");
@@ -242,6 +247,13 @@ public class BranchService {
         String raw = pageableParam.getSearchParam();
         return raw == null || raw.isBlank() ? null : raw.trim().toLowerCase();
     }
+    /**
+     * A branch with no business yet (a test, or one registered by mistake) goes
+     * with its own accounts: a user who also works at another branch moves
+     * there, one who only had this branch is removed. One with sales, stock,
+     * staff or the like is refused - block it instead, so its records stay.
+     */
+    @org.springframework.transaction.annotation.Transactional
     public Response<Branch> deleteBranch(String branchUID){
         log.info(LoggerUser.getEmail() + "is deleting Branch");
         Optional<Branch> optionalBranch = branchRepository.findById(branchUID);
@@ -249,13 +261,34 @@ public class BranchService {
             return new Response<>("Branch Not Found");
         if (!canTouch(optionalBranch.get()))
             return new Response<>("Branch Not Found");
-        try {
-            branchRepository.delete(optionalBranch.get());
-            branchRepository.flush();
-        } catch (org.springframework.dao.DataIntegrityViolationException e) {
-            // Users, bills or stock still point at it: say so instead of a 500.
-            return new Response<>("This branch still has users or records - block it, or delete it with all its data");
+
+        java.util.List<String> tables = jdbc.queryForList(
+                "SELECT table_name FROM information_schema.columns WHERE column_name = 'branch_uid' AND table_schema = 'public'",
+                String.class);
+        for (String table : tables) {
+            if (BRANCH_OWN_TABLES.contains(table))
+                continue;
+            Integer rows = jdbc.queryForObject("SELECT COUNT(*) FROM \"" + table + "\" WHERE branch_uid = ?", Integer.class, branchUID);
+            if (rows != null && rows > 0)
+                return new Response<>("This branch has sales, stock or staff records - block it instead of deleting it");
         }
+
+        // Its people: moved to another branch they work at, else removed.
+        for (String userUid : jdbc.queryForList("SELECT uid FROM users WHERE branch_uid = ?", String.class, branchUID)) {
+            java.util.List<String> other = jdbc.queryForList(
+                    "SELECT branch_uid FROM user_branches WHERE user_uid = ? AND branch_uid <> ? LIMIT 1", String.class, userUid, branchUID);
+            if (!other.isEmpty()) {
+                jdbc.update("UPDATE users SET branch_uid = ? WHERE uid = ?", other.get(0), userUid);
+            } else {
+                jdbc.update("DELETE FROM user_branches WHERE user_uid = ?", userUid);
+                jdbc.update("DELETE FROM user_roles WHERE user_uid = ?", userUid);
+                jdbc.update("DELETE FROM users WHERE uid = ?", userUid);
+            }
+        }
+        jdbc.update("DELETE FROM user_branches WHERE branch_uid = ?", branchUID);
+        jdbc.update("DELETE FROM branch_messages WHERE branch_uid = ?", branchUID);
+        branchRepository.delete(optionalBranch.get());
+        branchRepository.flush();
         return new Response<>(optionalBranch.get());
     }
     public ResponseList<BranchProjection> findBranchList(){
