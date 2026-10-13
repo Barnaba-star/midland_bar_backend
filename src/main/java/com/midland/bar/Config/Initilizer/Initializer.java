@@ -214,12 +214,21 @@ public class Initializer implements ApplicationRunner {
         // users, roles and branches.
         seedRoleWithPermissions(
                 "ADMIN",
-                "Main office - answers branch messages and publishes guidance",
+                "Main office - answers branch messages, publishes guidance, manages branches, users and roles below its own",
                 List.of(
                         "VIEW_BRANCH",
                         "VIEW_BRANCH_MESSAGE", "REPLY_BRANCH_MESSAGE", "MANAGE_GUIDANCE",
                         // Admin > Errors, Audit and Expiring branches (moved from Settings).
-                        "VIEW_ERROR_LOG", "DELETE_ERROR_LOG", "VIEW_AUDIT_LOG", "VIEW_EXPIRING_BRANCHES"
+                        "VIEW_ERROR_LOG", "DELETE_ERROR_LOG", "VIEW_AUDIT_LOG", "VIEW_EXPIRING_BRANCHES",
+                        // Settings > Branch, Users, Role, Commission (owner's choice,
+                        // 2026-10-13): like DIRECTOR across every branch, but no
+                        // deleting branches, no new or deleted roles, and never
+                        // ROOT/DIRECTOR/ADMIN or their holders (MainOfficeRoles).
+                        "VIEW_ALL_BRANCHES", "SAVE_BRANCH", "BLOCK_BRANCH",
+                        "VIEW_USER", "SAVE_USER", "DELETE_USER", "ASSIGN_USER_ROLE",
+                        "ENABLE_OR_DISABLE_USER", "ENABLE_OR_DISABLE_ACCOUNT",
+                        "VIEW_ROLE", "VIEW_PERMISSION", "SAVE_PERMISSION",
+                        "VIEW_COMMISSION_REPORT"
                 )
         );
 

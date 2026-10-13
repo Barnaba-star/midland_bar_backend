@@ -283,7 +283,8 @@ public class BarController {
         return staffOrderService.recordOffline(dto);
     }
 
-    @PreAuthorize("@authChecker.hasPermissionOrRoot('RECEIVE_ORDERS')")
+    // VIEW_ORDERS: the main office (every VIEW_*) looks at the queue without deciding.
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('RECEIVE_ORDERS') or @authChecker.hasPermissionOrRoot('VIEW_ORDERS')")
     @GetMapping("/staffOrders/offlineUnreviewed")
     public Response<java.util.List<com.midland.bar.Bar.Model.StaffOrder>> staffOfflineUnreviewed(){
         return staffOrderService.offlineUnreviewed();
@@ -316,7 +317,8 @@ public class BarController {
     }
 
     /** Supervisor: orders waiting to be received, oldest first. */
-    @PreAuthorize("@authChecker.hasPermissionOrRoot('RECEIVE_ORDERS')")
+    // VIEW_ORDERS: the main office (every VIEW_*) looks at the queue without deciding.
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('RECEIVE_ORDERS') or @authChecker.hasPermissionOrRoot('VIEW_ORDERS')")
     @GetMapping("/staffOrders/pending")
     public Response<java.util.List<com.midland.bar.Bar.Model.StaffOrder>> pendingStaffOrders(){
         return staffOrderService.pending();

@@ -1,4 +1,5 @@
 package com.midland.bar.Setting.Service;
+import com.midland.bar.Config.Security.MainOfficeRoles;
 import com.midland.bar.Config.Security.LoggerUser;
 import com.midland.bar.Setting.Dto.ExpiringBranchDTO;
 import java.time.temporal.ChronoUnit;
@@ -215,17 +216,12 @@ public class BranchService {
         Optional<Branch> optionalBranch = branchRepository.findById(branchUID);
         return optionalBranch.map(Response::new).orElseGet(() -> new Response<>("Branch Not Found"));
     }
-    // ROOT and DIRECTOR see every branch; anyone else (STAFF) only sees the
+    // ROOT, DIRECTOR and ADMIN see every branch; anyone else (STAFF) only sees the
     // ones they registered themselves - one staffer's companies stay hidden
     // from another's.
     public boolean seesAllBranches() {
-        User user = LoggerUser.getUser();
-        List<String> roleCodes = user.getRoles() == null
-                ? List.of()
-                : user.getRoles().stream().map(Role::getCode).toList();
-        return Boolean.TRUE.equals(user.getIsRoot())
-                || roleCodes.contains("ROOT")
-                || roleCodes.contains("DIRECTOR");
+        // ROOT, DIRECTOR and ADMIN (MainOfficeRoles).
+        return MainOfficeRoles.seesAllBranches(LoggerUser.getUser());
     }
 
     public ResponsePage<Branch> findBranchPage(PageableParam pageableParam){

@@ -42,6 +42,13 @@ public class ErrorLogController {
         return errorLogService.clearAll();
     }
 
+    /** Admin > Makosa: one error off the list (the row's Futa). */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('DELETE_ERROR_LOG')")
+    @DeleteMapping("/deleteError/{uid}")
+    public Response<Boolean> deleteError(@PathVariable String uid) {
+        return errorLogService.deleteOne(uid);
+    }
+
     /**
      * Where the browser posts its own errors. Deliberately open to any logged-in
      * user rather than gated on VIEW_ERROR_LOG - a CASHIER hitting a bug is

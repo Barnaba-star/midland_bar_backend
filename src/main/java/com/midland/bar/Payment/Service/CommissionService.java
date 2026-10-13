@@ -1,5 +1,6 @@
 package com.midland.bar.Payment.Service;
 
+import com.midland.bar.Config.Security.MainOfficeRoles;
 import com.midland.bar.Config.Security.LoggerUser;
 import com.midland.bar.Payment.Dto.StaffBranchDTO;
 import com.midland.bar.Payment.Dto.StaffCommissionDTO;
@@ -420,13 +421,8 @@ public class CommissionService {
      * themselves. Mirrors the same split in RoleService/UserService.
      */
     private boolean seesAllStaff() {
-        User user = LoggerUser.getUser();
-        List<String> roleCodes = user.getRoles() == null
-                ? List.of()
-                : user.getRoles().stream().map(Role::getCode).toList();
-        return Boolean.TRUE.equals(user.getIsRoot())
-                || roleCodes.contains("ROOT")
-                || roleCodes.contains("DIRECTOR");
+        // ROOT, DIRECTOR and ADMIN (MainOfficeRoles).
+        return MainOfficeRoles.seesAllBranches(LoggerUser.getUser());
     }
 
     /**

@@ -21,6 +21,8 @@ import java.util.Set;
  *  - ROOT and DIRECTOR (main office): every branch, to give support anywhere.
  *  - STAFF (registers branches): MIDLAND plus the branches they registered,
  *    and in a customer's branch they may look but not change anything.
+ *  - ADMIN: every branch, but like STAFF only looking outside MIDLAND
+ *    (owner's choice, 2026-10-13).
  *  - Everyone else: their home branch plus any the main office gave them.
  *
  * MIDLAND - the home branch of main-office logins - is always listed first,
@@ -31,7 +33,9 @@ import java.util.Set;
 public class BranchAccess {
 
     private static final Set<String> EVERY_BRANCH = Set.of("ROOT", "DIRECTOR");
-    private static final Set<String> MAIN_OFFICE = Set.of("ROOT", "DIRECTOR", "STAFF");
+    private static final Set<String> MAIN_OFFICE = Set.of("ROOT", "DIRECTOR", "STAFF", "ADMIN");
+    /** May sign in to every branch - ADMIN only to look (isSupportViewOnly). */
+    private static final Set<String> LISTS_EVERY_BRANCH = Set.of("ROOT", "DIRECTOR", "ADMIN");
 
     private final BranchRepository branchRepository;
 
@@ -41,7 +45,7 @@ public class BranchAccess {
         if (home != null)
             out.put(home.getUid(), home);
         List<Branch> others = new ArrayList<>();
-        if (seesEveryBranch(user)) {
+        if (listsEveryBranch(user)) {
             others.addAll(branchRepository.findAll());
         } else {
             others.addAll(user.getWorkBranches());
@@ -61,7 +65,7 @@ public class BranchAccess {
             return Optional.empty();
         if (user.getHomeBranch() != null && branchUid.equals(user.getHomeBranch().getUid()))
             return Optional.of(user.getHomeBranch());
-        if (seesEveryBranch(user))
+        if (listsEveryBranch(user))
             return branchRepository.findById(branchUid).filter(b -> !Boolean.FALSE.equals(b.getIsActive()));
         return allowed(user).stream().filter(b -> branchUid.equals(b.getUid())).findFirst();
     }
@@ -72,12 +76,12 @@ public class BranchAccess {
     }
 
     /**
-     * STAFF working in a branch that is not their own: they look, they don't
-     * touch - the token carries only VIEW_* permissions. ROOT and DIRECTOR are
-     * not limited this way.
+     * STAFF or ADMIN working in a branch that is not their own: they look, they
+     * don't touch - the token carries only VIEW_* permissions. ROOT and
+     * DIRECTOR are not limited this way.
      */
     public boolean isSupportViewOnly(User user) {
-        if (seesEveryBranch(user) || !hasRole(user, "STAFF"))
+        if (seesEveryBranch(user) || !(hasRole(user, "STAFF") || hasRole(user, "ADMIN")))
             return false;
         Branch home = user.getHomeBranch();
         Branch working = user.getBranch();
@@ -86,6 +90,10 @@ public class BranchAccess {
 
     public boolean seesEveryBranch(User user) {
         return Boolean.TRUE.equals(user.getIsRoot()) || EVERY_BRANCH.stream().anyMatch(r -> hasRole(user, r));
+    }
+
+    private boolean listsEveryBranch(User user) {
+        return Boolean.TRUE.equals(user.getIsRoot()) || LISTS_EVERY_BRANCH.stream().anyMatch(r -> hasRole(user, r));
     }
 
     private static boolean hasRole(User user, String code) {

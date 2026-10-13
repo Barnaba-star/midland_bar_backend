@@ -1,5 +1,6 @@
 package com.midland.bar.Setting.Service;
 
+import com.midland.bar.Config.Security.MainOfficeRoles;
 import com.midland.bar.Config.Security.LoggerUser;
 import com.midland.bar.Setting.Dto.AssignPermissionToRoleDto;
 import com.midland.bar.Setting.Dto.RoleDto;
@@ -104,32 +105,23 @@ public class RoleService {
     public ResponseList<Role> findRoles(){
         log.info(LoggerUser.getEmail() + "is Accessing Roles");
         if (!seesAllRoles()) {
-            return new ResponseList<>(roleRepository.findByCodeIn(STAFF_VISIBLE_ROLE_CODES));
+            return new ResponseList<>(roleRepository.findByCodeIn(MainOfficeRoles.visibleRoleCodes(LoggerUser.getUser())));
         }
         return new ResponseList<>(roleRepository.findAll());
     }
-    // STAFF only manages the branch-operational roles; ROOT and DIRECTOR
-    // see every role.
-    private static final List<String> STAFF_VISIBLE_ROLE_CODES = List.of("CEO", "MANAGER", "COUNTER", "CHEF", "CASHIER", "STORE_KEEPER", "SUPERVISOR");
 
     public ResponsePage<Role> findRolePage(int page, int size){
         log.info(LoggerUser.getEmail() + "is accessing Role");
         Pageable pageable = PageRequest.of(page, size);
         if (!seesAllRoles()) {
-            return new ResponsePage<>(roleRepository.findRolePageByCodes(STAFF_VISIBLE_ROLE_CODES, pageable));
+            return new ResponsePage<>(roleRepository.findRolePageByCodes(MainOfficeRoles.visibleRoleCodes(LoggerUser.getUser()), pageable));
         }
         return new ResponsePage<>(roleRepository.findRolePage(pageable));
     }
-    // ROOT and DIRECTOR manage every role; everyone else (STAFF included)
-    // only ever sees the branch-operational ones.
+    // ROOT and DIRECTOR manage every role; STAFF only the branch ones, ADMIN
+    // those plus STAFF (MainOfficeRoles).
     private boolean seesAllRoles() {
-        User user = LoggerUser.getUser();
-        List<String> roleCodes = user.getRoles() == null
-                ? List.of()
-                : user.getRoles().stream().map(Role::getCode).toList();
-        return Boolean.TRUE.equals(user.getIsRoot())
-                || roleCodes.contains("ROOT")
-                || roleCodes.contains("DIRECTOR");
+        return MainOfficeRoles.seesAllRoles(LoggerUser.getUser());
     }
 
     public ResponseList<Permission> findPermissionsByRole(String roleUID){
@@ -150,6 +142,11 @@ public class RoleService {
         if (optionalRole.isEmpty())
             return new Response<>("Role Not Found");
         Role role = optionalRole.get();
+        User caller = LoggerUser.getUser();
+        if (!MainOfficeRoles.canSee(caller, role))
+            return new Response<>("Role Not Allowed");
+        if (MainOfficeRoles.isAdmin(caller) && !onlyHeldByCaller(caller, role, assignPermissionToRoleDto.getPermissions()))
+            return new Response<>("Permission Not Allowed");
         List<Permission> existingPermissions = role.getPermission();
         if (existingPermissions == null) {
             existingPermissions = new ArrayList<>();
@@ -163,6 +160,29 @@ public class RoleService {
         role.setPermission(existingPermissions);
         return new Response<>(roleRepository.save(role));
     }
+    /**
+     * ADMIN may only add to a role what its own roles hold (reading aside), so
+     * it cannot give a branch role a power - deleting branches, say - it was
+     * never given itself. Permissions the role already has may stay.
+     */
+    private boolean onlyHeldByCaller(User caller, Role role, List<Permission> wanted) {
+        java.util.Set<String> held = new java.util.HashSet<>();
+        if (caller.getRoles() != null)
+            caller.getRoles().forEach(r -> r.getPermission().forEach(p -> held.add(p.getName())));
+        java.util.Set<String> already = new java.util.HashSet<>();
+        if (role.getPermission() != null)
+            role.getPermission().forEach(p -> already.add(p.getName()));
+        for (Permission p : wanted == null ? List.<Permission>of() : wanted) {
+            Permission full = p.getName() != null ? p : permissionRepository.findById(p.getUid()).orElse(null);
+            if (full == null || full.getName() == null)
+                return false;
+            String name = full.getName();
+            if (!already.contains(name) && !held.contains(name) && !name.startsWith("VIEW_"))
+                return false;
+        }
+        return true;
+    }
+
     public ResponseList<String> findDistinctModules(){
         log.info(LoggerUser.getEmail() + "is accessing Modules");
         return new ResponseList<>(permissionRepository.findDistinctModules());

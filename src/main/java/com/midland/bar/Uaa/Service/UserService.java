@@ -1,5 +1,6 @@
 package com.midland.bar.Uaa.Service;
 
+import com.midland.bar.Config.Security.MainOfficeRoles;
 import com.midland.bar.Config.Security.AuthChecker;
 import com.midland.bar.Config.Security.LoggerUser;
 import com.midland.bar.Setting.Model.Branch;
@@ -60,6 +61,8 @@ public class UserService {
             if(optionalUser.isEmpty())
                 return new Response<>("User Not Found");
             user=optionalUser.get();
+            if (MainOfficeRoles.outOfReach(LoggerUser.getUser(), user))
+                return new Response<>("User Not Allowed");
             user.update();
         }else {
             user = new User();
@@ -113,7 +116,7 @@ public class UserService {
                 // STAFF are only shown the branch-operational roles, so they
                 // must not be able to grant one they cannot see. Same rule as
                 // assignOrUnAssignUserRole.
-                if (!seesAllRoles() && !STAFF_VISIBLE_ROLE_CODES.contains(role.getCode()))
+                if (!MainOfficeRoles.canSee(LoggerUser.getUser(), role))
                     return new Response<>("Role Not Allowed");
                 user.setRoles(new ArrayList<>(List.of(role)));
             }
@@ -205,6 +208,8 @@ public class UserService {
         if (optionalUser.isEmpty())
             return new Response<>("User Not Found");
         User user = optionalUser.get();
+        if (MainOfficeRoles.outOfReach(LoggerUser.getUser(), user))
+            return new Response<>("User Not Allowed");
         if (!Boolean.TRUE.equals(user.getMustChangePassword()))
             return new Response<>(new ResentCodeDTO("ALREADY_ACTIVATED", user.getUsername(), null, null));
 
@@ -321,6 +326,8 @@ public class UserService {
     @Transactional
     public Response<User> deleteUser(String uid) {
         User user = userRepository.findById(uid).orElseThrow(() -> new BusinessException("User not found"));
+        if (MainOfficeRoles.outOfReach(LoggerUser.getUser(), user))
+            throw new BusinessException("User Not Allowed");
         userRepository.deleteUserRoles(uid);
         userRepository.delete(user);
         return new Response<>(user);
@@ -398,32 +405,27 @@ public class UserService {
             return new Response<>("User Not Found");
         User user = optionalUser.get();
         List<Role> updatedRoles = new ArrayList<>(roleRepository.findAllById(assignUserRoleDTO.getRoleUIDS()));
+        User caller = LoggerUser.getUser();
+        if (MainOfficeRoles.outOfReach(caller, user))
+            return new Response<>("User Not Allowed");
         if (!seesAllRoles()) {
-            // The caller (e.g. STAFF) is only shown CEO/MANAGER/CASHIER, so
-            // they can neither hand out a role they can't see nor strip one
+            // The caller (STAFF, ADMIN) is only shown the roles below its own,
+            // so they can neither hand out a role they can't see nor strip one
             // the user already holds - those are kept as they were.
-            updatedRoles.removeIf(role -> !STAFF_VISIBLE_ROLE_CODES.contains(role.getCode()));
+            updatedRoles.removeIf(role -> !MainOfficeRoles.canSee(caller, role));
             if (user.getRoles() != null) {
                 user.getRoles().stream()
-                        .filter(role -> !STAFF_VISIBLE_ROLE_CODES.contains(role.getCode()))
+                        .filter(role -> !MainOfficeRoles.canSee(caller, role))
                         .forEach(updatedRoles::add);
             }
         }
         user.setRoles(updatedRoles);
         return new Response<>(userRepository.save(user));
     }
-    // Mirrors RoleService: ROOT and DIRECTOR manage every role, everyone
-    // else only ever sees/handles the branch-operational ones.
-    private static final List<String> STAFF_VISIBLE_ROLE_CODES = List.of("CEO", "MANAGER", "COUNTER", "CHEF", "CASHIER", "STORE_KEEPER", "SUPERVISOR");
-
+    // ROOT and DIRECTOR manage every role; STAFF and ADMIN only the ones
+    // below their own (MainOfficeRoles).
     private boolean seesAllRoles() {
-        User loggedUser = LoggerUser.getUser();
-        List<String> roleCodes = loggedUser.getRoles() == null
-                ? List.of()
-                : loggedUser.getRoles().stream().map(Role::getCode).toList();
-        return Boolean.TRUE.equals(loggedUser.getIsRoot())
-                || roleCodes.contains("ROOT")
-                || roleCodes.contains("DIRECTOR");
+        return MainOfficeRoles.seesAllRoles(LoggerUser.getUser());
     }
 
     /**
@@ -457,6 +459,9 @@ public class UserService {
         }
 
         User user = optionalUser.get();
+        if (MainOfficeRoles.outOfReach(LoggerUser.getUser(), user)) {
+            return blockCode("NOT_ALLOWED");
+        }
 
         // The platform's own root account is how everything is put right when
         // something goes wrong; it is not something to switch off from a
@@ -539,6 +544,8 @@ public class UserService {
         User user = found.get();
         if (Boolean.TRUE.equals(user.getIsRoot()))
             return new Response<>("A root user already reaches every branch");
+        if (MainOfficeRoles.outOfReach(LoggerUser.getUser(), user))
+            return new Response<>("User Not Allowed");
         java.util.Set<Branch> extra = new java.util.HashSet<>();
         for (String uid : dto.getBranchUIDs() == null ? java.util.List.<String>of() : dto.getBranchUIDs()) {
             if (uid == null || (user.getHomeBranch() != null && uid.equals(user.getHomeBranch().getUid())))

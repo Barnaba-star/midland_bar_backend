@@ -132,6 +132,13 @@ public class ErrorLogService {
         return new Response<>(errorLogRepository.clearAll());
     }
 
+    public Response<Boolean> deleteOne(String uid) {
+        if (uid == null || !errorLogRepository.existsById(uid))
+            return new Response<>("Error Not Found");
+        errorLogRepository.deleteById(uid);
+        return new Response<>(Boolean.TRUE);
+    }
+
     private void applyCurrentUser(ErrorLog errorLog) {
         // An error can happen before or after authentication, and LoggerUser
         // throws when there is no principal - so never let that decide whether
