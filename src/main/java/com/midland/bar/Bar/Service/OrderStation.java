@@ -4,7 +4,6 @@ import com.midland.bar.Config.Security.LoggerUser;
 import com.midland.bar.Setting.Model.Role;
 import com.midland.bar.Uaa.Model.User;
 
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -59,25 +58,34 @@ public final class OrderStation {
         return null;
     }
 
-    /** The station this login receives for; null = every station. */
+    /**
+     * The station(s) this login receives for, comma-joined ("COUNTER" or
+     * "COUNTER,JUICE"); null = every station. Someone holding two station
+     * roles (counter and juice) sees both - and nothing of the others.
+     */
     public static String mine() {
         User user = LoggerUser.getUser();
         if (Boolean.TRUE.equals(user.getIsRoot()))
             return null;
         List<Role> roles = user.getRoles() == null ? List.of() : user.getRoles();
-        Set<String> stations = new HashSet<>();
+        Set<String> stations = new java.util.TreeSet<>();
         for (Role r : roles) {
             String s = stationOf(r);
             if (s == null)
                 return null; // a wider role sees every station
             stations.add(s);
         }
-        return stations.size() == 1 ? stations.iterator().next() : null;
+        return stations.isEmpty() ? null : String.join(",", stations);
     }
 
-    /** Whether a login of station {@code mine} sees an order for {@code station}. No station on the order = everyone. */
+    /** Whether a login of station(s) {@code mine} sees an order for {@code station}. No station on the order = everyone. */
     public static boolean sees(String mine, String station) {
-        return mine == null || station == null || mine.equals(station);
+        if (mine == null || station == null)
+            return true;
+        for (String s : mine.split(","))
+            if (s.equals(station))
+                return true;
+        return false;
     }
 
     /** For messages: where an order is received. */

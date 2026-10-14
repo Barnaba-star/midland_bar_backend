@@ -160,6 +160,30 @@ class StaffOrderFlowTest {
     }
 
     @Test
+    void oneBillMixingFoodAndDrinksSendsEachToItsOwnStation() {
+        write(1); // mshikaki - the kitchen
+        StaffOrderItemDTO beer = new StaffOrderItemDTO();
+        beer.setSalesOpenedUID(bill.getUid());
+        beer.setBarServiceUID("06ca53fb-230f-4adf-adde-c9edf880be47"); // Castle Lite - the counter
+        beer.setQuantity(1);
+        assertNotNull(staffOrderService.addItem(beer).getData());
+        write(1);
+        assertEquals(2, staffSellService.sendOrders(staff.getStaffCode()).getData(), "one order per station");
+        List<StaffOrder> mine = staffOrderService.pending().getData().stream()
+                .filter(o -> o.getSalesOpenedUid().equals(bill.getUid())).toList();
+        assertEquals(java.util.Set.of("CHEF", "COUNTER"),
+                mine.stream().map(StaffOrder::getStation).collect(java.util.stream.Collectors.toSet()));
+    }
+
+    @Test
+    void aLoginHoldingTwoStationsSeesBothAndNoOther() {
+        assertTrue(com.midland.bar.Bar.Service.OrderStation.sees("COUNTER,JUICE", "JUICE"));
+        assertTrue(com.midland.bar.Bar.Service.OrderStation.sees("COUNTER,JUICE", "COUNTER"));
+        assertFalse(com.midland.bar.Bar.Service.OrderStation.sees("COUNTER,JUICE", "CHEF"));
+        assertFalse(com.midland.bar.Bar.Service.OrderStation.sees("COUNTER", "BISS"));
+    }
+
+    @Test
     void aChangeWaitsAsOneMarkedOrderAndReceivingSwapsTheLine() {
         write(2);
         StaffOrder first = sendAndGetPending();

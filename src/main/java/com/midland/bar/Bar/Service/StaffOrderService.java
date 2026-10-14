@@ -105,6 +105,8 @@ public class StaffOrderService {
             line.setServing(serving);
             order.getLines().add(line);
         }
+        log.info("{} wrote {} x{} on {} for the {}", bill.getStaffName(), service.getServiceName(), dto.getQuantity(),
+                bill.getSalesCode(), OrderStation.placeName(station));
         return new Response<>(staffOrderRepository.save(order));
     }
 
