@@ -205,8 +205,9 @@ public class Initializer implements ApplicationRunner {
         );
         seedRoleWithPermissions(
                 "CHEF",
-                "Chef (kitchen) - receives waiters' food orders before they leave the kitchen",
-                List.of("VIEW_BRANCH", "VIEW_SALES", "RECEIVE_ORDERS")
+                "Chef (kitchen) - receives waiters' food orders before they leave the kitchen, and sells on their own bills",
+                // COUNTER_SELL like the counter (owner, 2026-10-14): every station sells on its own bills.
+                List.of("VIEW_BRANCH", "VIEW_SALES", "RECEIVE_ORDERS", "COUNTER_SELL")
         );
         // More stations beside the counter and the kitchen (owner, 2026-10-14):
         // Biss, fresh juice and shisha each received where they are made. The
@@ -319,7 +320,7 @@ public class Initializer implements ApplicationRunner {
                 roleRepository.save(role);
             }
         }
-        seedRoleWithPermissions(code, description, List.of("VIEW_BRANCH", "VIEW_SALES", "RECEIVE_ORDERS"));
+        seedRoleWithPermissions(code, description, List.of("VIEW_BRANCH", "VIEW_SALES", "RECEIVE_ORDERS", "COUNTER_SELL"));
     }
 
     private void addMissingPermissions(Role role, List<String> permissionNames) throws Exception {
