@@ -217,6 +217,7 @@ public class Initializer implements ApplicationRunner {
         seedStationRole("JUICE", "Juice - receives waiters' fresh juice orders where the juice is made");
         seedStationRole("BISS", "Biss - receives waiters' Biss orders");
         seedStationRole("SHISHER", "Shisha - receives waiters' shisha orders");
+        seedStationRole("POOL", "Pool table - receives waiters' pool game orders");
 
         // Main office: answers the branches and publishes guidance to them -
         // the Admin area, across every branch - without DIRECTOR's hold on

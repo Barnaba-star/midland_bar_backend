@@ -6,7 +6,7 @@ public enum ProductCategory {
     FOOD,
     /** Neither drink nor food (owner, 2026-10-14): shisha and what it is made from. */
     SHISHA,
-    /** A game on the pool table, paid per game or by time - collected at the counter. */
+    /** A game on the pool table, paid per game or by time - received at the pool table (POOL). */
     POOL;
 
     /** Start of the generated product code: DRK-001, FOD-001, SHS-001, POL-001. */

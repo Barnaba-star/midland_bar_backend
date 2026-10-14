@@ -10,7 +10,7 @@ import java.util.Set;
 /**
  * Where a staff order is received: food by the CHEF (the kitchen), any Biss
  * at BISS, any fresh juice at JUICE, shisha at SHISHER (owner's choice,
- * 2026-10-14), every other drink at the COUNTER. A login holding only one of
+ * 2026-10-14), pool games at POOL, every other drink at the COUNTER. A login holding only one of
  * these station roles sees and decides only that station's orders; CEO,
  * MANAGER and anyone with a wider role see every station.
  */
@@ -21,18 +21,22 @@ public final class OrderStation {
     public static final String JUICE = "JUICE";
     public static final String BISS = "BISS";
     public static final String SHISHER = "SHISHER";
+    /** The pool table: games are received (and the table started) there. */
+    public static final String POOL = "POOL";
 
     /** The roles that are a station - holding only these limits what you see. */
-    public static final List<String> STATIONS = List.of(COUNTER, CHEF, JUICE, BISS, SHISHER);
+    public static final List<String> STATIONS = List.of(COUNTER, CHEF, JUICE, BISS, SHISHER, POOL);
 
     private OrderStation() {}
 
-    /** FOOD goes to the kitchen, SHISHA to the shisha station; drinks, pool games and everything else to the counter. */
+    /** FOOD goes to the kitchen, SHISHA to the shisha station, POOL to the pool table; drinks and everything else to the counter. */
     public static String forCategory(String category) {
         if ("FOOD".equalsIgnoreCase(category))
             return CHEF;
         if ("SHISHA".equalsIgnoreCase(category))
             return SHISHER;
+        if ("POOL".equalsIgnoreCase(category))
+            return POOL;
         return COUNTER;
     }
 
@@ -101,6 +105,7 @@ public final class OrderStation {
             case JUICE -> "juice station";
             case BISS -> "Biss station";
             case SHISHER -> "shisha station";
+            case POOL -> "pool table";
             default -> "counter";
         };
     }

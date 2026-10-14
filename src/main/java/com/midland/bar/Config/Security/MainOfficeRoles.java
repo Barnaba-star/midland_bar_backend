@@ -19,7 +19,7 @@ public final class MainOfficeRoles {
 
     /** What a branch works with - all anyone below DIRECTOR ever sees or hands out. */
     public static final List<String> BRANCH_ROLE_CODES =
-            List.of("CEO", "MANAGER", "COUNTER", "CHEF", "JUICE", "BISS", "SHISHER", "CASHIER", "STORE_KEEPER", "SUPERVISOR");
+            List.of("CEO", "MANAGER", "COUNTER", "CHEF", "JUICE", "BISS", "SHISHER", "POOL", "CASHIER", "STORE_KEEPER", "SUPERVISOR");
 
     /** Out of ADMIN's reach: whoever holds one of these is left as they are. */
     private static final Set<String> BIG_ROLE_CODES = Set.of("ROOT", "DIRECTOR", "ADMIN");
