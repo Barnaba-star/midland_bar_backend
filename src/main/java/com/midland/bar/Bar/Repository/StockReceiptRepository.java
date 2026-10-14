@@ -36,13 +36,19 @@ public interface StockReceiptRepository extends JpaRepository<StockReceipt, Stri
                     WHERE r.barService = s AND r.receivedAt >= :from AND r.receivedAt < :to) AS purchasedCost,
                   (SELECT COALESCE(SUM(COALESCE(b.stockUnits, b.quantity, 1)), 0) FROM BarSales b
                     WHERE (b.stockItemUid = s.uid OR (b.stockItemUid IS NULL AND b.barServiceEntity = s))
-                      AND b.createdAt >= :fromDate AND b.createdAt <= :toDate) AS usedUnits,
+                      AND b.createdAt >= :fromDate AND b.createdAt <= :toDate)
+                  + (SELECT COALESCE(SUM(x.units), 0) FROM BarSaleStock x
+                    WHERE x.stockItemUid = s.uid AND x.soldOn >= :fromDate AND x.soldOn <= :toDate) AS usedUnits,
                   (SELECT COALESCE(SUM(COALESCE(b.lineTotal, COALESCE(b.unitPrice, s.price) * COALESCE(b.quantity, 1))), 0) FROM BarSales b
                     WHERE (b.stockItemUid = s.uid OR (b.stockItemUid IS NULL AND b.barServiceEntity = s))
                       AND b.createdAt >= :fromDate AND b.createdAt <= :toDate) AS soldValue,
                   (SELECT COALESCE(SUM(COALESCE(b.unitCost, 0) * COALESCE(b.quantity, 1)), 0) FROM BarSales b
                     WHERE (b.stockItemUid = s.uid OR (b.stockItemUid IS NULL AND b.barServiceEntity = s))
-                      AND b.createdAt >= :fromDate AND b.createdAt <= :toDate) AS soldCost,
+                      AND b.createdAt >= :fromDate AND b.createdAt <= :toDate)
+                  + (SELECT COALESCE(SUM(x.cost), 0) FROM BarSaleStock x
+                    WHERE x.stockItemUid = s.uid AND x.soldOn >= :fromDate AND x.soldOn <= :toDate)
+                  - (SELECT COALESCE(SUM(x.cost), 0) FROM BarSaleStock x
+                    WHERE x.primaryStockItemUid = s.uid AND x.soldOn >= :fromDate AND x.soldOn <= :toDate) AS soldCost,
                   (SELECT COALESCE(SUM(a.unitsChanged), 0) FROM StockAdjustment a
                     WHERE a.barService = s AND a.adjustedAt >= :from AND a.adjustedAt < :to) AS adjustedUnits,
                   (SELECT COALESCE(SUM(a.costValue), 0) FROM StockAdjustment a

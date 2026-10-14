@@ -47,6 +47,19 @@ public class BarServiceDTO {
     @Min(value = 1, message = "Enter how many")
     private Integer saleUnitCount;
 
+    /** With a stock item as source: the other stock items one sale takes too (rice beside the fish). Null = leave as they are, empty = none. */
+    private java.util.List<IngredientDTO> extraIngredients;
+
+    @lombok.Data
+    public static class IngredientDTO {
+        private String stockItemUid;
+        /** The rung of its ladder (Sahani), and how many of it... */
+        private String saleUnitName;
+        private Integer saleUnitCount;
+        /** ...or, for an item without a ladder, a plain number of its units. */
+        private Integer unitsPerSale;
+    }
+
     @NotBlank(message = "Category is required")
     @Pattern(regexp = "DRINK|FOOD|SHISHA|POOL", message = "Category must be DRINK, FOOD, SHISHA or POOL")
     private String category;

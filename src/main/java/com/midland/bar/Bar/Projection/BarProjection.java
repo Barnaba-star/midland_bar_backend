@@ -48,6 +48,8 @@ public interface BarProjection {
     String getStockSourceUid();
     String getStockSourceName();
     Integer getUnitsPerSale();
+    /** JSON of the other stock items it is made from - see Ingredients. */
+    String getExtraIngredients();
 
     /** A stock item's measures as JSON, smallest first (see BarServiceEntity.unitLadder). */
     String getUnitLadder();

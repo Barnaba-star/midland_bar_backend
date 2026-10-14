@@ -79,6 +79,7 @@ public class BarService {
   private final StaffCodeService staffCodeService;
   private final StaffOrderRepository staffOrderRepository;
   private final BillLineVoidRepository billLineVoidRepository;
+  private final com.midland.bar.Bar.Repository.BarSaleStockRepository barSaleStockRepository;
   private final StaffLossRepository staffLossRepository;
   private final com.midland.bar.Utils.Offline.OfflineOps offlineOps;
 
@@ -164,6 +165,7 @@ public class BarService {
           serviceEntity.setUnitsPerSale(null);
           serviceEntity.setSaleUnitName(null);
           serviceEntity.setSaleUnitCount(null);
+          serviceEntity.setExtraIngredients(null);
       } else {
           if (barServiceDTO.getPrice() == null)
               return new Response<>("Enter the selling price");
@@ -176,10 +178,12 @@ public class BarService {
               serviceEntity.setTrackStock(true);
               serviceEntity.setStockSourceUid(null);
               serviceEntity.setUnitsPerSale(null);
+              serviceEntity.setExtraIngredients(null);
           } else if ("NONE".equals(source)) {
               serviceEntity.setTrackStock(false);
               serviceEntity.setStockSourceUid(null);
               serviceEntity.setUnitsPerSale(null);
+              serviceEntity.setExtraIngredients(null);
           } else {
               Optional<BarServiceEntity> stockItem = barServiceRepository.findBarServiceByUID(source, LoggerUser.getBranchUID())
                       .filter(s -> ServiceKind.of(s.getKind()) == ServiceKind.STOCK_ITEM);
@@ -212,6 +216,41 @@ public class BarService {
               serviceEntity.setPackUnit(null);
               serviceEntity.setUnitsPerPack(1);
               serviceEntity.setBuyingPrice(null);
+
+              // The other stock items one sale takes too: the rice beside the fish.
+              List<Ingredients.Ingredient> extras = new ArrayList<>();
+              java.util.Set<String> seen = new java.util.HashSet<>(List.of(stockItem.get().getUid()));
+              if (barServiceDTO.getExtraIngredients() != null) {
+                  for (BarServiceDTO.IngredientDTO in : barServiceDTO.getExtraIngredients()) {
+                      if (in == null || in.getStockItemUid() == null || in.getStockItemUid().isBlank())
+                          continue;
+                      BarServiceEntity item = barServiceRepository.findBarServiceByUID(in.getStockItemUid(), LoggerUser.getBranchUID())
+                              .filter(x -> ServiceKind.of(x.getKind()) == ServiceKind.STOCK_ITEM)
+                              .orElse(null);
+                      if (item == null)
+                          return new Response<>("Choose each other ingredient from the store's stock items");
+                      if (!seen.add(item.getUid()))
+                          return new Response<>(item.getServiceName() + " is in the recipe twice - put it once with the right amount");
+                      String unit = in.getSaleUnitName();
+                      int count = in.getSaleUnitCount() == null || in.getSaleUnitCount() < 1 ? 1 : in.getSaleUnitCount();
+                      int units;
+                      if (unit != null && !unit.isBlank()) {
+                          Optional<Integer> base = UnitLadders.baseOf(item.getUnitLadder(), unit);
+                          if (base.isEmpty())
+                              return new Response<>(item.getServiceName() + " has no measure called " + unit);
+                          units = base.get() * count;
+                      } else if (in.getUnitsPerSale() != null && in.getUnitsPerSale() > 0) {
+                          units = in.getUnitsPerSale();
+                          unit = null;
+                      } else {
+                          return new Response<>("Say how much of " + item.getServiceName() + " one sale takes");
+                      }
+                      extras.add(new Ingredients.Ingredient(item.getUid(), unit, unit == null ? null : count, units));
+                  }
+              }
+              // Not sent at all (an older app's form): keep what it has.
+              if (barServiceDTO.getExtraIngredients() != null)
+                  serviceEntity.setExtraIngredients(Ingredients.toJson(extras));
           }
       }
       serviceEntity.setUsageType(barServiceDTO.getUsageType());
@@ -221,12 +260,23 @@ public class BarService {
               // A rung resized (a Portion is now 12 Mshikaki) changes what
               // every service made from this item takes per sale.
               for (BarServiceEntity drawing : barServiceRepository.findDrawingOn(saved.getUid(), LoggerUser.getBranchUID())) {
-                  if (drawing.getSaleUnitName() == null)
-                      continue;
-                  UnitLadders.baseOf(saved.getUnitLadder(), drawing.getSaleUnitName()).ifPresent(base -> {
-                      drawing.setUnitsPerSale(base * (drawing.getSaleUnitCount() == null ? 1 : drawing.getSaleUnitCount()));
-                      barServiceRepository.save(drawing);
-                  });
+                  if (saved.getUid().equals(drawing.getStockSourceUid()) && drawing.getSaleUnitName() != null)
+                      UnitLadders.baseOf(saved.getUnitLadder(), drawing.getSaleUnitName()).ifPresent(base ->
+                              drawing.setUnitsPerSale(base * (drawing.getSaleUnitCount() == null ? 1 : drawing.getSaleUnitCount())));
+                  // ...and the same for it as another ingredient (the rice of a wali samaki).
+                  List<Ingredients.Ingredient> extras = new ArrayList<>();
+                  for (Ingredients.Ingredient in : Ingredients.parse(drawing.getExtraIngredients())) {
+                      if (saved.getUid().equals(in.uid()) && in.unit() != null) {
+                          Optional<Integer> base = UnitLadders.baseOf(saved.getUnitLadder(), in.unit());
+                          extras.add(base.isPresent()
+                                  ? new Ingredients.Ingredient(in.uid(), in.unit(), in.count(), base.get() * (in.count() == null ? 1 : in.count()))
+                                  : in);
+                      } else {
+                          extras.add(in);
+                      }
+                  }
+                  drawing.setExtraIngredients(Ingredients.toJson(extras));
+                  barServiceRepository.save(drawing);
               }
           }
           return new Response<>(saved);
@@ -900,6 +950,16 @@ public class BarService {
             } else if (Boolean.TRUE.equals(service.getTrackStock())) {
                 storeRows.put(service.getUid(), service);
             }
+            // The other stock items it is made from (the rice of a wali samaki), locked the same way.
+            if (service.getStockSourceUid() != null) {
+                for (Ingredients.Ingredient in : Ingredients.parse(service.getExtraIngredients())) {
+                    if (storeRows.containsKey(in.uid()))
+                        continue;
+                    BarServiceEntity item = barServiceRepository.findForUpdate(in.uid(), branchUID)
+                            .orElseThrow(() -> new BusinessException("A stock item " + service.getServiceName() + " is made from is missing"));
+                    storeRows.put(item.getUid(), item);
+                }
+            }
         }
         Map<String, Commission> commissionsByService = loadCommissionsByService(services);
 
@@ -917,6 +977,7 @@ public class BarService {
         LocalDate weekStart = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
 
         List<BarSales> lines = new ArrayList<>();
+        List<BarSaleStock> saleStock = new ArrayList<>();
         List<BarReports> reports = new ArrayList<>();
         List<Integer> sellerCuts = new ArrayList<>();
         List<IncomeExpenses> pots = new ArrayList<>();
@@ -964,6 +1025,31 @@ public class BarService {
                     : Math.round((float) costRow.getBuyingPrice() * perSale / perPack);
 
             BarSales line = new BarSales();
+            // The other stock items it is made from: out of the store too, and
+            // their cost on the line (a wali samaki costs the fish and the rice).
+            if (service.getStockSourceUid() != null) {
+                for (Ingredients.Ingredient in : Ingredients.parse(service.getExtraIngredients())) {
+                    BarServiceEntity item = storeRows.get(in.uid());
+                    int units = quantity * Math.max(1, in.units());
+                    int onHand = item.getStockQuantity() == null ? 0 : item.getStockQuantity();
+                    if (onHand < units && !com.midland.bar.Utils.Offline.OfflineContext.isReplay())
+                        throw new BusinessException("Only " + onHand + " units of " + item.getServiceName() + " left - "
+                                + quantity + " " + service.getServiceName() + " need " + units);
+                    item.setStockQuantity(onHand - units);
+                    barServiceRepository.save(item);
+                    int itemPack = item.getUnitsPerPack() == null || item.getUnitsPerPack() < 1 ? 1 : item.getUnitsPerPack();
+                    int oneCost = item.getBuyingPrice() == null ? 0 : Math.round((float) item.getBuyingPrice() * Math.max(1, in.units()) / itemPack);
+                    unitCost += oneCost;
+                    BarSaleStock taken = new BarSaleStock();
+                    taken.setBarSalesUid(line.getUid());
+                    taken.setStockItemUid(item.getUid());
+                    taken.setPrimaryStockItemUid(storeRow == null ? null : storeRow.getUid());
+                    taken.setUnits(units);
+                    taken.setCost(oneCost * quantity);
+                    taken.setSoldOn(today);
+                    saleStock.add(taken);
+                }
+            }
             line.setSoldAt(soldAt);
             line.setCreatedAt(today);
             line.setAddOpId(com.midland.bar.Utils.Offline.OfflineContext.opId());
@@ -1036,6 +1122,7 @@ public class BarService {
         bill.update();
         salesOpenedRepository.save(bill);
         barSalesRepository.saveAll(lines);
+        barSaleStockRepository.saveAll(saleStock);
         barReportsRepository.saveAll(reports);
         addStaffCommission(seller.getUid(), branchUID, today, sellerCuts);
         stockAndPurchaseRepository.saveAll(purchasePots.values());
@@ -1118,6 +1205,24 @@ public class BarService {
             if (storeRow != null && units > 0) {
                 storeRow.setStockQuantity((storeRow.getStockQuantity() == null ? 0 : storeRow.getStockQuantity()) + units);
                 barServiceRepository.save(storeRow);
+            }
+        }
+
+        // ...and the other stock items it was made from (the rice of a wali samaki).
+        for (BarSaleStock taken : barSaleStockRepository.findByLine(line.getUid())) {
+            int units = whole ? taken.getUnits() : (taken.getUnits() / lineQty) * qty;
+            BarServiceEntity item = barServiceRepository.findForUpdate(taken.getStockItemUid(), branchUID).orElse(null);
+            if (item != null && units > 0) {
+                item.setStockQuantity((item.getStockQuantity() == null ? 0 : item.getStockQuantity()) + units);
+                barServiceRepository.save(item);
+            }
+            if (whole) {
+                barSaleStockRepository.delete(taken);
+            } else {
+                int cost = taken.getCost() == null ? 0 : taken.getCost();
+                taken.setUnits(taken.getUnits() - units);
+                taken.setCost(cost - (cost / lineQty) * qty);
+                barSaleStockRepository.save(taken);
             }
         }
 

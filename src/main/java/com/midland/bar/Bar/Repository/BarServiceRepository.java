@@ -20,11 +20,12 @@ import java.util.Optional;
  * product is low from 120 bottles down, one sold singly from 5 units down.
  */
 public interface BarServiceRepository extends JpaRepository<BarServiceEntity, String> {
-    @Query("SELECT s FROM BarServiceEntity s WHERE s.stockSourceUid = :stockItemUid AND s.branchUid = :branchUID")
+    // First stock item, or among the others (JSON holding its uid).
+    @Query("SELECT s FROM BarServiceEntity s WHERE (s.stockSourceUid = :stockItemUid OR s.extraIngredients LIKE CONCAT('%\"', :stockItemUid, '\"%')) AND s.branchUid = :branchUID")
     List<BarServiceEntity> findDrawingOn(@Param("stockItemUid") String stockItemUid, @Param("branchUID") String branchUID);
 
     /** Services that draw on a stock item - it cannot be deleted while any do. */
-    @Query("SELECT COUNT(s) FROM BarServiceEntity s WHERE s.stockSourceUid = :stockItemUid AND s.branchUid = :branchUID")
+    @Query("SELECT COUNT(s) FROM BarServiceEntity s WHERE (s.stockSourceUid = :stockItemUid OR s.extraIngredients LIKE CONCAT('%\"', :stockItemUid, '\"%')) AND s.branchUid = :branchUID")
     long countDrawingOn(@Param("stockItemUid") String stockItemUid, @Param("branchUID") String branchUID);
 
     /** Codes already taken in a branch under one prefix, for picking the next one. */
@@ -59,6 +60,7 @@ public interface BarServiceRepository extends JpaRepository<BarServiceEntity, St
               s.kind AS kind,
               s.stockSourceUid AS stockSourceUid,
               s.unitsPerSale AS unitsPerSale,
+              s.extraIngredients AS extraIngredients,
               s.unitLadder AS unitLadder,
               s.saleUnitName AS saleUnitName,
               s.saleUnitCount AS saleUnitCount,
@@ -95,6 +97,7 @@ public interface BarServiceRepository extends JpaRepository<BarServiceEntity, St
               s.kind AS kind,
               s.stockSourceUid AS stockSourceUid,
               s.unitsPerSale AS unitsPerSale,
+              s.extraIngredients AS extraIngredients,
               s.unitLadder AS unitLadder,
               s.saleUnitName AS saleUnitName,
               s.saleUnitCount AS saleUnitCount,

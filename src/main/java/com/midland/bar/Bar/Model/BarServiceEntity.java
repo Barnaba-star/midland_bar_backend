@@ -110,6 +110,13 @@ public class BarServiceEntity extends TenantEntity {
     @Column(name = "unit_ladder", columnDefinition = "TEXT")
     private String unitLadder;
 
+    /**
+     * The other stock items it is made from, beside stockSourceUid (rice
+     * beside the fish of a wali samaki), as JSON - see Ingredients.
+     */
+    @Column(name = "extra_ingredients", columnDefinition = "TEXT")
+    private String extraIngredients;
+
     /** For a service made from a stock item: which level of its ladder one sale is... */
     @Column(name = "sale_unit_name")
     private String saleUnitName;
