@@ -282,7 +282,11 @@ public class StaffOrderService {
                         + " AND (UPPER(r.code) = ? OR UPPER(r.name) = ?)"
                         + " AND (u.branch_uid = ? OR EXISTS (SELECT 1 FROM user_branches ub WHERE ub.user_uid = u.uid AND ub.branch_uid = ?))",
                 Integer.class, station, station, branchUID, branchUID);
-        return holders != null && holders > 0 ? station : OrderStation.COUNTER;
+        if (holders != null && holders > 0)
+            return station;
+        log.info("{} is for the {} but nobody active in the branch holds the {} role - sent to the counter",
+                service.getServiceName(), OrderStation.placeName(station), station);
+        return OrderStation.COUNTER;
     }
 
     /**

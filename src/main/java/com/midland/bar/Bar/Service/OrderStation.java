@@ -52,6 +52,8 @@ public final class OrderStation {
             return JUICE;
         if (n.contains("shisha") || n.contains("shisher"))
             return SHISHER;
+        if (n.contains("pool"))
+            return POOL;
         return forCategory(category);
     }
 
