@@ -135,6 +135,26 @@ class RecipeStockTest {
     }
 
     @Test
+    void thePurchasePotOfARecipeIsSplitByIngredient() {
+        SaleItemsDTO sale = new SaleItemsDTO();
+        sale.setSalesOpenedUID(bill.getUid());
+        SaleItemsDTO.Item item = new SaleItemsDTO.Item();
+        item.setBarServiceUID(MSHIKAKI);
+        item.setQuantity(2);
+        sale.setItems(List.of(item));
+        assertNotNull(barService.addItemsToBill(sale).getData());
+
+        var row = barService.getStockAndPurchaseByFilter("THIS_WEEK").getData().stream()
+                .filter(r -> MSHIKAKI.equals(r.getServiceUid())).findFirst().orElseThrow();
+        assertInstanceOf(com.midland.bar.Bar.Projection.PurchaseRowWithShares.class, row);
+        var shares = ((com.midland.bar.Bar.Projection.PurchaseRowWithShares) row).getIngredientShares();
+        assertEquals(2, shares.size(), "the beef and the rice");
+        assertEquals(row.getTotalAmount(), shares.stream().mapToInt(x -> x.totalAmount()).sum());
+        assertEquals(100, shares.stream().mapToInt(x -> x.percent()).sum());
+        assertTrue(shares.stream().anyMatch(x -> x.name().equals("Mchele test")));
+    }
+
+    @Test
     void notEnoughOfAnyIngredientRefusesTheSale() {
         rice.setStockQuantity(1);
         barServiceRepository.save(rice);

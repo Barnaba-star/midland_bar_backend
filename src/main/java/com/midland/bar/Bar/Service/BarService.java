@@ -35,6 +35,8 @@ import java.time.format.DateTimeParseException;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -3816,7 +3818,79 @@ public class BarService {
                         endDate
                 );
 
-        return new ResponseList<>(stockAndPurchases);
+        return new ResponseList<>(withIngredientShares(stockAndPurchases));
+    }
+
+    /**
+     * A recipe's pot (wali samaki = fish + rice), split by what each of its
+     * stock items costs today, so each one's share of the buying money shows.
+     */
+    private List<StockAndPurchaseProjection> withIngredientShares(List<StockAndPurchaseProjection> rows) {
+        Set<String> serviceUids = new HashSet<>();
+        rows.forEach(r -> { if (r.getServiceUid() != null) serviceUids.add(r.getServiceUid()); });
+        if (serviceUids.isEmpty())
+            return rows;
+        Map<String, BarServiceEntity> recipes = new HashMap<>();
+        Set<String> itemUids = new HashSet<>();
+        for (BarServiceEntity sv : barServiceRepository.findAllById(serviceUids)) {
+            List<Ingredients.Ingredient> extras = Ingredients.parse(sv.getExtraIngredients());
+            if (sv.getStockSourceUid() == null || extras.isEmpty())
+                continue;
+            recipes.put(sv.getUid(), sv);
+            itemUids.add(sv.getStockSourceUid());
+            extras.forEach(in -> itemUids.add(in.uid()));
+        }
+        if (recipes.isEmpty())
+            return rows;
+        Map<String, BarServiceEntity> items = new HashMap<>();
+        barServiceRepository.findAllById(itemUids).forEach(i -> items.put(i.getUid(), i));
+
+        List<StockAndPurchaseProjection> out = new ArrayList<>();
+        for (StockAndPurchaseProjection r : rows) {
+            BarServiceEntity sv = recipes.get(r.getServiceUid());
+            if (sv == null) {
+                out.add(r);
+                continue;
+            }
+            // Each stock item's cost in one sale.
+            List<String> uids = new ArrayList<>();
+            List<Integer> costs = new ArrayList<>();
+            uids.add(sv.getStockSourceUid());
+            costs.add(costOf(items.get(sv.getStockSourceUid()), sv.getUnitsPerSale()));
+            for (Ingredients.Ingredient in : Ingredients.parse(sv.getExtraIngredients())) {
+                uids.add(in.uid());
+                costs.add(costOf(items.get(in.uid()), in.units()));
+            }
+            int whole = costs.stream().mapToInt(Integer::intValue).sum();
+            int total = r.getTotalAmount() == null ? 0 : r.getTotalAmount();
+            int remaining = r.getRemainingAmount() == null ? 0 : r.getRemainingAmount();
+            List<com.midland.bar.Bar.Projection.PurchaseRowWithShares.Share> shares = new ArrayList<>();
+            int givenTotal = 0, givenLeft = 0, givenPct = 0;
+            for (int i = 0; i < uids.size(); i++) {
+                BarServiceEntity item = items.get(uids.get(i));
+                boolean last = i == uids.size() - 1;
+                // No buying prices at all: equal parts.
+                double part = whole > 0 ? (double) costs.get(i) / whole : 1.0 / uids.size();
+                // The last takes what rounding left, so the parts add up to the pot.
+                int t = last ? total - givenTotal : (int) Math.round(total * part);
+                int left = last ? remaining - givenLeft : (int) Math.round(remaining * part);
+                int pct = last ? 100 - givenPct : (int) Math.round(part * 100);
+                givenTotal += t; givenLeft += left; givenPct += pct;
+                shares.add(new com.midland.bar.Bar.Projection.PurchaseRowWithShares.Share(
+                        uids.get(i), item == null ? "?" : item.getServiceName(), pct, t, left));
+            }
+            out.add(new com.midland.bar.Bar.Projection.PurchaseRowWithShares(r, shares));
+        }
+        return out;
+    }
+
+    /** What {@code units} of a stock item's smallest measure cost at its buying price. */
+    private static int costOf(BarServiceEntity item, Integer units) {
+        if (item == null || item.getBuyingPrice() == null)
+            return 0;
+        int perPack = item.getUnitsPerPack() == null || item.getUnitsPerPack() < 1 ? 1 : item.getUnitsPerPack();
+        int n = units == null || units < 1 ? 1 : units;
+        return Math.round((float) item.getBuyingPrice() * n / perPack);
     }
     @Transactional
     public Response<StockAndPurchase> payStockAndPurchase(PayStockAndPurchaseDTO dto) {
