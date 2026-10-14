@@ -116,6 +116,24 @@ class RecipeStockTest {
         assertEquals(beef, onHand(beef()));
     }
 
+    private com.midland.bar.Bar.Projection.ServiceCommissionProjection commissionRow() {
+        String name = barServiceRepository.findById(MSHIKAKI).orElseThrow().getServiceName();
+        return barService.findServiceCommissionPage(0, 50, name, null).getData().stream()
+                .filter(r -> MSHIKAKI.equals(r.getServiceUid())).findFirst().orElseThrow();
+    }
+
+    @Test
+    void commissionCostsTheWholeRecipe() {
+        var withRice = commissionRow();
+        BarServiceEntity mshikaki = barServiceRepository.findById(MSHIKAKI).orElseThrow();
+        mshikaki.setExtraIngredients(null);
+        barServiceRepository.save(mshikaki);
+        var beefOnly = commissionRow();
+        int beef = beefOnly.getUnitCost() == null ? 0 : beefOnly.getUnitCost();
+        assertEquals(beef + 1000, withRice.getUnitCost(), "2 units of rice at 500 on top of the beef");
+        assertTrue(withRice.getStockSourceName().contains("Mchele test"), withRice.getStockSourceName());
+    }
+
     @Test
     void notEnoughOfAnyIngredientRefusesTheSale() {
         rice.setStockQuantity(1);

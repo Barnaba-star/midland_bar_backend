@@ -25,6 +25,9 @@ public interface ServiceCommissionProjection {
     Integer getUnitsPerSale();
     /** The stock item it is drawn from, null when it is its own stock. */
     String getStockSourceName();
+    /** The other stock items it is made from, as JSON - see Ingredients; the service layer adds their cost. */
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    String getExtraIngredients();
 
     /** Cost of one sold unit: carton 48,000 / 24 bottles = 2,000. Null when there is no buying price. */
     default Integer getUnitCost() {

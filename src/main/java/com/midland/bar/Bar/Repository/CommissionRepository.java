@@ -60,6 +60,7 @@ public interface CommissionRepository extends JpaRepository<Commission, String> 
                    COALESCE(src.unit, s.unit) AS unit,
                    CASE WHEN src.uid IS NULL THEN 1 ELSE s.unitsPerSale END AS unitsPerSale,
                    src.serviceName AS stockSourceName,
+                   CASE WHEN src.uid IS NULL THEN NULL ELSE s.extraIngredients END AS extraIngredients,
                    c.uid AS commissionUid,
                    c.staffPercent AS staffPercent, c.ownerPercent AS ownerPercent, c.traPercent AS traPercent,
                    c.maintenancePercent AS maintenancePercent, c.emergencyPercent AS emergencyPercent,

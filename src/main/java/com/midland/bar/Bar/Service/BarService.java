@@ -454,8 +454,32 @@ public class BarService {
      * lists only those.
      */
     public ResponsePage<ServiceCommissionProjection> findServiceCommissionPage(Integer page, Integer size, String search, String filter){
-        return new ResponsePage<>(commissionRepository.findServiceCommissionPage(
-                LoggerUser.getBranchUID(), likePattern(search), "MISSING".equals(filter), PageRequest.of(page, size)));
+        org.springframework.data.domain.Page<ServiceCommissionProjection> rows = commissionRepository.findServiceCommissionPage(
+                LoggerUser.getBranchUID(), likePattern(search), "MISSING".equals(filter), PageRequest.of(page, size));
+        // A recipe (wali samaki = fish + rice) costs every stock item in it.
+        java.util.Set<String> extraUids = new java.util.HashSet<>();
+        rows.forEach(r -> Ingredients.parse(r.getExtraIngredients()).forEach(in -> extraUids.add(in.uid())));
+        if (extraUids.isEmpty())
+            return new ResponsePage<>(rows);
+        Map<String, BarServiceEntity> items = new HashMap<>();
+        barServiceRepository.findAllById(extraUids).forEach(i -> items.put(i.getUid(), i));
+        return new ResponsePage<>(rows.map(r -> {
+            List<Ingredients.Ingredient> extras = Ingredients.parse(r.getExtraIngredients());
+            if (extras.isEmpty())
+                return r;
+            int cost = 0;
+            StringBuilder names = new StringBuilder(r.getStockSourceName() == null ? "" : r.getStockSourceName());
+            for (Ingredients.Ingredient in : extras) {
+                BarServiceEntity item = items.get(in.uid());
+                if (item == null)
+                    continue;
+                int perPack = item.getUnitsPerPack() == null || item.getUnitsPerPack() < 1 ? 1 : item.getUnitsPerPack();
+                if (item.getBuyingPrice() != null)
+                    cost += Math.round((float) item.getBuyingPrice() * Math.max(1, in.units()) / perPack);
+                names.append(" + ").append(item.getServiceName());
+            }
+            return new com.midland.bar.Bar.Projection.RecipeCommissionRow(r, cost, names.toString());
+        }));
     }
 
     public Response<Long> countServicesWithoutCommission() {
