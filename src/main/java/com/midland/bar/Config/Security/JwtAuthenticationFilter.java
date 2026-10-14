@@ -48,6 +48,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
+        // An expired or broken token (an old one left in the browser) used to
+        // throw here and answer 500 - even on /authentication/login, so the
+        // person could not sign in again. Now it counts as no token: sign-in
+        // works, and a protected call is refused as unauthenticated.
+        try {
+            jwtTokenUtil.claims(token);
+        } catch (io.jsonwebtoken.JwtException | IllegalArgumentException e) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
         // Tokens that are not a user's login. A bad or expired one falls
         // through to the user path below, which treats it as before.
         String type = null;
