@@ -45,6 +45,7 @@ public class StaffOrderService {
     private final BarServiceRepository barServiceRepository;
     private final BarService barService;
     private final com.midland.bar.Utils.Offline.OfflineOps offlineOps;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     /** Rejected orders stay on the staff member's bill this long, so they see why. */
     private static final int REJECTED_SHOWN_HOURS = 12;
@@ -73,8 +74,8 @@ public class StaffOrderService {
         if (service.getPrice() == null || service.getPrice() <= 0)
             return new Response<>("No selling price set for " + service.getServiceName());
 
-        // Drinks go to the counter, food to the kitchen: one draft per station.
-        String station = OrderStation.forCategory(service.getCategory());
+        // Each item to its station (counter, kitchen, Biss, juice, shisha): one draft per station.
+        String station = stationFor(service, branchUID);
         StaffOrder order = staffOrderRepository.findDraft(bill.getUid(), branchUID, station).orElseGet(() -> {
             StaffOrder o = new StaffOrder();
             o.setStation(station);
@@ -159,7 +160,27 @@ public class StaffOrderService {
     private static void requireMyStation(StaffOrder order) {
         if (!OrderStation.sees(OrderStation.mine(), order.getStation()))
             throw new BusinessException("Order on " + order.getSalesCode() + " is for the "
-                    + (OrderStation.CHEF.equals(order.getStation()) ? "kitchen" : "counter"));
+                    + OrderStation.placeName(order.getStation()));
+    }
+
+    /**
+     * Where this item is received. A Biss, juice or shisha station nobody in
+     * the branch holds would leave the order waiting for ever, so it goes to
+     * the counter instead.
+     */
+    private String stationFor(BarServiceEntity service, String branchUID) {
+        String station = OrderStation.forItem(service.getServiceName(), service.getCategory());
+        if (OrderStation.COUNTER.equals(station) || OrderStation.CHEF.equals(station))
+            return station;
+        Integer holders = jdbcTemplate.queryForObject(
+                "SELECT COUNT(DISTINCT u.uid) FROM users u"
+                        + " JOIN user_roles ur ON ur.user_uid = u.uid"
+                        + " JOIN roles r ON r.uid = ur.role_uid"
+                        + " WHERE u.is_active = true AND COALESCE(u.is_blocked, false) = false"
+                        + " AND (UPPER(r.code) = ? OR UPPER(r.name) = ?)"
+                        + " AND (u.branch_uid = ? OR EXISTS (SELECT 1 FROM user_branches ub WHERE ub.user_uid = u.uid AND ub.branch_uid = ?))",
+                Integer.class, station, station, branchUID, branchUID);
+        return holders != null && holders > 0 ? station : OrderStation.COUNTER;
     }
 
     /**
@@ -261,7 +282,7 @@ public class StaffOrderService {
             BarServiceEntity service = barServiceRepository.findBarServiceByUID(it.getBarServiceUID(), branchUID).orElse(null);
             if (service == null)
                 return new Response<>("Service Not Found");
-            stations.add(OrderStation.forCategory(service.getCategory()));
+            stations.add(stationFor(service, branchUID));
             int qty = it.getQuantity() == null || it.getQuantity() < 1 ? 1 : it.getQuantity();
             StaffOrderLine line = new StaffOrderLine();
             line.setOrder(order);

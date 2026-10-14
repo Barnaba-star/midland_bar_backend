@@ -4,18 +4,27 @@ import com.midland.bar.Config.Security.LoggerUser;
 import com.midland.bar.Setting.Model.Role;
 import com.midland.bar.Uaa.Model.User;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
- * Where a staff order is received: drinks at the COUNTER, food by the CHEF
- * (the kitchen). A COUNTER login sees and decides only counter orders, a
- * CHEF login only kitchen orders; CEO, MANAGER and anyone with a wider role
- * see every station.
+ * Where a staff order is received: food by the CHEF (the kitchen), any Biss
+ * at BISS, any fresh juice at JUICE, shisha at SHISHER (owner's choice,
+ * 2026-10-14), every other drink at the COUNTER. A login holding only one of
+ * these station roles sees and decides only that station's orders; CEO,
+ * MANAGER and anyone with a wider role see every station.
  */
 public final class OrderStation {
 
     public static final String COUNTER = "COUNTER";
     public static final String CHEF = "CHEF";
+    public static final String JUICE = "JUICE";
+    public static final String BISS = "BISS";
+    public static final String SHISHER = "SHISHER";
+
+    /** The roles that are a station - holding only these limits what you see. */
+    public static final List<String> STATIONS = List.of(COUNTER, CHEF, JUICE, BISS, SHISHER);
 
     private OrderStation() {}
 
@@ -24,21 +33,63 @@ public final class OrderStation {
         return "FOOD".equalsIgnoreCase(category) ? CHEF : COUNTER;
     }
 
+    /**
+     * The station an item is made at, by its name (same test as the ticket
+     * colours): Biss, fresh juice, shisha - otherwise by category.
+     */
+    public static String forItem(String name, String category) {
+        String n = name == null ? "" : name.toLowerCase();
+        if (n.contains("biss"))
+            return BISS;
+        if (n.contains("fresh") && n.contains("juice"))
+            return JUICE;
+        if (n.contains("shisha") || n.contains("shisher"))
+            return SHISHER;
+        return forCategory(category);
+    }
+
+    /** A role's station, or null for any other role. Roles added from Settings carry a long code, so the name counts too. */
+    public static String stationOf(Role role) {
+        if (role == null)
+            return null;
+        for (String s : STATIONS) {
+            if (s.equalsIgnoreCase(role.getCode()) || s.equalsIgnoreCase(role.getName()))
+                return s;
+        }
+        return null;
+    }
+
     /** The station this login receives for; null = every station. */
     public static String mine() {
         User user = LoggerUser.getUser();
         if (Boolean.TRUE.equals(user.getIsRoot()))
             return null;
-        List<String> codes = user.getRoles() == null ? List.of() : user.getRoles().stream().map(Role::getCode).toList();
-        boolean counter = codes.contains(COUNTER), chef = codes.contains(CHEF);
-        boolean wider = codes.stream().anyMatch(c -> !COUNTER.equals(c) && !CHEF.equals(c));
-        if (wider || counter == chef)
-            return null;
-        return counter ? COUNTER : CHEF;
+        List<Role> roles = user.getRoles() == null ? List.of() : user.getRoles();
+        Set<String> stations = new HashSet<>();
+        for (Role r : roles) {
+            String s = stationOf(r);
+            if (s == null)
+                return null; // a wider role sees every station
+            stations.add(s);
+        }
+        return stations.size() == 1 ? stations.iterator().next() : null;
     }
 
     /** Whether a login of station {@code mine} sees an order for {@code station}. No station on the order = everyone. */
     public static boolean sees(String mine, String station) {
         return mine == null || station == null || mine.equals(station);
+    }
+
+    /** For messages: where an order is received. */
+    public static String placeName(String station) {
+        if (station == null)
+            return "counter";
+        return switch (station) {
+            case CHEF -> "kitchen";
+            case JUICE -> "juice station";
+            case BISS -> "Biss station";
+            case SHISHER -> "shisha station";
+            default -> "counter";
+        };
     }
 }

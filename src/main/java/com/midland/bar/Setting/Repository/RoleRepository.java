@@ -20,6 +20,8 @@ public interface RoleRepository extends JpaRepository<Role, String> {
 
     Role findByCode(String code);
 
+    List<Role> findAllByNameIgnoreCase(String name);
+
     List<Role> findByCodeIn(List<String> codes);
     @Query("""
     SELECT r

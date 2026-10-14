@@ -208,6 +208,14 @@ public class Initializer implements ApplicationRunner {
                 "Chef (kitchen) - receives waiters' food orders before they leave the kitchen",
                 List.of("VIEW_BRANCH", "VIEW_SALES", "RECEIVE_ORDERS")
         );
+        // More stations beside the counter and the kitchen (owner, 2026-10-14):
+        // Biss, fresh juice and shisha each received where they are made. The
+        // owner added these roles from Settings, which gives them a long code
+        // (ROLE_<category>_JUICE); the plain code is what OrderStation and the
+        // role lists go by, so it is put right here.
+        seedStationRole("JUICE", "Juice - receives waiters' fresh juice orders where the juice is made");
+        seedStationRole("BISS", "Biss - receives waiters' Biss orders");
+        seedStationRole("SHISHER", "Shisha - receives waiters' shisha orders");
 
         // Main office: answers the branches and publishes guidance to them -
         // the Admin area, across every branch - without DIRECTOR's hold on
@@ -300,6 +308,18 @@ public class Initializer implements ApplicationRunner {
             e.printStackTrace();
             throw new Exception("Error in Seeding Role: " + code);
         }
+    }
+
+    private void seedStationRole(String code, String description) throws Exception {
+        if (roleRepository.findByCode(code) == null) {
+            List<Role> named = roleRepository.findAllByNameIgnoreCase(code);
+            if (named.size() == 1) {
+                Role role = named.get(0);
+                role.setCode(code);
+                roleRepository.save(role);
+            }
+        }
+        seedRoleWithPermissions(code, description, List.of("VIEW_BRANCH", "VIEW_SALES", "RECEIVE_ORDERS"));
     }
 
     private void addMissingPermissions(Role role, List<String> permissionNames) throws Exception {
