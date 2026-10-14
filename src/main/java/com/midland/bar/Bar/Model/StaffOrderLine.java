@@ -36,6 +36,13 @@ public class StaffOrderLine extends TenantEntity {
     @Column(name = "serving")
     private String serving;
 
+    /**
+     * On a change: the bill line (BarSales) this one brings back - receiving
+     * takes {@link #quantity} of it off the bill. Null = an ordinary item.
+     */
+    @Column(name = "return_of_sales_uid")
+    private String returnOfSalesUid;
+
     /** COLD / WARM as sent by a screen ("cold", " Warm "), anything else = not said. */
     public static String serving(String raw) {
         if (raw == null)

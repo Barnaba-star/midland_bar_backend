@@ -46,6 +46,10 @@ public interface StaffOrderRepository extends JpaRepository<StaffOrder, String> 
                                       @Param("branchUID") String branchUID,
                                       @Param("since") LocalDateTime since);
 
+    /** A change already waiting for this bill line - it cannot be changed twice at once. */
+    @Query("SELECT COUNT(l) FROM StaffOrderLine l WHERE l.returnOfSalesUid = :salesUid AND l.order.status IN ('DRAFT', 'SENT')")
+    long countWaitingReturns(@Param("salesUid") String salesUid);
+
     /** Orders still to be decided on a bill - it cannot be paid while there are any. */
     @Query("SELECT COUNT(o) FROM StaffOrder o WHERE o.salesOpenedUid = :billUid AND o.status IN ('DRAFT', 'SENT') AND SIZE(o.lines) > 0")
     long countUndecided(@Param("billUid") String billUid);

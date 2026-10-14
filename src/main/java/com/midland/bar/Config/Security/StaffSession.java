@@ -34,6 +34,7 @@ public final class StaffSession {
             new Route("POST", Pattern.compile("^/bar/staffOrders/addItem$")),
             new Route("POST", Pattern.compile("^/bar/staffOrders/[^/]+/removeLine/[^/]+$")),
             new Route("POST", Pattern.compile("^/bar/staffOrders/send/[^/]+$")),
+            new Route("POST", Pattern.compile("^/bar/staffOrders/exchange$")),
             new Route("POST", Pattern.compile("^/bar/staffOrders/offline$")),
             new Route("GET", Pattern.compile("^/bar/findBarSalesList/[^/]+$")),
             new Route("POST", Pattern.compile("^/bar/deleteEmptyBill/[^/]+$")),

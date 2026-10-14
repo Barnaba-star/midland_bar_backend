@@ -44,6 +44,7 @@ public class StaffOrderService {
     private final SalesOpenedRepository salesOpenedRepository;
     private final BarServiceRepository barServiceRepository;
     private final BarService barService;
+    private final com.midland.bar.Bar.Repository.BarSalesRepository barSalesRepository;
     private final com.midland.bar.Utils.Offline.OfflineOps offlineOps;
     private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
@@ -105,6 +106,105 @@ public class StaffOrderService {
             order.getLines().add(line);
         }
         return new Response<>(staffOrderRepository.save(order));
+    }
+
+    /**
+     * A change (Badilisho): the customer wanted something else instead of an
+     * item already received - a Serengeti Lite for the Castle Lite. It goes
+     * to the station(s) at once, marked as a change, so they know the waiter
+     * brings one back and takes the other. Same station: one order carrying
+     * both. Different stations (a Castle back to the counter, a Biss from the
+     * Biss station): the counter gets the return, the Biss station the new
+     * item, both marked. Nothing on the bill changes until it is received.
+     */
+    @Transactional
+    public Response<List<StaffOrder>> exchange(com.midland.bar.Bar.Dto.StaffExchangeDTO dto) {
+        workShiftService.requireOpen();
+        String branchUID = branch();
+        com.midland.bar.Bar.Model.BarSales sold = barSalesRepository.findById(dto.getBarSalesUID())
+                .filter(l -> branchUID.equals(l.getBranchUid()))
+                .orElse(null);
+        if (sold == null || sold.getSalesOpened() == null)
+            return new Response<>("Item Not Found");
+        SalesOpened bill = salesOpenedRepository.findById(sold.getSalesOpened().getUid()).orElse(null);
+        if (bill == null)
+            return new Response<>("Open Sale Not Found");
+        com.midland.bar.Config.Security.StaffSession.requireOwnBill(bill);
+        if (!"PENDING".equals(bill.getPaymentStatus()))
+            return new Response<>("Bill " + bill.getSalesCode() + " is already paid - it cannot be changed");
+        if (bill.getStaffUid() == null)
+            return new Response<>("Bill " + bill.getSalesCode() + " is not a staff bill");
+        if (staffOrderRepository.countWaitingReturns(sold.getUid()) > 0)
+            return new Response<>("A change for this item is already waiting at the station");
+
+        BarServiceEntity oldService = sold.getBarServiceEntity();
+        if (oldService == null)
+            return new Response<>("Item Not Found");
+        int lineQty = sold.getQuantity() == null || sold.getQuantity() < 1 ? 1 : sold.getQuantity();
+        int back = dto.getReturnQuantity() == null ? lineQty : dto.getReturnQuantity();
+        if (back < 1 || back > lineQty)
+            return new Response<>("You can send back between 1 and " + lineQty);
+
+        BarServiceEntity service = barServiceRepository.findBarServiceByUID(dto.getBarServiceUID(), LoggerUser.getBranchUIDOrMain()).orElse(null);
+        if (service == null)
+            return new Response<>("Service Not Found");
+        if (ServiceKind.of(service.getKind()) == ServiceKind.STOCK_ITEM)
+            return new Response<>(service.getServiceName() + " is kept in the store, not sold - sell a service made from it");
+        if (service.getPrice() == null || service.getPrice() <= 0)
+            return new Response<>("No selling price set for " + service.getServiceName());
+
+        String note = oldService.getServiceName() + " x" + back + " -> " + service.getServiceName() + " x" + dto.getQuantity();
+        LocalDateTime now = LocalDateTime.now();
+        String oldStation = stationFor(oldService, branchUID);
+        String newStation = stationFor(service, branchUID);
+
+        StaffOrderLine returned = new StaffOrderLine();
+        returned.setBarServiceUid(oldService.getUid());
+        returned.setServiceName(oldService.getServiceName());
+        returned.setQuantity(back);
+        returned.setUnitPrice(sold.getUnitPrice() != null ? sold.getUnitPrice()
+                : (sold.getLineTotal() != null ? sold.getLineTotal() / lineQty : oldService.getPrice()));
+        returned.setReturnOfSalesUid(sold.getUid());
+
+        StaffOrderLine wanted = new StaffOrderLine();
+        wanted.setBarServiceUid(service.getUid());
+        wanted.setServiceName(service.getServiceName());
+        wanted.setQuantity(dto.getQuantity());
+        wanted.setUnitPrice(service.getPrice());
+        wanted.setServing(StaffOrderLine.serving(dto.getServing()));
+
+        List<StaffOrder> sent = new ArrayList<>();
+        StaffOrder first = exchangeOrder(bill, oldStation, note, now);
+        returned.setOrder(first);
+        first.getLines().add(returned);
+        if (oldStation.equals(newStation)) {
+            wanted.setOrder(first);
+            first.getLines().add(wanted);
+            sent.add(staffOrderRepository.save(first));
+        } else {
+            sent.add(staffOrderRepository.save(first));
+            StaffOrder second = exchangeOrder(bill, newStation, note, now);
+            wanted.setOrder(second);
+            second.getLines().add(wanted);
+            sent.add(staffOrderRepository.save(second));
+        }
+        log.info("{} change on {}: {}", bill.getStaffName(), bill.getSalesCode(), note);
+        return new Response<>(sent);
+    }
+
+    private static StaffOrder exchangeOrder(SalesOpened bill, String station, String note, LocalDateTime now) {
+        StaffOrder o = new StaffOrder();
+        o.setStation(station);
+        o.setSalesOpenedUid(bill.getUid());
+        o.setSalesCode(bill.getSalesCode());
+        o.setStaffUid(bill.getStaffUid());
+        o.setStaffCode(bill.getStaffCode());
+        o.setStaffName(bill.getStaffName());
+        o.setExchange(true);
+        o.setExchangeNote(note);
+        o.setStatus(StaffOrder.SENT);
+        o.setSentAt(now);
+        return o;
     }
 
     /** Take a line off an order the staff member has not sent yet. */
@@ -198,20 +298,34 @@ public class StaffOrderService {
             return new Response<>("Order on " + order.getSalesCode() + " has already been " + order.getStatus().toLowerCase());
         requireMyStation(order);
 
+        // A change: what came back goes off the bill first (back to the store, commission and all).
+        for (StaffOrderLine line : order.getLines()) {
+            if (line.getReturnOfSalesUid() == null)
+                continue;
+            Response<SalesOpened> off = barService.takeOffForExchange(line.getReturnOfSalesUid(), line.getQuantity(),
+                    "Badilisho: " + (order.getExchangeNote() == null ? line.getServiceName() : order.getExchangeNote()));
+            if (off.getData() == null)
+                throw new BusinessException(off.getMessage());
+        }
+
         SaleItemsDTO sale = new SaleItemsDTO();
         sale.setSalesOpenedUID(order.getSalesOpenedUid());
         List<SaleItemsDTO.Item> items = new ArrayList<>();
         for (StaffOrderLine line : order.getLines()) {
+            if (line.getReturnOfSalesUid() != null)
+                continue;
             SaleItemsDTO.Item item = new SaleItemsDTO.Item();
             item.setBarServiceUID(line.getBarServiceUid());
             item.setQuantity(line.getQuantity());
             items.add(item);
         }
-        sale.setItems(items);
-        Response<SalesOpened> result = barService.addItemsToBill(sale);
-        if (result.getData() == null)
-            // Rolls the whole receive back and reaches the supervisor as the reason.
-            throw new BusinessException(result.getMessage());
+        if (!items.isEmpty()) {
+            sale.setItems(items);
+            Response<SalesOpened> result = barService.addItemsToBill(sale);
+            if (result.getData() == null)
+                // Rolls the whole receive back and reaches the supervisor as the reason.
+                throw new BusinessException(result.getMessage());
+        }
 
         order.setStatus(StaffOrder.RECEIVED);
         order.setDecidedAt(LocalDateTime.now());

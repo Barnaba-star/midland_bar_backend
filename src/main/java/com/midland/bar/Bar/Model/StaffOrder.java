@@ -66,6 +66,19 @@ public class StaffOrder extends TenantEntity {
     @Column(name = "decided_by")
     private String decidedBy;
 
+    /**
+     * A change (Badilisho): the waiter brings back something already on the
+     * bill and takes something else. The station sees it blink until it is
+     * decided; receiving takes the returned lines off the bill and puts the
+     * new ones on.
+     */
+    @Column(name = "is_exchange")
+    private Boolean exchange = false;
+
+    /** For a change: what goes back and what comes instead, in words ("Castle Lite x1 -> Serengeti Lite x1"). */
+    @Column(name = "exchange_note", length = 300)
+    private String exchangeNote;
+
     @Column(name = "reject_reason", length = 255)
     private String rejectReason;
 
@@ -88,6 +101,8 @@ public class StaffOrder extends TenantEntity {
     private List<StaffOrderLine> lines = new ArrayList<>();
 
     public int total() {
-        return lines.stream().mapToInt(l -> (l.getUnitPrice() == null ? 0 : l.getUnitPrice()) * l.getQuantity()).sum();
+        // A change: what comes back counts against what goes out.
+        return lines.stream().mapToInt(l -> (l.getUnitPrice() == null ? 0 : l.getUnitPrice()) * l.getQuantity()
+                * (l.getReturnOfSalesUid() == null ? 1 : -1)).sum();
     }
 }

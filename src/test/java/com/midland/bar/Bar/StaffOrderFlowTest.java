@@ -44,6 +44,7 @@ class StaffOrderFlowTest {
     @Autowired SalesOpenedRepository salesOpenedRepository;
     @Autowired BarServiceRepository barServiceRepository;
     @Autowired BarSalesRepository barSalesRepository;
+    @Autowired com.midland.bar.Bar.Service.WorkShiftService workShiftService;
 
     private BarStaff staff;
     private SalesOpened bill;
@@ -52,18 +53,23 @@ class StaffOrderFlowTest {
     void setUp() {
         User user = userRepository.findByUsernameForAuthentication(LOGIN);
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(user, null, List.of()));
+        workShiftService.open(); // selling needs an open shift
 
         BarStaffDTO s = new BarStaffDTO();
         s.setFirstName("Maiko");
         s.setLastName("Test");
         s.setPhoneNumber("0700000000");
         s.setBarCategory(StaffCategory.values()[0].name());
-        s.setStaffCode("K9");
-        staff = barService.saveBarStaff(s).getData();
+        s.setStaffCode("");
+        var saved = barService.saveBarStaff(s);
+        assertNotNull(saved.getData(), saved.getMessage());
+        staff = saved.getData();
 
         StaffBillDTO b = new StaffBillDTO();
-        b.setStaffCode("K9");
-        bill = staffSellService.openBill(b).getData();
+        b.setStaffCode(staff.getStaffCode());
+        var opened = staffSellService.openBill(b);
+        assertNotNull(opened.getData(), opened.getMessage());
+        bill = opened.getData();
     }
 
     private StaffOrder write(int qty) {
@@ -86,7 +92,7 @@ class StaffOrderFlowTest {
     }
 
     private StaffOrder sendAndGetPending() {
-        assertEquals(1, staffSellService.sendOrders("k9").getData());
+        assertEquals(1, staffSellService.sendOrders(staff.getStaffCode()).getData());
         List<StaffOrder> pending = staffOrderService.pending().getData();
         return pending.stream().filter(o -> o.getSalesOpenedUid().equals(bill.getUid())).findFirst()
                 .orElseThrow(() -> new AssertionError("sent order not in the supervisor's queue"));
@@ -103,7 +109,7 @@ class StaffOrderFlowTest {
         assertEquals(0, billTotal());
         assertEquals(beef, beefOnHand());
 
-        var shown = staffSellService.findByCode("K9").getData().get("orders");
+        var shown = staffSellService.findByCode(staff.getStaffCode()).getData().get("orders");
         assertEquals(1, ((List<?>) shown).size(), "Staff Sell shows the waiting order");
     }
 
@@ -154,6 +160,36 @@ class StaffOrderFlowTest {
     }
 
     @Test
+    void aChangeWaitsAsOneMarkedOrderAndReceivingSwapsTheLine() {
+        write(2);
+        StaffOrder first = sendAndGetPending();
+        assertNotNull(staffOrderService.receive(first.getUid()).getData());
+        int unit = first.getLines().get(0).getUnitPrice();
+        BarSales sold = barSalesRepository.findAll().stream()
+                .filter(l -> l.getSalesOpened() != null && bill.getUid().equals(l.getSalesOpened().getUid()))
+                .findFirst().orElseThrow();
+
+        StaffExchangeDTO change = new StaffExchangeDTO();
+        change.setBarSalesUID(sold.getUid());
+        change.setReturnQuantity(1);
+        change.setBarServiceUID(MSHIKAKI);
+        change.setQuantity(3);
+        var res = staffOrderService.exchange(change);
+        assertNotNull(res.getData(), res.getMessage());
+        assertEquals(1, res.getData().size(), "same station: one order carries both");
+        StaffOrder order = res.getData().get(0);
+        assertTrue(order.getExchange());
+        assertEquals(StaffOrder.SENT, order.getStatus(), "a change goes to the station at once");
+        assertEquals(2 * unit, billTotal(), "nothing changes until received");
+
+        var twice = staffOrderService.exchange(change);
+        assertNull(twice.getData(), "one change at a time per line");
+
+        assertNotNull(staffOrderService.receive(order.getUid()).getData());
+        assertEquals(4 * unit, billTotal(), "1 back, 3 on: 2 - 1 + 3");
+    }
+
+    @Test
     void rejectingLeavesTheBillAloneAndTellsTheStaffMemberWhy() {
         write(1);
         StaffOrder pending = sendAndGetPending();
@@ -166,7 +202,7 @@ class StaffOrderFlowTest {
         assertTrue(staffOrderService.pending().getData().stream().noneMatch(o -> o.getUid().equals(pending.getUid())));
 
         @SuppressWarnings("unchecked")
-        List<StaffOrder> shown = (List<StaffOrder>) staffSellService.findByCode("K9").getData().get("orders");
+        List<StaffOrder> shown = (List<StaffOrder>) staffSellService.findByCode(staff.getStaffCode()).getData().get("orders");
         assertTrue(shown.stream().anyMatch(o -> StaffOrder.REJECTED.equals(o.getStatus())), "Staff Sell shows the rejection");
     }
 
@@ -201,9 +237,9 @@ class StaffOrderFlowTest {
         StaffOrderRejectDTO why = new StaffOrderRejectDTO();
         why.setReason("not mine");
         assertNull(staffOrderService.reject(pending.getUid(), why).getData(), "nor reject it");
-        assertNull(staffSellService.findByCode("K9").getData(), "nor find this branch's staff by code");
+        assertNull(staffSellService.findByCode(staff.getStaffCode()).getData(), "nor find this branch's staff by code");
         StaffBillDTO b = new StaffBillDTO();
-        b.setStaffCode("K9");
+        b.setStaffCode(staff.getStaffCode());
         assertNull(staffSellService.openBill(b).getData(), "nor open a bill for them");
         StaffOrderItemDTO item = new StaffOrderItemDTO();
         item.setSalesOpenedUID(bill.getUid());

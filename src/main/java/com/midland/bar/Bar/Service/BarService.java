@@ -1062,6 +1062,24 @@ public class BarService {
                     .map(b -> new Response<>((SalesOpened) org.hibernate.Hibernate.unproxy(b)))
                     .orElseGet(() -> new Response<>("Open Sale Not Found"));
         workShiftService.requireOpen();
+        return takeOffBillLine(dto);
+    }
+
+    /**
+     * A station receiving a change (Badilisho): the returned item comes off
+     * the bill the same way, without the station's own shift - receiving an
+     * order never needed one.
+     */
+    @Transactional
+    public Response<SalesOpened> takeOffForExchange(String barSalesUID, int quantity, String reason) {
+        RemoveBillLineDTO dto = new RemoveBillLineDTO();
+        dto.setBarSalesUID(barSalesUID);
+        dto.setQuantity(quantity);
+        dto.setReason(reason);
+        return takeOffBillLine(dto);
+    }
+
+    private Response<SalesOpened> takeOffBillLine(RemoveBillLineDTO dto) {
         String branchUID = LoggerUser.getBranchUID();
         if (dto != null && dto.getBarSalesUID() == null && dto.getAddOpId() != null)
             dto.setBarSalesUID(barSalesRepository.findAddedBy(dto.getAddOpId(), dto.getBarServiceUID(), dto.getSalesOpenedUID()).orElse(null));

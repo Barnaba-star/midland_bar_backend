@@ -302,6 +302,13 @@ public class BarController {
         return staffOrderService.addItem(dto);
     }
 
+    /** Staff Sell: a change on a received line - what goes back and what comes instead, straight to the station(s). */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
+    @PostMapping("/staffOrders/exchange")
+    public Response<java.util.List<com.midland.bar.Bar.Model.StaffOrder>> exchangeStaffOrder(@Valid @RequestBody com.midland.bar.Bar.Dto.StaffExchangeDTO dto){
+        return staffOrderService.exchange(dto);
+    }
+
     /** Staff Sell: take a line off an order not yet sent. */
     @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
     @PostMapping("/staffOrders/{orderUid}/removeLine/{lineUid}")
