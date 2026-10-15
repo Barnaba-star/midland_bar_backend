@@ -61,7 +61,7 @@ public class BarServiceDTO {
     }
 
     @NotBlank(message = "Category is required")
-    @Pattern(regexp = "DRINK|FOOD|SHISHA|POOL", message = "Category must be DRINK, FOOD, SHISHA or POOL")
+    @Pattern(regexp = "DRINK|FOOD|SHISHA|POOL|JUICE", message = "Category must be DRINK, FOOD, SHISHA, POOL or JUICE")
     private String category;
 
     /** No longer asked for; kept so older clients' payloads still bind. */

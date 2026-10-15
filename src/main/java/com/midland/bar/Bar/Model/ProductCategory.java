@@ -7,15 +7,18 @@ public enum ProductCategory {
     /** Neither drink nor food (owner, 2026-10-14): shisha and what it is made from. */
     SHISHA,
     /** A game on the pool table, paid per game or by time - received at the pool table (POOL). */
-    POOL;
+    POOL,
+    /** Fresh juice, made to order (owner, 2026-10-15) - received at the juice station (JUICE). */
+    JUICE;
 
-    /** Start of the generated product code: DRK-001, FOD-001, SHS-001, POL-001. */
+    /** Start of the generated product code: DRK-001, FOD-001, SHS-001, POL-001, JUC-001. */
     public String codePrefix() {
         return switch (this) {
             case DRINK -> "DRK";
             case FOOD -> "FOD";
             case SHISHA -> "SHS";
             case POOL -> "POL";
+            case JUICE -> "JUC";
         };
     }
 

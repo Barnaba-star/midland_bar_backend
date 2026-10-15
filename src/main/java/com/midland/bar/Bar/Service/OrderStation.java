@@ -29,7 +29,7 @@ public final class OrderStation {
 
     private OrderStation() {}
 
-    /** FOOD goes to the kitchen, SHISHA to the shisha station, POOL to the pool table; drinks and everything else to the counter. */
+    /** FOOD goes to the kitchen, SHISHA to the shisha station, POOL to the pool table, JUICE to the juice station; drinks and everything else to the counter. */
     public static String forCategory(String category) {
         if ("FOOD".equalsIgnoreCase(category))
             return CHEF;
@@ -37,6 +37,8 @@ public final class OrderStation {
             return SHISHER;
         if ("POOL".equalsIgnoreCase(category))
             return POOL;
+        if ("JUICE".equalsIgnoreCase(category))
+            return JUICE;
         return COUNTER;
     }
 

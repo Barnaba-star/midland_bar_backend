@@ -14,6 +14,8 @@ class OrderStationTest {
         assertEquals(OrderStation.JUICE, OrderStation.forItem("Fresh Juice Embe", "DRINK"));
         assertEquals(OrderStation.SHISHER, OrderStation.forItem("Shisha Apple", "OTHER"));
         assertEquals(OrderStation.CHEF, OrderStation.forItem("Kuku Choma", "FOOD"));
+        // Category Fresh Juice: to the juice station whatever the name says.
+        assertEquals(OrderStation.JUICE, OrderStation.forItem("Parachichi", "JUICE"));
         assertEquals(OrderStation.COUNTER, OrderStation.forItem("Azam Juice", "DRINK"));
         assertEquals(OrderStation.COUNTER, OrderStation.forItem("Castle Lite", "DRINK"));
     }

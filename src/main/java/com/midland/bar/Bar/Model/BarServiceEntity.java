@@ -43,7 +43,7 @@ public class BarServiceEntity extends TenantEntity {
      * so the sales and commission-split code that hangs off them is untouched.
      */
 
-    /** DRINK, FOOD, SHISHA or POOL - see ProductCategory. */
+    /** DRINK, FOOD, SHISHA, POOL or JUICE - see ProductCategory. */
     @Column(name = "category")
     private String category;
 
