@@ -362,12 +362,15 @@ public class BarService {
   /**
    * filter "COUNTED" keeps only what has a count of its own - the store's
    * view: bottles and stock items, not the services drawn from them.
+   * "SERVICES" leaves the stock items (malighafi) out - they are picked as a
+   * service's source, not sold - and "STOCK_ITEMS" lists only them.
    */
   public ResponsePage<BarProjection> findBarServicePage(Integer page, Integer size, String search, String filter){
         log.info(LoggerUser.getEmail() + " Is Accessing Bar Services");
         Pageable pageable = PageRequest.of(page, size);
         try{
-            Page<BarProjection> response = barServiceRepository.findBarServicePage(pageable, LoggerUser.getBranchUID(), lowStockLevel(), likePattern(search), "COUNTED".equals(filter));
+            Page<BarProjection> response = barServiceRepository.findBarServicePage(pageable, LoggerUser.getBranchUID(), lowStockLevel(), likePattern(search), "COUNTED".equals(filter),
+                    "SERVICES".equals(filter) ? "SERVICE" : "STOCK_ITEMS".equals(filter) ? "STOCK_ITEM" : "ALL");
             return new ResponsePage<>(response);
         }catch(Exception e){
             e.printStackTrace();

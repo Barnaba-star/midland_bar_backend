@@ -123,6 +123,14 @@ class RecipeStockTest {
     }
 
     @Test
+    void theServicesListLeavesStockItemsOut() {
+        // Malighafi is picked as a service's source, not listed as a service.
+        assertEquals(0L, barService.findBarServicePage(0, 10, "Mchele test", "SERVICES").getTotalElements());
+        assertEquals(1L, barService.findBarServicePage(0, 10, "Mchele test", "STOCK_ITEMS").getTotalElements());
+        assertEquals(1L, barService.findBarServicePage(0, 10, "Mchele test", null).getTotalElements());
+    }
+
+    @Test
     void commissionCostsTheWholeRecipe() {
         var withRice = commissionRow();
         BarServiceEntity mshikaki = barServiceRepository.findById(MSHIKAKI).orElseThrow();

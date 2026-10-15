@@ -113,6 +113,9 @@ public interface BarServiceRepository extends JpaRepository<BarServiceEntity, St
                   OR LOWER(COALESCE(s.serviceCode, '')) LIKE :search ESCAPE '\\'
                   OR LOWER(COALESCE(s.description, '')) LIKE :search ESCAPE '\\')
              AND (:countedOnly = false OR s.trackStock = true)
+             AND (:kind = 'ALL'
+                  OR (:kind = 'STOCK_ITEM' AND s.kind = 'STOCK_ITEM')
+                  OR (:kind = 'SERVICE' AND (s.kind IS NULL OR s.kind <> 'STOCK_ITEM')))
            ORDER BY s.category, s.serviceName
            """, countQuery = """
            SELECT COUNT(s) FROM BarServiceEntity s
@@ -121,12 +124,16 @@ public interface BarServiceRepository extends JpaRepository<BarServiceEntity, St
                   OR LOWER(COALESCE(s.serviceCode, '')) LIKE :search ESCAPE '\\'
                   OR LOWER(COALESCE(s.description, '')) LIKE :search ESCAPE '\\')
              AND (:countedOnly = false OR s.trackStock = true)
+             AND (:kind = 'ALL'
+                  OR (:kind = 'STOCK_ITEM' AND s.kind = 'STOCK_ITEM')
+                  OR (:kind = 'SERVICE' AND (s.kind IS NULL OR s.kind <> 'STOCK_ITEM')))
            """)
     Page<BarProjection> findBarServicePage(
             Pageable pageable, @Param("branchUID") String branchUID,
             @Param("lowStockLevel") int lowStockLevel,
             @Param("search") String search,
-            @Param("countedOnly") boolean countedOnly
+            @Param("countedOnly") boolean countedOnly,
+            @Param("kind") String kind
     );
 
     /** Everything counted in the store - what a stock take goes through. */
