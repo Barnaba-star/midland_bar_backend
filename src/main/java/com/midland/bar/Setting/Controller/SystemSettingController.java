@@ -137,4 +137,37 @@ public class SystemSettingController {
                     .body(new Response<>("Failed to save the logo"));
         }
     }
+
+    /** Takes the branch's own logo off, so the BaronixTZ one shows again. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('MANAGE_SYSTEM_SETTINGS')")
+    @PostMapping("/removeLogo")
+    public ResponseEntity<Response<SystemSetting>> removeLogo() {
+
+        String branchUid = LoggerUser.getBranchUID();
+
+        if (branchUid == null) {
+            return ResponseEntity
+                    .status(HttpStatus.BAD_REQUEST)
+                    .body(new Response<>("No branch found for the current user"));
+        }
+
+        Optional<SystemSetting> existing = systemSettingRepository.findByBranchUid(branchUid);
+        if (existing.isEmpty() || existing.get().getLogoImage() == null || existing.get().getLogoImage().isBlank()) {
+            return ResponseEntity.ok(new Response<>(existing.orElseGet(SystemSetting::new)));
+        }
+
+        SystemSetting settings = existing.get();
+        String previousLogo = settings.getLogoImage();
+        settings.update();
+        settings.setLogoImage(null);
+        settings = systemSettingRepository.save(settings);
+
+        try {
+            Files.deleteIfExists(Paths.get(uploadDir).resolve(previousLogo));
+        } catch (IOException cleanupError) {
+            log.warn("Could not remove logo {}", previousLogo, cleanupError);
+        }
+
+        return ResponseEntity.ok(new Response<>(settings));
+    }
 }
