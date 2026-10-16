@@ -21,11 +21,14 @@ import java.util.Optional;
  */
 public interface BarServiceRepository extends JpaRepository<BarServiceEntity, String> {
     // First stock item, or among the others (JSON holding its uid).
-    @Query("SELECT s FROM BarServiceEntity s WHERE (s.stockSourceUid = :stockItemUid OR s.extraIngredients LIKE CONCAT('%\"', :stockItemUid, '\"%')) AND s.branchUid = :branchUID")
+    // isActive is spelled out in the list queries here: TenantEntity's
+    // @Where sits on a @MappedSuperclass, which Hibernate 6 ignores, so a
+    // deleted (set aside) service would otherwise stay in every list.
+    @Query("SELECT s FROM BarServiceEntity s WHERE s.isActive = true AND (s.stockSourceUid = :stockItemUid OR s.extraIngredients LIKE CONCAT('%\"', :stockItemUid, '\"%')) AND s.branchUid = :branchUID")
     List<BarServiceEntity> findDrawingOn(@Param("stockItemUid") String stockItemUid, @Param("branchUID") String branchUID);
 
     /** Services that draw on a stock item - it cannot be deleted while any do. */
-    @Query("SELECT COUNT(s) FROM BarServiceEntity s WHERE (s.stockSourceUid = :stockItemUid OR s.extraIngredients LIKE CONCAT('%\"', :stockItemUid, '\"%')) AND s.branchUid = :branchUID")
+    @Query("SELECT COUNT(s) FROM BarServiceEntity s WHERE s.isActive = true AND (s.stockSourceUid = :stockItemUid OR s.extraIngredients LIKE CONCAT('%\"', :stockItemUid, '\"%')) AND s.branchUid = :branchUID")
     long countDrawingOn(@Param("stockItemUid") String stockItemUid, @Param("branchUID") String branchUID);
 
     /** Codes already taken in a branch under one prefix, for picking the next one. */
@@ -71,7 +74,7 @@ public interface BarServiceRepository extends JpaRepository<BarServiceEntity, St
               s.usageType AS usageType
            FROM BarServiceEntity s
            LEFT JOIN BarServiceEntity src ON src.uid = s.stockSourceUid
-           WHERE s.branchUid = :branchUID
+           WHERE s.branchUid = :branchUID AND s.isActive = true
            ORDER BY s.category, s.serviceName
            """)
     List<BarProjection> findAllBarServiceList(
@@ -108,7 +111,7 @@ public interface BarServiceRepository extends JpaRepository<BarServiceEntity, St
               s.usageType AS usageType
            FROM BarServiceEntity s
            LEFT JOIN BarServiceEntity src ON src.uid = s.stockSourceUid
-           WHERE s.branchUid = :branchUID
+           WHERE s.branchUid = :branchUID AND s.isActive = true
              AND (LOWER(s.serviceName) LIKE :search ESCAPE '\\'
                   OR LOWER(COALESCE(s.serviceCode, '')) LIKE :search ESCAPE '\\'
                   OR LOWER(COALESCE(s.description, '')) LIKE :search ESCAPE '\\')
@@ -119,7 +122,7 @@ public interface BarServiceRepository extends JpaRepository<BarServiceEntity, St
            ORDER BY s.category, s.serviceName
            """, countQuery = """
            SELECT COUNT(s) FROM BarServiceEntity s
-           WHERE s.branchUid = :branchUID
+           WHERE s.branchUid = :branchUID AND s.isActive = true
              AND (LOWER(s.serviceName) LIKE :search ESCAPE '\\'
                   OR LOWER(COALESCE(s.serviceCode, '')) LIKE :search ESCAPE '\\'
                   OR LOWER(COALESCE(s.description, '')) LIKE :search ESCAPE '\\')
