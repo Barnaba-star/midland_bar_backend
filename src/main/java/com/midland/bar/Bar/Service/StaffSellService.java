@@ -68,6 +68,8 @@ public class StaffSellService {
         List<SalesOpened> bills = salesOpenedRepository.findOpenBillsByStaff(staff.get().getUid(), LoggerUser.getBranchUIDOrMain());
         out.put("staff", summary(staff.get()));
         out.put("bills", bills);
+        // Sent for handover and not yet received: the screens show the bills read-only.
+        out.put("handoverSent", bills.stream().anyMatch(b -> b.getHandoverSentAt() != null));
         // Written but not yet on the bill (waiting on the supervisor), and ones turned back.
         out.put("orders", staffOrderService.shownOn(bills.stream().map(SalesOpened::getUid).toList()));
         return new Response<>(out);
@@ -90,6 +92,7 @@ public class StaffSellService {
         Optional<BarStaff> staff = byCode(dto.getStaffCode());
         if (staff.isEmpty())
             return new Response<>("No staff member has that code");
+        staffOrderService.requireNoHandoverSent(staff.get().getUid());
 
         // The staff code is the staff member's secret: bills carry their
         // initials instead (Juma Mussa → JM-1, JM-2).
@@ -310,6 +313,7 @@ public class StaffSellService {
         Optional<BarStaff> staff = byCode(staffCode);
         if (staff.isEmpty())
             return new Response<>("No staff member has that code");
+        staffOrderService.requireNoHandoverSent(staff.get().getUid());
         return staffOrderService.send(staff.get());
     }
 

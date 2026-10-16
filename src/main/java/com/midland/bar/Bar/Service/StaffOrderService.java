@@ -66,6 +66,7 @@ public class StaffOrderService {
             return new Response<>("Bill " + bill.getSalesCode() + " is already paid - open a new bill");
         if (bill.getStaffUid() == null)
             return new Response<>("Bill " + bill.getSalesCode() + " is not a staff bill");
+        requireNoHandoverSent(bill.getStaffUid());
 
         BarServiceEntity service = barServiceRepository.findBarServiceByUID(dto.getBarServiceUID(), LoggerUser.getBranchUIDOrMain()).orElse(null);
         if (service == null)
@@ -136,6 +137,7 @@ public class StaffOrderService {
             return new Response<>("Bill " + bill.getSalesCode() + " is already paid - it cannot be changed");
         if (bill.getStaffUid() == null)
             return new Response<>("Bill " + bill.getSalesCode() + " is not a staff bill");
+        requireNoHandoverSent(bill.getStaffUid());
         if (staffOrderRepository.countWaitingReturns(sold.getUid()) > 0)
             return new Response<>("A change for this item is already waiting at the station");
 
@@ -218,6 +220,7 @@ public class StaffOrderService {
         com.midland.bar.Config.Security.StaffSession.requireOwnStaff(order.getStaffUid());
         if (!StaffOrder.DRAFT.equals(order.getStatus()))
             return new Response<>("This order is already with the supervisor");
+        requireNoHandoverSent(order.getStaffUid());
         boolean removed = order.getLines().removeIf(l -> l.getUid().equals(lineUid));
         if (!removed)
             return new Response<>("Item Not Found");
@@ -451,5 +454,19 @@ public class StaffOrderService {
 
     private static String branch() {
         return LoggerUser.getBranchUIDOrMain();
+    }
+
+    /** Message the screens recognise: the staff member's bills are with the cashier. */
+    public static final String HANDOVER_SENT = "HANDOVER_SENT";
+
+    /**
+     * Once a staff member has sent their handover their bills are frozen -
+     * no new bill, nothing added, changed or taken off - until the cashier
+     * has received it (the bills paid). Otherwise what the cashier counts
+     * would no longer match what was sent.
+     */
+    public void requireNoHandoverSent(String staffUid) {
+        if (staffUid != null && salesOpenedRepository.handoverWaiting(staffUid, branch()))
+            throw new com.midland.bar.Utils.Exceptions.BusinessException(HANDOVER_SENT);
     }
 }

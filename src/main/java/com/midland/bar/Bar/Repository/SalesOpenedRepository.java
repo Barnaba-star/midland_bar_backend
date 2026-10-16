@@ -29,6 +29,10 @@ public interface SalesOpenedRepository extends JpaRepository<SalesOpened, String
     @Query("SELECT s FROM SalesOpened s WHERE s.branchUid = :branchUID AND s.staffUid = :staffUid AND s.paymentStatus = 'PENDING' ORDER BY s.salesCode")
     List<SalesOpened> findOpenBillsByStaff(@Param("staffUid") String staffUid, @Param("branchUID") String branchUID);
 
+    /** The staff member sent their handover and the cashier has not taken all of it yet. */
+    @Query("SELECT COUNT(s) > 0 FROM SalesOpened s WHERE s.branchUid = :branchUID AND s.staffUid = :staffUid AND s.paymentStatus = 'PENDING' AND s.handoverSentAt IS NOT NULL")
+    boolean handoverWaiting(@Param("staffUid") String staffUid, @Param("branchUID") String branchUID);
+
     /** Unpaid bills per staff member: [staffCode, staffName, bills, amount]. Null code = opened on the Sales page. */
     @Query("SELECT s.staffCode, s.staffName, COUNT(s), COALESCE(SUM(s.bill), 0) FROM SalesOpened s WHERE s.branchUid = :branchUID AND s.paymentStatus = 'PENDING' GROUP BY s.staffCode, s.staffName")
     List<Object[]> openBillsByStaff(@Param("branchUID") String branchUID);
