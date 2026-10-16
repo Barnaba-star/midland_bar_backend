@@ -148,6 +148,10 @@ public class BillPaymentService {
         com.midland.bar.Config.Security.StaffSession.requireOwnBill(bill);
         if (!"PENDING".equals(bill.getPaymentStatus()))
             return new Response<>("Bill " + bill.getSalesCode() + " is already paid");
+        // The staff member sent it for handover: theirs to leave as it is. The
+        // cashier can still correct the note while receiving.
+        if (bill.getHandoverSentAt() != null && com.midland.bar.Config.Security.StaffSession.active())
+            throw new com.midland.bar.Utils.Exceptions.BusinessException(StaffOrderService.HANDOVER_SENT);
 
         String method = dto == null || dto.getMethod() == null ? "" : dto.getMethod().trim().toLowerCase();
         if (method.isEmpty()) {
