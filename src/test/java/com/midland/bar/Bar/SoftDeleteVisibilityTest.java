@@ -75,4 +75,12 @@ class SoftDeleteVisibilityTest {
         em.clear();
         assertEquals(0L, errorLogRepository.findErrorPage(null, null, org.springframework.data.domain.PageRequest.of(0, 1)).getTotalElements());
     }
+
+    @Test
+    void usersSearchNarrowsTheList() {
+        long all = barService.findUserPageByBranch(0, 50, null).getTotalElements();
+        assertTrue(all >= 1);
+        assertEquals(1L, barService.findUserPageByBranch(0, 50, "ROOT@ROOT.COM").getTotalElements());
+        assertEquals(0L, barService.findUserPageByBranch(0, 50, "hakuna-mtu-zzq").getTotalElements());
+    }
 }

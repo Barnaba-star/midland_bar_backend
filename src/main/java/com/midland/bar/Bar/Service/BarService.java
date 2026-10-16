@@ -377,10 +377,10 @@ public class BarService {
             return new ResponsePage<>("Error in Accessing Bar Service");
         }
   }
-  public ResponsePage<User>  findUserPageByBranch(Integer page, Integer size){
+  public ResponsePage<User>  findUserPageByBranch(Integer page, Integer size, String search){
       log.info(LoggerUser.getEmail() + " Is Accessing User by using Branch");
       Pageable pageable = PageRequest.of(page, size);
-      return new ResponsePage<>(userRepository.findUserPageByBranch(pageable, LoggerUser.getBranchUID()));
+      return new ResponsePage<>(userRepository.findUserPageByBranch(pageable, LoggerUser.getBranchUID(), likePattern(search)));
   }
 
   /*

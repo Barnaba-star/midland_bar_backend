@@ -67,8 +67,17 @@ public interface UserRepository extends JpaRepository<User, String> {
     @Query("SELECT u FROM User u WHERE  u.isActive=true ")
     Page<User> findUserPage(Pageable pageable);
 
-    @Query("SELECT u FROM User u WHERE u.isActive=true AND u.branch.uid=:branchUID")
-    Page<User> findUserPageByBranch(Pageable pageable, String branchUID);
+    /** search (a LIKE pattern, "%" for all) matches username, any name, phone, email or role. */
+    @Query("""
+        SELECT u FROM User u WHERE u.isActive=true AND u.branch.uid=:branchUID
+          AND (LOWER(COALESCE(u.username, '')) LIKE :search ESCAPE '\\'
+               OR LOWER(CONCAT(COALESCE(u.firstName, ''), ' ', COALESCE(u.middleName, ''), ' ', COALESCE(u.lastName, ''))) LIKE :search ESCAPE '\\'
+               OR LOWER(CONCAT(COALESCE(u.firstName, ''), ' ', COALESCE(u.lastName, ''))) LIKE :search ESCAPE '\\'
+               OR LOWER(COALESCE(u.phone, '')) LIKE :search ESCAPE '\\'
+               OR LOWER(COALESCE(u.email, '')) LIKE :search ESCAPE '\\'
+               OR EXISTS (SELECT r FROM u.roles r WHERE LOWER(r.name) LIKE :search ESCAPE '\\'))
+        """)
+    Page<User> findUserPageByBranch(Pageable pageable, @Param("branchUID") String branchUID, @Param("search") String search);
 
 
     @Query("""

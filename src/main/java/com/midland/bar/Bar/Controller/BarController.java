@@ -84,7 +84,7 @@ public class BarController {
     @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_USER')")
     @PostMapping("/findUserPageByBranch")
     public ResponsePage<User> findUserPageByBranch(@RequestBody PageableParam pageableParam){
-        return barService.findUserPageByBranch(pageableParam.getPage(), pageableParam.getSize());
+        return barService.findUserPageByBranch(pageableParam.getPage(), pageableParam.getSize(), pageableParam.getSearchParam());
     }
     /**
      * The POS side of revoking a branch user's access. Same rule as the
