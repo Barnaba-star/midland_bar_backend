@@ -31,6 +31,7 @@ public final class StaffSession {
             new Route("POST", Pattern.compile("^/bar/staffSell/openBill$")),
             new Route("GET", Pattern.compile("^/bar/staffSell/handover/[^/]+$")),
             new Route("POST", Pattern.compile("^/bar/staffSell/handover/[^/]+/send$")),
+            new Route("POST", Pattern.compile("^/bar/staffSell/handover/[^/]+/recall$")),
             new Route("POST", Pattern.compile("^/bar/staffOrders/addItem$")),
             new Route("POST", Pattern.compile("^/bar/staffOrders/[^/]+/removeLine/[^/]+$")),
             new Route("POST", Pattern.compile("^/bar/staffOrders/send/[^/]+$")),

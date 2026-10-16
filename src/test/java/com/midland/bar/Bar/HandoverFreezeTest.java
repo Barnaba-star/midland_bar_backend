@@ -106,4 +106,15 @@ class HandoverFreezeTest {
 
         assertNotNull(openBill(), "received: a new bill opens again");
     }
+
+    @Test
+    void recallingTheHandoverOpensTheBillsAgain() {
+        assertEquals(1, staffSellService.sendHandover(staff.getStaffCode()).getData());
+        assertThrows(BusinessException.class, this::openBill);
+
+        assertEquals(1, staffSellService.recallHandover(staff.getStaffCode()).getData());
+        assertFalse((Boolean) staffSellService.findByCode(staff.getStaffCode()).getData().get("handoverSent"));
+        assertNotNull(staffOrderService.addItem(oneMore()).getData(), "recalled: adding works again");
+        assertNotNull(openBill());
+    }
 }

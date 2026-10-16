@@ -225,6 +225,26 @@ public class StaffSellService {
     }
 
     /**
+     * Sent too soon ("one more round for table 4"): the staff member takes the
+     * handover back. Every unpaid bill of theirs loses its sent mark, so they
+     * can sell on it again, and sends again when ready.
+     */
+    public Response<Integer> recallHandover(String code) {
+        com.midland.bar.Config.Security.StaffSession.requireOwnCode(code);
+        Optional<BarStaff> staff = byCode(code);
+        if (staff.isEmpty())
+            return new Response<>("No staff member has that code");
+        List<SalesOpened> bills = salesOpenedRepository.findOpenBillsByStaff(staff.get().getUid(), LoggerUser.getBranchUIDOrMain())
+                .stream().filter(b -> b.getHandoverSentAt() != null).toList();
+        if (bills.isEmpty())
+            return new Response<>("Nothing was sent for handover");
+        bills.forEach(b -> b.setHandoverSentAt(null));
+        salesOpenedRepository.saveAll(bills);
+        log.info("{} recalled the handover of staff {} ({} bill(s))", LoggerUser.getEmail(), staff.get().getUid(), bills.size());
+        return new Response<>(bills.size());
+    }
+
+    /**
      * The cashier took one method's money at handover: every bill of the staff
      * member in that method is paid in full by it, all or none. The bills and
      * amounts must be the ones the summary showed - a bill opened, changed or

@@ -268,6 +268,13 @@ public class BarController {
         return staffSellService.sendHandover(staffCode);
     }
 
+    /** Staff Sell: the staff member takes a sent handover back - their bills open up again. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
+    @PostMapping("/staffSell/handover/{staffCode}/recall")
+    public Response<Integer> recallStaffHandover(@PathVariable String staffCode){
+        return staffSellService.recallHandover(staffCode);
+    }
+
     /** Sales: the cashier took one method's money from a staff member - all their bills in it are paid. */
     @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
     @PostMapping("/staffSell/handover/receive")
