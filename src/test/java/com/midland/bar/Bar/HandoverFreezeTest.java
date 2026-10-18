@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * cashier receives it - against the local database, rolled back.
  */
 @SpringBootTest
+@org.junit.jupiter.api.Tag("local")
 @Transactional
 class HandoverFreezeTest {
 

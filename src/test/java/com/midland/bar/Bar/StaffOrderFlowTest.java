@@ -30,6 +30,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * the bill and takes it out of the store.
  */
 @SpringBootTest
+@org.junit.jupiter.api.Tag("local")
 @Transactional
 class StaffOrderFlowTest {
 
@@ -264,13 +265,22 @@ class StaffOrderFlowTest {
         assertNull(staffSellService.findByCode(staff.getStaffCode()).getData(), "nor find this branch's staff by code");
         StaffBillDTO b = new StaffBillDTO();
         b.setStaffCode(staff.getStaffCode());
-        assertNull(staffSellService.openBill(b).getData(), "nor open a bill for them");
+        assertTrue(refused(() -> staffSellService.openBill(b).getData()), "nor open a bill for them");
         StaffOrderItemDTO item = new StaffOrderItemDTO();
         item.setSalesOpenedUID(bill.getUid());
         item.setBarServiceUID(MSHIKAKI);
         item.setQuantity(1);
-        assertNull(staffOrderService.addItem(item).getData(), "nor write onto this branch's bill");
+        assertTrue(refused(() -> staffOrderService.addItem(item).getData()), "nor write onto this branch's bill");
         assertTrue(staffSellService.summary(null).getData().stream().noneMatch(r -> "Maiko Test".equals(r.get("staffName"))),
                 "nor see this branch's staff in the sales summary");
+    }
+
+    /** Turned away - with an empty answer, or a refusal before it gets that far (no open shift here). */
+    private static boolean refused(java.util.function.Supplier<Object> call) {
+        try {
+            return call.get() == null;
+        } catch (com.midland.bar.Utils.Exceptions.BusinessException e) {
+            return true;
+        }
     }
 }

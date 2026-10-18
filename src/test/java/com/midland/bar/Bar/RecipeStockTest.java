@@ -27,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * them, and taking the line off puts every one back.
  */
 @SpringBootTest
+@org.junit.jupiter.api.Tag("local")
 @Transactional
 class RecipeStockTest {
 

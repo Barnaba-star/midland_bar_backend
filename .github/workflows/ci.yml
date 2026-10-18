@@ -1,0 +1,44 @@
+# Every push and pull request: the backend builds and its unit tests pass.
+# Tests tagged "local" need the developer's database (fixtures, a branch,
+# products) and are run on that machine, not here.
+#
+# Deploy: when RAILWAY_TOKEN is set (Railway > project respectful-sparkle >
+# Settings > Tokens > a project token for "production"), a green push to main
+# deploys the backend to Railway - no more `railway up` by hand. Without the
+# secret the deploy step is skipped.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Build and unit tests
+        run: ./mvnw -B -q test -DexcludedGroups=local
+
+  deploy:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to Railway
+        if: env.RAILWAY_TOKEN != ''
+        run: npx -y @railway/cli@latest up --service midland_bar_backend --ci
+      - name: No token - not deployed
+        if: env.RAILWAY_TOKEN == ''
+        run: echo "::notice::Set the RAILWAY_TOKEN secret to deploy on every push to main"

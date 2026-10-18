@@ -27,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * what has been published. Rolled back afterwards.
  */
 @SpringBootTest
+@org.junit.jupiter.api.Tag("local")
 @Transactional
 class SupportScopeTest {
 

@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** What is deleted stays out of the lists, against the local database, rolled back. */
 @SpringBootTest
+@org.junit.jupiter.api.Tag("local")
 @Transactional
 class SoftDeleteVisibilityTest {
 

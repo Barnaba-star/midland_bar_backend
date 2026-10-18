@@ -37,6 +37,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * landing on that staff member rather than on whoever is logged in.
  */
 @SpringBootTest
+@org.junit.jupiter.api.Tag("local")
 @Transactional
 class StaffSellFlowTest {
 
@@ -58,10 +59,24 @@ class StaffSellFlowTest {
     @Autowired com.midland.bar.Bar.Controller.StaffAccessController staffAccessController;
     @Autowired com.midland.bar.Config.Security.JwtTokenUtil jwtTokenUtil;
 
+    @Autowired com.midland.bar.Bar.Repository.BarStaffRepository barStaffRepository;
+
+    /** A 4-digit code nobody in any branch holds - codes are 4 digits now. */
+    private String CODE;
+
     @BeforeEach
     void signIn() {
         User user = userRepository.findByUsernameForAuthentication(LOGIN);
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(user, null, List.of()));
+        CODE = unusedCode(7000);
+        workShiftService.open(); // selling needs an open shift; already open is fine
+    }
+
+    private String unusedCode(int from) {
+        for (int c = from; c <= 9999; c++)
+            if (barStaffRepository.countCodeHoldersAnyBranch(String.valueOf(c), "") == 0)
+                return String.valueOf(c);
+        throw new AssertionError("no unused 4-digit staff code");
     }
 
     private BarStaff newStaff(String code) {
@@ -85,19 +100,19 @@ class StaffSellFlowTest {
     }
 
     @Test
-    void typedCodeIsKeptUpperCaseAndCannotBeTakenTwice() {
-        BarStaff staff = newStaff(" k9 ");
-        assertEquals("K9", staff.getStaffCode());
+    void typedCodeIsTrimmedAndCannotBeTakenTwice() {
+        BarStaff staff = newStaff(" " + CODE + " ");
+        assertEquals(CODE, staff.getStaffCode());
 
         BarStaffDTO clash = new BarStaffDTO();
         clash.setFirstName("Other");
         clash.setLastName("Test");
         clash.setPhoneNumber("0700000001");
         clash.setBarCategory(com.midland.bar.Bar.Model.StaffCategory.values()[0].name());
-        clash.setStaffCode("K9");
+        clash.setStaffCode(CODE);
         var res = barService.saveBarStaff(clash);
         assertNull(res.getData());
-        assertTrue(res.getMessage().contains("already used"), res.getMessage());
+        assertTrue(res.getMessage().contains("already"), res.getMessage());
     }
 
     @Test
@@ -108,25 +123,25 @@ class StaffSellFlowTest {
 
     @Test
     void codeFindsTheStaffAndTheirBillsAreNumberedFromIt() {
-        BarStaff staff = newStaff("K9");
+        BarStaff staff = newStaff(CODE);
 
-        var found = staffSellService.findByCode("k9");
+        var found = staffSellService.findByCode(CODE);
         assertNotNull(found.getData(), found.getMessage());
         @SuppressWarnings("unchecked")
         Map<String, Object> who = (Map<String, Object>) found.getData().get("staff");
         assertEquals(staff.getUid(), who.get("uid"));
         assertEquals(List.of(), found.getData().get("bills"));
 
-        SalesOpened first = open("K9");
-        SalesOpened second = open("k9");
+        SalesOpened first = open(CODE);
+        SalesOpened second = open(CODE);
         assertEquals("MT-1", first.getSalesCode());
         assertEquals("MT-2", second.getSalesCode());
         assertEquals(staff.getUid(), first.getStaffUid());
         assertEquals("Maiko Test", first.getStaffName());
-        assertEquals("K9", first.getStaffCode());
+        assertEquals(CODE, first.getStaffCode());
 
         @SuppressWarnings("unchecked")
-        List<SalesOpened> bills = (List<SalesOpened>) staffSellService.findByCode("K9").getData().get("bills");
+        List<SalesOpened> bills = (List<SalesOpened>) staffSellService.findByCode(CODE).getData().get("bills");
         assertEquals(List.of("MT-1", "MT-2"), bills.stream().map(SalesOpened::getSalesCode).toList());
 
         assertNull(staffSellService.findByCode("ZZ-NOBODY").getData());
@@ -134,8 +149,8 @@ class StaffSellFlowTest {
 
     @Test
     void aSaleOnAStaffBillIsThatStaffMembersNotTheLogins() {
-        BarStaff staff = newStaff("K9");
-        SalesOpened bill = open("K9");
+        BarStaff staff = newStaff(CODE);
+        SalesOpened bill = open(CODE);
 
         SaleItemsDTO dto = new SaleItemsDTO();
         dto.setSalesOpenedUID(bill.getUid());
@@ -191,8 +206,8 @@ class StaffSellFlowTest {
 
     @Test
     void summaryShowsEachStaffMembersTakingsByMethod() {
-        newStaff("K9");
-        SalesOpened bill = open("K9");
+        newStaff(CODE);
+        SalesOpened bill = open(CODE);
 
         SaleItemsDTO sale = new SaleItemsDTO();
         sale.setSalesOpenedUID(bill.getUid());
@@ -225,7 +240,9 @@ class StaffSellFlowTest {
         Map<String, Object> receipt = billPaymentService.receipt(bill.getUid()).getData();
         assertNull(receipt.get("staffCode"), "the code is the staff member's secret");
         assertEquals("Maiko Test", receipt.get("staffName"));
-        assertEquals(LOGIN, receipt.get("paidBy"));
+        // The slip prints the cashier's name, not their login.
+        String name = userRepository.findFullNameByLogin(LOGIN);
+        assertEquals(name == null || name.isBlank() ? LOGIN : name, receipt.get("paidBy"));
 
         Map<String, Object> after = k9(staffSellService.summary(null).getData());
         assertEquals((long) due, after.get("total"));
@@ -414,9 +431,9 @@ class StaffSellFlowTest {
         return dto;
     }
 
-    /** A staff member under today's rules (3-digit code, PIN), on the first code nobody holds. */
+    /** A staff member under today's rules (4-digit code, PIN), on the first code nobody holds. */
     private String freeCode() {
-        for (int c = 900; c <= 999; c++) {
+        for (int c = Integer.parseInt(unusedCode(8000)); c <= 9999; c++) {
             BarStaffDTO dto = new BarStaffDTO();
             dto.setFirstName("Maiko");
             dto.setLastName("Test");
@@ -427,7 +444,7 @@ class StaffSellFlowTest {
             if (barService.saveBarStaff(dto).getData() != null)
                 return String.valueOf(c);
         }
-        throw new AssertionError("no free staff code in 900-999");
+        throw new AssertionError("no free staff code in 8000-9999");
     }
 
     private int sell(SalesOpened bill, int quantity) {
@@ -442,6 +459,6 @@ class StaffSellFlowTest {
 
     private static Map<String, Object> k9(List<Map<String, Object>> rows) {
         return rows.stream().filter(r -> "Maiko Test".equals(r.get("staffName"))).findFirst()
-                .orElseThrow(() -> new AssertionError("no K9 row in " + rows));
+                .orElseThrow(() -> new AssertionError("no Maiko Test row in " + rows));
     }
 }
