@@ -49,6 +49,7 @@ public class CashUpService {
     private final com.midland.bar.Bar.Repository.StaffLossRepository staffLossRepository;
     private final com.midland.bar.Bar.Repository.DebtEntryRepository debtEntryRepository;
     private final com.midland.bar.Bar.Repository.DebtCustomerRepository debtCustomerRepository;
+    private final com.midland.bar.Bar.Repository.BillRefundRepository billRefundRepository;
 
     /** The signed-in login's closed shift, waiting for its cash-up: when it ran, and what each method should hold. */
     public Response<Map<String, Object>> preview() {
@@ -231,6 +232,20 @@ public class CashUpService {
             shift.payoutRows.add(payout);
             shift.payoutsTotal += amount;
             shift.payouts.merge(lossMethod, amount, Long::sum);
+        }
+        // Money handed back on a paid bill (an approved refund this login asked for).
+        for (com.midland.bar.Bar.Model.BillRefund r : billRefundRepository.paidOutBy(branchUID, email, from, to)) {
+            long amount = r.getAmount() == null ? 0 : r.getAmount();
+            Map<String, Object> payout = new LinkedHashMap<>();
+            payout.put("pot", "Refund");
+            payout.put("description", "Bill " + r.getSalesCode() + " · " + r.getReason());
+            payout.put("paidTo", r.getDecidedByName());
+            payout.put("amount", amount);
+            payout.put("paidAt", r.getDecidedAt());
+            payout.put("method", r.getMethod());
+            shift.payoutRows.add(payout);
+            shift.payoutsTotal += amount;
+            shift.payouts.merge(r.getMethod(), amount, Long::sum);
         }
         return shift;
     }

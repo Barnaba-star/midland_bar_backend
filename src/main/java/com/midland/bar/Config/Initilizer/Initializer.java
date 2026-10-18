@@ -147,7 +147,9 @@ public class Initializer implements ApplicationRunner {
                         "SAVE_STOCK_AND_PURCHASE", "VIEW_STOCK_AND_PURCHASE",
                         "SAVE_STORE", "VIEW_STORE", "DELETE_STORE",
                         // Customers' debts: see them, set each one's limit, write off.
-                        "VIEW_DEBT", "MANAGE_DEBT", "WRITE_OFF_DEBT"
+                        "VIEW_DEBT", "MANAGE_DEBT", "WRITE_OFF_DEBT",
+                        // Approves money back on a paid bill.
+                        "REFUND_SALES"
                 )
         );
 
@@ -163,7 +165,7 @@ public class Initializer implements ApplicationRunner {
                         "SAVE_STAFF", "VIEW_STAFF", "DELETE_STAFF",
                         "VIEW_REPORT", "VIEW_EXPENSES", "VIEW_STOCK_AND_PURCHASE",
                         "SAVE_STORE", "VIEW_STORE", "DELETE_STORE",
-                        "VIEW_DEBT", "MANAGE_DEBT"
+                        "VIEW_DEBT", "MANAGE_DEBT", "REFUND_SALES"
                 )
         );
 

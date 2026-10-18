@@ -10,7 +10,7 @@ import java.time.LocalDateTime;
 
 /**
  * One line of a credit customer's account. What they owe is every CHARGE
- * less every PAYMENT and WRITE_OFF. Amounts are always positive; the kind
+ * less every PAYMENT, WRITE_OFF and REFUND. Amounts are always positive; the kind
  * says which way they go. Nothing here is edited or deleted - a mistake is
  * put right by another line.
  */
@@ -28,6 +28,8 @@ public class DebtEntry extends TenantEntity {
     public static final String CHARGE = "CHARGE";
     public static final String PAYMENT = "PAYMENT";
     public static final String WRITE_OFF = "WRITE_OFF";
+    /** Part of a credit bill given back (an approved BillRefund by deni): owed less, no money moves. */
+    public static final String REFUND = "REFUND";
 
     @Column(name = "customer_uid", nullable = false)
     private String customerUid;

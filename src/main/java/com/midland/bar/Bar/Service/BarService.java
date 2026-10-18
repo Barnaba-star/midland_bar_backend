@@ -1178,7 +1178,7 @@ public class BarService {
                     .map(b -> new Response<>((SalesOpened) org.hibernate.Hibernate.unproxy(b)))
                     .orElseGet(() -> new Response<>("Open Sale Not Found"));
         workShiftService.requireOpen();
-        return takeOffBillLine(dto);
+        return takeOffBillLine(dto, false);
     }
 
     /**
@@ -1192,10 +1192,24 @@ public class BarService {
         dto.setBarSalesUID(barSalesUID);
         dto.setQuantity(quantity);
         dto.setReason(reason);
-        return takeOffBillLine(dto);
+        return takeOffBillLine(dto, false);
     }
 
-    private Response<SalesOpened> takeOffBillLine(RemoveBillLineDTO dto) {
+    /**
+     * An approved refund (RefundService): the same undoing on a paid bill -
+     * stock back, the split, pots and commission taken off. The money going
+     * back is the refund's business, not this.
+     */
+    @Transactional
+    public Response<SalesOpened> takeOffForRefund(String barSalesUID, int quantity, String reason) {
+        RemoveBillLineDTO dto = new RemoveBillLineDTO();
+        dto.setBarSalesUID(barSalesUID);
+        dto.setQuantity(quantity);
+        dto.setReason(reason);
+        return takeOffBillLine(dto, true);
+    }
+
+    private Response<SalesOpened> takeOffBillLine(RemoveBillLineDTO dto, boolean refund) {
         String branchUID = LoggerUser.getBranchUID();
         if (dto != null && dto.getBarSalesUID() == null && dto.getAddOpId() != null)
             dto.setBarSalesUID(barSalesRepository.findAddedBy(dto.getAddOpId(), dto.getBarServiceUID(), dto.getSalesOpenedUID()).orElse(null));
@@ -1213,8 +1227,9 @@ public class BarService {
         SalesOpened bill = salesOpenedRepository.findById(line.getSalesOpened().getUid()).orElse(null);
         if (bill == null)
             return new Response<>("Open Sale Not Found");
-        if ("PAID".equals(bill.getPaymentStatus()))
-            return new Response<>("Bill " + bill.getSalesCode() + " is already paid - it cannot be changed");
+        if ("PAID".equals(bill.getPaymentStatus()) != refund)
+            return new Response<>(refund ? "Bill " + bill.getSalesCode() + " is not paid - take the item off instead"
+                    : "Bill " + bill.getSalesCode() + " is already paid - it cannot be changed");
 
         int lineQty = line.getQuantity() == null || line.getQuantity() < 1 ? 1 : line.getQuantity();
         int qty = dto.getQuantity() == null ? lineQty : dto.getQuantity();
