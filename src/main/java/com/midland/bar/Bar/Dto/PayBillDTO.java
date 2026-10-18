@@ -30,5 +30,8 @@ public class PayBillDTO {
 
         /** Cash only: what the customer handed over, if more than the amount. */
         private Integer tendered;
+
+        /** deni only: the credit customer the part goes on. */
+        private String customerUid;
     }
 }

@@ -47,6 +47,8 @@ public class CashUpService {
     private final IncomeExpensesDescriptionRepository payoutRepository;
     private final WorkShiftService workShiftService;
     private final com.midland.bar.Bar.Repository.StaffLossRepository staffLossRepository;
+    private final com.midland.bar.Bar.Repository.DebtEntryRepository debtEntryRepository;
+    private final com.midland.bar.Bar.Repository.DebtCustomerRepository debtCustomerRepository;
 
     /** The signed-in login's closed shift, waiting for its cash-up: when it ran, and what each method should hold. */
     public Response<Map<String, Object>> preview() {
@@ -76,6 +78,8 @@ public class CashUpService {
         body.put("lines", lines);
         body.put("payouts", shift.payoutRows);
         body.put("payoutsTotal", shift.payoutsTotal);
+        body.put("debtPayments", shift.debtRows);
+        body.put("debtTotal", shift.debtTotal);
         body.put("expectedTotal", shift.expectedTotal());
         body.put("billCount", shift.billCount());
         return new Response<>(body);
@@ -182,6 +186,20 @@ public class CashUpService {
             shift.takings.put(String.valueOf(row[0]), ((Number) row[1]).longValue());
             shift.bills.put(String.valueOf(row[0]), ((Number) row[2]).intValue());
         }
+        // Money credit customers brought in this shift is in hand by its method too.
+        for (com.midland.bar.Bar.Model.DebtEntry e : debtEntryRepository.paymentRowsTakenBy(branchUID, email, from, to)) {
+            String method = e.getMethod() == null ? "cash" : e.getMethod();
+            shift.takings.merge(method, e.getAmount().longValue(), Long::sum);
+            shift.debtTotal += e.getAmount();
+            Map<String, Object> d = new LinkedHashMap<>();
+            d.put("customerUid", e.getCustomerUid());
+            d.put("customerName", debtCustomerRepository.findById(e.getCustomerUid()).map(com.midland.bar.Bar.Model.DebtCustomer::getName).orElse(null));
+            d.put("method", method);
+            d.put("amount", e.getAmount());
+            d.put("note", e.getNote());
+            d.put("at", e.getEntryAt());
+            shift.debtRows.add(d);
+        }
         for (Object[] row : payoutRepository.payoutsOf(branchUID, email, from, to)) {
             long amount = row[3] == null ? 0 : ((Number) row[3]).longValue();
             Map<String, Object> payout = new LinkedHashMap<>();
@@ -223,6 +241,9 @@ public class CashUpService {
         final Map<String, Long> payouts = new LinkedHashMap<>();
         final List<Map<String, Object>> payoutRows = new ArrayList<>();
         long payoutsTotal = 0;
+        /** Debt payments taken in the shift - already in takings. */
+        final List<Map<String, Object>> debtRows = new ArrayList<>();
+        long debtTotal = 0;
 
         Set<String> methods() {
             Set<String> m = new TreeSet<>(takings.keySet());

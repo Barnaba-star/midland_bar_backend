@@ -23,7 +23,7 @@ public class BillPayment extends TenantEntity {
     @JoinColumn(name = "sales_opened_uid", nullable = false)
     private SalesOpened salesOpened;
 
-    /** cash, mpesa, tigopesa, airtelmoney, halopesa, bank. */
+    /** cash, mpesa, tigopesa, airtelmoney, halopesa, bank - or deni, put on a customer's account. */
     @Column(name = "method", length = 20)
     private String method;
 
@@ -38,6 +38,13 @@ public class BillPayment extends TenantEntity {
     /** tendered - amount, given back. */
     @Column(name = "change_given")
     private Integer changeGiven;
+
+    /** deni: the credit customer it went on (DebtCustomer), and their name as it was. */
+    @Column(name = "customer_uid")
+    private String customerUid;
+
+    @Column(name = "customer_name", length = 80)
+    private String customerName;
 
     @Column(name = "received_by")
     private String receivedBy;

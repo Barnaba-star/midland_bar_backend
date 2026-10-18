@@ -41,11 +41,14 @@ public class BillPaymentService {
     private final NotificationService notificationService;
     private final com.midland.bar.Utils.Offline.OfflineOps offlineOps;
     private final com.midland.bar.Uaa.Repository.UserRepository userRepository;
+    private final DebtService debtService;
 
     /**
      * Settles a bill in one or more payments. The amount due is worked out
      * here from the bill's lines - not taken from the screen - and the
      * payments must add up to it exactly. Paying frees the bill's code.
+     * A part by "deni" puts that much on a credit customer's account
+     * (DebtService.charge) instead of taking money.
      */
     @Transactional
     public Response<SalesOpened> payBill(PayBillDTO dto) {
@@ -79,8 +82,11 @@ public class BillPaymentService {
         String by = LoggerUser.getEmail();
         for (PayBillDTO.Part part : dto.getPayments()) {
             String method = part.getMethod() == null ? "" : part.getMethod().trim().toLowerCase();
-            if (!METHODS.contains(method))
+            boolean credit = DebtService.METHOD.equals(method);
+            if (!METHODS.contains(method) && !credit)
                 return new Response<>("Unknown payment method: " + part.getMethod());
+            if (credit && (part.getCustomerUid() == null || part.getCustomerUid().isBlank()))
+                return new Response<>("Choose the customer the bill goes on credit to");
             int amount = part.getAmount();
             Integer tendered = null;
             Integer change = null;
@@ -96,6 +102,10 @@ public class BillPaymentService {
             row.setAmount(amount);
             row.setTendered(tendered);
             row.setChangeGiven(change);
+            if (credit) {
+                row.setCustomerUid(part.getCustomerUid());
+                row.setCustomerName(debtService.nameOf(part.getCustomerUid()));
+            }
             row.setReceivedBy(by);
             row.setReceivedAt(now);
             rows.add(row);
@@ -105,6 +115,10 @@ public class BillPaymentService {
         if (paid != due)
             return new Response<>("Payments add up to " + paid + " but the bill is " + due);
 
+        // Within each customer's limit, or the whole payment is refused.
+        for (BillPayment row : rows)
+            if (DebtService.METHOD.equals(row.getMethod()))
+                debtService.charge(bill, row.getCustomerUid(), row.getAmount(), now);
         billPaymentRepository.saveAll(rows);
         bill.setBill(due);
         bill.setPaidAmount(paid);
@@ -239,6 +253,8 @@ public class BillPaymentService {
             m.put("amount", p.getAmount());
             m.put("tendered", p.getTendered());
             m.put("change", p.getChangeGiven());
+            if (p.getCustomerName() != null)
+                m.put("customerName", p.getCustomerName());
             payments.add(m);
         }
 

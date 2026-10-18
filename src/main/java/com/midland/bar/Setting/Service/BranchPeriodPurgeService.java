@@ -30,7 +30,7 @@ import java.util.Set;
  * {@code to}, both days included.
  *
  * What the branch runs on stays: its products, staff, store, users,
- * settings and subscription payments. Unlike deleting the branch,
+ * settings, subscription payments and customers' debts (still owed). Unlike deleting the branch,
  * a branch is never started over, it only lets go of history.
  *
  * ROOT only. A dry run counts without touching anything; the real run needs

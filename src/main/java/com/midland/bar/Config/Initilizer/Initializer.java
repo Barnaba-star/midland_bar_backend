@@ -145,7 +145,9 @@ public class Initializer implements ApplicationRunner {
                         "SAVE_SALES", "VIEW_SALES", "DELETE_SALES", "RECEIVE_ORDERS",
                         "VIEW_REPORT", "PAY_STAFF", "SAVE_EXPENSES", "VIEW_EXPENSES",
                         "SAVE_STOCK_AND_PURCHASE", "VIEW_STOCK_AND_PURCHASE",
-                        "SAVE_STORE", "VIEW_STORE", "DELETE_STORE"
+                        "SAVE_STORE", "VIEW_STORE", "DELETE_STORE",
+                        // Customers' debts: see them, set each one's limit, write off.
+                        "VIEW_DEBT", "MANAGE_DEBT", "WRITE_OFF_DEBT"
                 )
         );
 
@@ -160,7 +162,8 @@ public class Initializer implements ApplicationRunner {
                         // DELETE_STAFF only makes a staff member inactive; their history stays.
                         "SAVE_STAFF", "VIEW_STAFF", "DELETE_STAFF",
                         "VIEW_REPORT", "VIEW_EXPENSES", "VIEW_STOCK_AND_PURCHASE",
-                        "SAVE_STORE", "VIEW_STORE", "DELETE_STORE"
+                        "SAVE_STORE", "VIEW_STORE", "DELETE_STORE",
+                        "VIEW_DEBT", "MANAGE_DEBT"
                 )
         );
 
@@ -180,7 +183,9 @@ public class Initializer implements ApplicationRunner {
                         "VIEW_REPORT",
                         "VIEW_EXPENSES", "SAVE_EXPENSES",
                         "PAY_STAFF",
-                        "VIEW_STOCK_AND_PURCHASE", "SAVE_STOCK_AND_PURCHASE"
+                        "VIEW_STOCK_AND_PURCHASE", "SAVE_STOCK_AND_PURCHASE",
+                        // Puts a bill on credit within the customer's limit, and takes their payments.
+                        "VIEW_DEBT"
                 )
         );
 

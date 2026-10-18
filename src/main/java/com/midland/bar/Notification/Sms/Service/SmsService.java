@@ -108,7 +108,7 @@ public class SmsService {
      * people actually type - 0712..., +255712..., 255712... - and returns
      * null for anything that cannot be made into one.
      */
-    static String normalise(String phoneNumber) {
+    public static String normalise(String phoneNumber) {
         if (phoneNumber == null) {
             return null;
         }
