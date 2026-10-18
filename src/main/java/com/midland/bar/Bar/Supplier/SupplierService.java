@@ -41,6 +41,8 @@ public class SupplierService {
     private final StockReceiptRepository stockReceiptRepository;
     private final StockService stockService;
     private final WorkShiftService workShiftService;
+    private final ManunuziService manunuziService;
+    private final SupplierDeliveryItemRepository deliveryItemRepository;
 
     // ---------------------------------------------------------------- suppliers
 
@@ -115,10 +117,26 @@ public class SupplierService {
         boolean fromDrawer = !"false".equalsIgnoreCase(String.valueOf(body.get("fromDrawer")));
         if (fromDrawer)
             workShiftService.requireOpenForPayout();
+        // Each delivered product's part comes out of its Manunuzi savings, the
+        // oldest deliveries first; the Manunuzi report follows.
+        String payer = fromDrawer ? LoggerUser.getEmail() : null;
+        long left = amount;
+        long covered = 0;
+        for (SupplierDeliveryItem item : deliveryItemRepository.unpaid(uid)) {
+            if (left <= 0)
+                break;
+            long part = Math.min(left, item.getAmount() - item.getPaid());
+            String label = "Msambazaji " + s.getName() + (item.getPoCode() != null ? " · " + item.getPoCode() : "") + " · " + item.getServiceName();
+            covered += manunuziService.spend(LoggerUser.getBranchUIDOrMain(), item.getServiceUid(), part, label, method, payer, s.getName());
+            item.setPaid(item.getPaid() + part);
+            deliveryItemRepository.save(item);
+            left -= part;
+        }
         SupplierEntry e = new SupplierEntry();
         e.setSupplierUid(uid);
         e.setKind(SupplierEntry.PAYMENT);
         e.setAmount(amount);
+        e.setOutsidePot(amount - covered);
         e.setMethod(method);
         e.setFromDrawer(fromDrawer);
         e.setDetail(cut(str(body.get("note")), 300));
@@ -184,6 +202,24 @@ public class SupplierService {
             lines.add(line);
             total += price * packs;
         }
+        // Within each product's Manunuzi budget, unless a CEO or manager chose to go over.
+        Map<String, Long> byProduct = new LinkedHashMap<>();
+        Map<String, String> names = new HashMap<>();
+        for (PurchaseOrderLine l : lines) {
+            byProduct.merge(l.getServiceUid(), (long) l.getPacks() * l.getPackPrice(), Long::sum);
+            names.put(l.getServiceUid(), l.getServiceName());
+        }
+        Map<String, long[]> budgets = manunuziService.budgets(b);
+        List<String> over = new ArrayList<>();
+        byProduct.forEach((svc, value) -> {
+            long free = budgets.getOrDefault(svc, new long[4])[3];
+            if (value > free)
+                over.add(names.get(svc) + " (Tshs " + value + " > Manunuzi Tshs " + Math.max(0, free) + ")");
+        });
+        boolean allowOver = "true".equalsIgnoreCase(String.valueOf(body.get("allowOverBudget")));
+        if (!over.isEmpty() && !allowOver)
+            return new Response<>("Over the Manunuzi budget: " + String.join(", ", over));
+        po.setOverBudget(!over.isEmpty());
         po.setTotal(total);
         PurchaseOrder saved = poRepository.save(po);
         lines.forEach(l -> l.setPoUid(saved.getUid()));
@@ -220,6 +256,7 @@ public class SupplierService {
         List<?> items = body.get("lines") instanceof List<?> l ? l : List.of();
         long total = 0;
         List<String> detail = new ArrayList<>();
+        List<SupplierDeliveryItem> delivered = new ArrayList<>();
         for (Object o : items) {
             if (!(o instanceof Map<?, ?> m))
                 continue;
@@ -244,6 +281,14 @@ public class SupplierService {
                 throw new BusinessException(r.getMessage());
             total += r.getData().getTotalCost();
             detail.add(line.getServiceName() + " x " + packs);
+            SupplierDeliveryItem item = new SupplierDeliveryItem();
+            item.setSupplierUid(po.getSupplierUid());
+            item.setServiceUid(line.getServiceUid());
+            item.setServiceName(line.getServiceName());
+            item.setPoCode(po.getCode());
+            item.setAmount(r.getData().getTotalCost());
+            item.setReceivedAt(LocalDateTime.now());
+            delivered.add(item);
             line.setReceivedPacks(line.getReceivedPacks() + packs);
             lineRepository.save(line);
         }
@@ -258,7 +303,9 @@ public class SupplierService {
         e.setEntryBy(LoggerUser.getEmail());
         e.setEntryByName(CashUpService.nameOf(LoggerUser.getUser()));
         e.setEntryAt(LocalDateTime.now());
-        entryRepository.save(e);
+        SupplierEntry savedEntry = entryRepository.save(e);
+        delivered.forEach(i -> i.setEntryUid(savedEntry.getUid()));
+        deliveryItemRepository.saveAll(delivered);
         boolean all = lines.values().stream().allMatch(l -> l.getReceivedPacks() >= l.getPacks());
         po.setStatus(all ? PurchaseOrder.RECEIVED : PurchaseOrder.PARTIAL);
         po.update();
@@ -320,6 +367,7 @@ public class SupplierService {
         r.put("expectedOn", po.getExpectedOn());
         r.put("note", po.getNote());
         r.put("orderedAt", po.getOrderedAt());
+        r.put("overBudget", po.getOverBudget());
         return r;
     }
 

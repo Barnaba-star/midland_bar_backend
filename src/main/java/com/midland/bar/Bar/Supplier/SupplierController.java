@@ -19,6 +19,7 @@ import java.util.Map;
 public class SupplierController {
 
     private final SupplierService service;
+    private final ManunuziService manunuziService;
 
     @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_STORE')")
     @GetMapping
@@ -63,4 +64,9 @@ public class SupplierController {
     @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_STORE')")
     @GetMapping("/prices/{serviceUid}")
     public ResponseList<Map<String, Object>> prices(@PathVariable String serviceUid) { return service.priceHistory(serviceUid); }
+
+    /** Each stock-counted product's Manunuzi: saved, on order, delivered unpaid, free to spend. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_STORE')")
+    @GetMapping("/budget")
+    public com.midland.bar.Utils.Responses.ResponseList<Map<String, Object>> budget() { return manunuziService.budgetList(); }
 }

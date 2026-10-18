@@ -36,6 +36,7 @@ public class StockService {
     private final StockAdjustmentRepository stockAdjustmentRepository;
     private final com.midland.bar.Bar.Supplier.SupplierRepository supplierRepository;
     private final com.midland.bar.Bar.Supplier.SupplierEntryRepository supplierEntryRepository;
+    private final com.midland.bar.Bar.Supplier.SupplierDeliveryItemRepository supplierDeliveryItemRepository;
 
     /**
      * Records a delivery and raises the service's count by it. The service's
@@ -99,7 +100,15 @@ public class StockService {
                 e.setEntryBy(LoggerUser.getEmail());
                 e.setEntryByName(com.midland.bar.Bar.Service.CashUpService.nameOf(LoggerUser.getUser()));
                 e.setEntryAt(LocalDateTime.now());
-                supplierEntryRepository.save(e);
+                com.midland.bar.Bar.Supplier.SupplierEntry savedEntry = supplierEntryRepository.save(e);
+                com.midland.bar.Bar.Supplier.SupplierDeliveryItem item = new com.midland.bar.Bar.Supplier.SupplierDeliveryItem();
+                item.setEntryUid(savedEntry.getUid());
+                item.setSupplierUid(supplier.getUid());
+                item.setServiceUid(service.getUid());
+                item.setServiceName(service.getServiceName());
+                item.setAmount(receipt.getTotalCost());
+                item.setReceivedAt(LocalDateTime.now());
+                supplierDeliveryItemRepository.save(item);
             }
         }
         receipt.setPoCode(dto.getPoCode());

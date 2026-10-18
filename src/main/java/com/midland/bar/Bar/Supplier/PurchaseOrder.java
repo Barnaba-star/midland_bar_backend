@@ -45,6 +45,10 @@ public class PurchaseOrder extends TenantEntity {
     @Column(name = "total")
     private Long total;
 
+    /** Placed above what the products' Manunuzi allowed (a CEO or manager chose to). */
+    @Column(name = "over_budget")
+    private Boolean overBudget;
+
     @Column(name = "ordered_by")
     private String orderedBy;
 

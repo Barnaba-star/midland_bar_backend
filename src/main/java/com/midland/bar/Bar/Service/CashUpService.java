@@ -241,7 +241,11 @@ public class CashUpService {
         }
         // A supplier paid out of this login's drawer.
         for (com.midland.bar.Bar.Supplier.SupplierEntry e : supplierEntryRepository.paidFromDrawerBy(branchUID, email, from, to)) {
-            long amount = e.getAmount() == null ? 0 : e.getAmount();
+            // The part paid from products' Manunuzi is already a payout of the
+            // Stock Purchase pot above; only what no Manunuzi covered is added here.
+            long amount = e.getOutsidePot() != null ? e.getOutsidePot() : (e.getAmount() == null ? 0 : e.getAmount());
+            if (amount <= 0)
+                continue;
             String method = e.getMethod() == null ? "cash" : e.getMethod();
             Map<String, Object> payout = new LinkedHashMap<>();
             payout.put("pot", "Supplier");

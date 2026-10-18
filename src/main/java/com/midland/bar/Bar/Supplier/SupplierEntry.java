@@ -48,6 +48,10 @@ public class SupplierEntry extends TenantEntity {
     @Column(name = "from_drawer")
     private Boolean fromDrawer;
 
+    /** PAYMENT: the part no product's Manunuzi covered - only this comes off a cash-up directly (the rest is in the pot's payouts). */
+    @Column(name = "outside_pot")
+    private Long outsidePot;
+
     @Column(name = "entry_by", nullable = false)
     private String entryBy;
 

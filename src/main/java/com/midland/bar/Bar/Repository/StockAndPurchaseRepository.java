@@ -108,4 +108,14 @@ public interface StockAndPurchaseRepository extends JpaRepository<StockAndPurcha
 
 
 
+
+    /** [serviceUid, remaining] - each product's Manunuzi savings left, all weeks, in a branch. */
+    @Query("SELECT s.barService.uid, COALESCE(SUM(s.remainingAmount), 0) FROM StockAndPurchase s " +
+           "WHERE s.isActive = true AND s.branchUid = :b GROUP BY s.barService.uid")
+    List<Object[]> remainingByService(@Param("b") String branchUID);
+
+    /** One product's weeks that still hold Manunuzi savings, oldest first - spent in that order. */
+    @Query("SELECT s FROM StockAndPurchase s WHERE s.isActive = true AND s.branchUid = :b AND s.barService.uid = :svc " +
+           "AND s.remainingAmount > 0 ORDER BY s.weekDate")
+    List<com.midland.bar.Bar.Model.StockAndPurchase> withRemaining(@Param("b") String branchUID, @Param("svc") String serviceUid);
 }
