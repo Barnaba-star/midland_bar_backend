@@ -1,0 +1,50 @@
+# Nightly copy of the production database, kept outside Railway (owner, 2026-10-18).
+#
+# Needs two repository secrets (Settings > Secrets and variables > Actions):
+#   PROD_DATABASE_URL  - Postgres-eeUU's DATABASE_PUBLIC_URL (Railway > Postgres-eeUU > Variables;
+#                        it exists once the service has a TCP proxy: Settings > Networking > TCP Proxy)
+#   BACKUP_PASSPHRASE  - any long phrase; the dump is encrypted with it. Keep it somewhere safe:
+#                        without it the backup cannot be opened.
+#
+# Each run leaves one artifact, kept 30 days. To restore:
+#   gpg -d baronix-YYYY-MM-DD.dump.gpg > baronix.dump
+#   pg_restore --no-owner --clean --if-exists -d "$TARGET_URL" baronix.dump
+name: db-backup
+
+on:
+  schedule:
+    - cron: '30 0 * * *' # 03:30 EAT, after the bars close
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container: postgres:18 # pg_dump must be at least the server's version (18)
+    steps:
+      - name: Dump and encrypt
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          if [ -z "$PROD_DATABASE_URL" ] || [ -z "$BACKUP_PASSPHRASE" ]; then
+            echo "::error::Set the PROD_DATABASE_URL and BACKUP_PASSPHRASE secrets"; exit 1
+          fi
+          apt-get update -qq && apt-get install -y -qq gnupg >/dev/null
+          day=$(TZ=Africa/Dar_es_Salaam date +%F)
+          mkdir -p out
+          pg_dump --format=custom --no-owner --dbname="$PROD_DATABASE_URL" --file=baronix.dump
+          # A dump that cannot be listed is no backup.
+          pg_restore --list baronix.dump > /dev/null
+          echo "Tables: $(pg_restore --list baronix.dump | grep -c ' TABLE DATA ')  Size: $(du -h baronix.dump | cut -f1)"
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$BACKUP_PASSPHRASE" \
+              --symmetric --cipher-algo AES256 --output "out/baronix-$day.dump.gpg" baronix.dump
+          rm baronix.dump
+          echo "DAY=$day" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: baronix-db-${{ env.DAY }}
+          path: out/
+          retention-days: 30
+          if-no-files-found: error
