@@ -26,7 +26,7 @@ public class LivePublishInterceptor implements HandlerInterceptor {
             // Written, sent, received, rejected: the supervisor's queue and the staff member's bill.
             new Rule(Pattern.compile("^/bar/staffOrders/(send/[^/]+|offline|exchange|[^/]+/(receive|reject|review))$"), "orders"),
             new Rule(Pattern.compile("^/bar/(payBill|addSaleItems|saveOpenSale|saveBarSales|removeBillLine|staffLoss"
-                    + "|deleteEmptyBill/[^/]+|deleteBarSales/[^/]+|bills/[^/]+/paymentNote"
+                    + "|deleteEmptyBill/[^/]+|deleteBarSales/[^/]+|bills/[^/]+/(paymentNote|discount)|refunds/.+"
                     + "|staffSell/openBill|staffSell/handover/.+)$"), "bills")
     );
 

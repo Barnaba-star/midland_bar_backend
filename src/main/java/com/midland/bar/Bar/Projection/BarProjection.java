@@ -187,4 +187,10 @@ public interface BarProjection {
     String getStaffCommissionUID();
     LocalDate getDate();
 
+
+    /** A sold line: the menu price, the offer that priced it, units given free, and any discount taken off. */
+    Integer getListPrice();
+    String getPriceRuleName();
+    Integer getFreeUnits();
+    Integer getDiscountAmount();
 }

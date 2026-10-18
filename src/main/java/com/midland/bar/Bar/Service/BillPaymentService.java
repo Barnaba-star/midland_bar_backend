@@ -245,6 +245,11 @@ public class BillPaymentService {
             l.put("quantity", line.getQuantity());
             l.put("unitPrice", line.getPrice());
             l.put("lineTotal", line.getLineTotal());
+            // The offer that priced it, what it would have cost, free units, discount taken off.
+            l.put("listPrice", line.getListPrice());
+            l.put("offer", line.getPriceRuleName());
+            l.put("freeUnits", line.getFreeUnits());
+            l.put("discount", line.getDiscountAmount());
             lines.add(l);
         }
         List<Map<String, Object>> payments = new ArrayList<>();
@@ -284,6 +289,7 @@ public class BillPaymentService {
             receipt.put("taxVrn", st.getTaxVrn());
             receipt.put("efdSerial", st.getEfdSerial());
         });
+        receipt.put("discountTotal", lines.stream().mapToInt(x -> x.get("discount") == null ? 0 : ((Number) x.get("discount")).intValue()).sum());
         receipt.put("traReceiptNo", bill.getTraReceiptNo());
         receipt.put("traVerifyCode", bill.getTraVerifyCode());
         receipt.put("lines", lines);

@@ -50,6 +50,10 @@ public class BarService {
 
     /** Selling and paying out need the login's shift open. */
     private final WorkShiftService workShiftService;
+    private final PriceRuleService priceRuleService;
+    private final com.midland.bar.Bar.Repository.BillDiscountRepository billDiscountRepository;
+    private final com.midland.bar.Setting.Repository.SystemSettingRepository systemSettingRepository;
+    private final com.midland.bar.Config.Security.AuthChecker authChecker;
   /** The payment methods a payout may go by - the same as a bill's. */
   private static final java.util.Set<String> PAYOUT_METHODS = java.util.Set.of("cash", "mpesa", "tigopesa", "airtelmoney", "halopesa", "bank");
 
@@ -1044,8 +1048,10 @@ public class BarService {
                 barServiceRepository.save(storeRow);
             }
 
-            int unitPrice = service.getPrice();
-            int lineTotal = unitPrice * quantity;
+            // A happy hour or offer running now prices it (the split follows what is charged).
+            PriceRuleService.Priced priced = priceRuleService.price(service, quantity, soldAt, bill.getUid());
+            int unitPrice = priced.unitPrice();
+            int lineTotal = priced.lineTotal();
             // Cost of one sold unit, from whatever row the stock came out of:
             // a mshikaki costs its share of the beef.
             BarServiceEntity costRow = storeRow != null ? storeRow : service;
@@ -1088,6 +1094,9 @@ public class BarService {
             line.setQuantity(quantity);
             line.setUnitPrice(unitPrice);
             line.setLineTotal(lineTotal);
+            line.setListPrice(priced.listPrice());
+            line.setPriceRuleName(priced.ruleName());
+            line.setFreeUnits(priced.freeUnits() > 0 ? priced.freeUnits() : null);
             line.setUnitCost(unitCost);
             line.setStockItemUid(storeRow == null ? null : storeRow.getUid());
             line.setStockUnits(storeRow == null ? null : stockUnits);
@@ -1270,14 +1279,136 @@ public class BarService {
             }
         }
 
-        // The same split the sale used, taken back off the day and week it was sold.
+        java.time.LocalDateTime soldAt = line.getSoldAt() != null ? line.getSoldAt()
+                : (line.getCreatedAt() != null ? line.getCreatedAt().atStartOfDay() : java.time.LocalDateTime.now());
+        List<BarReports> reports = barReportsRepository.findBySalesLine(line.getUid());
+        unsplit(line, service, amount, whole, reports, branchUID);
+
+        BillLineVoid record = new BillLineVoid();
+        record.setBillUid(bill.getUid());
+        record.setSalesCode(bill.getSalesCode());
+        record.setServiceName(service == null ? null : service.getServiceName());
+        record.setQuantity(qty);
+        record.setUnitPrice(unitPrice);
+        record.setAmount(amount);
+        BarStaff seller = line.getBarStaff();
+        record.setStaffName(seller == null ? null
+                : ((seller.getFirstName() == null ? "" : seller.getFirstName()) + " " + (seller.getLastName() == null ? "" : seller.getLastName())).trim());
+        record.setSoldAt(soldAt);
+        record.setReason(reason.length() > 300 ? reason.substring(0, 300) : reason);
+        record.setVoidedBy(LoggerUser.getEmail());
+        record.setVoidedByName(CashUpService.nameOf(LoggerUser.getUser()));
+        record.setVoidedAt(com.midland.bar.Utils.Offline.OfflineContext.now());
+        billLineVoidRepository.save(record);
+
+        if (whole) {
+            barReportsRepository.deleteAll(reports);
+            barSalesRepository.delete(line);
+        } else {
+            barReportsRepository.saveAll(reports);
+            line.setQuantity(lineQty - qty);
+            line.setLineTotal((line.getLineTotal() == null ? unitPrice * lineQty : line.getLineTotal()) - amount);
+            if (line.getStockUnits() != null)
+                line.setStockUnits(line.getStockUnits() - (line.getStockUnits() / lineQty) * qty);
+            barSalesRepository.save(line);
+        }
+
+        bill.setBill(Math.max(0, (bill.getBill() == null ? 0 : bill.getBill()) - amount));
+        bill.update();
+        salesOpenedRepository.save(bill);
+        log.info(LoggerUser.getEmail() + " took " + qty + " x " + record.getServiceName() + " off bill " + bill.getSalesCode() + ": " + reason);
+        offlineOps.claim("REMOVE_LINE", bill.getUid());
+        // The bill was reached through the line, so it is a lazy proxy - Jackson can't write one.
+        return new Response<>((SalesOpened) org.hibernate.Hibernate.unproxy(bill));
+    }
+
+    /**
+     * A discount on an open bill (owner, 2026-10-18): spread over its lines by
+     * their share, each line's split taken down by its part (no stock moves),
+     * and recorded with the reason. A cashier may give up to the branch's
+     * cashier limit (POS Setting > Tawi) of the bill in total; more needs
+     * DISCOUNT_ANY (CEO, MANAGER).
+     */
+    @Transactional
+    public Response<SalesOpened> discountBill(String billUid, Integer amount, Integer percent, String reason) {
+        if (com.midland.bar.Config.Security.StaffSession.active())
+            throw new BusinessException("Only the cashier can give a discount");
+        workShiftService.requireOpen();
+        String branchUID = LoggerUser.getBranchUIDOrMain();
+        SalesOpened bill = salesOpenedRepository.findForUpdate(billUid, branchUID).orElse(null);
+        if (bill == null || !"PENDING".equals(bill.getPaymentStatus()))
+            return new Response<>("That bill is not open any more");
+        String why = reason == null ? "" : reason.trim();
+        if (why.length() < 3)
+            return new Response<>("Write why the discount is given");
+        int total = (int) barSalesRepository.billTotal(bill.getUid());
+        if (total <= 0)
+            return new Response<>("Bill " + bill.getSalesCode() + " has nothing on it");
+        int amt = percent != null && percent > 0 ? Math.round(total * Math.min(100, percent) / 100f) : (amount == null ? 0 : amount);
+        if (amt < 1 || amt > total)
+            return new Response<>("The discount is between 1 and " + total);
+        long given = billDiscountRepository.totalOnBill(bill.getUid());
+        int gross = total + (int) given;
+        int limit = systemSettingRepository.findByBranchUid(branchUID)
+                .map(com.midland.bar.Setting.Model.SystemSetting::cashierDiscountPercentOrDefault).orElse(10);
+        boolean any = Boolean.TRUE.equals(authChecker.hasPermissionOrRoot("DISCOUNT_ANY"));
+        if (!any && given + amt > Math.floor(gross * limit / 100.0))
+            return new Response<>("A cashier may discount up to " + limit + "% of the bill (" + (int) Math.floor(gross * limit / 100.0)
+                    + ") - a manager or CEO gives more");
+
+        List<BarSales> lines = barSalesRepository.findLinesOfBill(bill.getUid());
+        int left = amt;
+        for (int i = 0; i < lines.size(); i++) {
+            BarSales line = lines.get(i);
+            int lt = line.getLineTotal() == null ? 0 : line.getLineTotal();
+            int share = i == lines.size() - 1 ? left : (int) Math.floor((double) amt * lt / total);
+            share = Math.min(share, lt);
+            if (share <= 0)
+                continue;
+            left -= share;
+            List<BarReports> reports = barReportsRepository.findBySalesLine(line.getUid());
+            unsplit(line, line.getBarServiceEntity(), share, false, reports, branchUID);
+            barReportsRepository.saveAll(reports);
+            line.setLineTotal(lt - share);
+            line.setDiscountAmount((line.getDiscountAmount() == null ? 0 : line.getDiscountAmount()) + share);
+            barSalesRepository.save(line);
+        }
+        bill.setBill(Math.max(0, (bill.getBill() == null ? total : bill.getBill()) - amt));
+        bill.update();
+        salesOpenedRepository.save(bill);
+
+        com.midland.bar.Bar.Model.BillDiscount d = new com.midland.bar.Bar.Model.BillDiscount();
+        d.setBillUid(bill.getUid());
+        d.setSalesCode(bill.getSalesCode());
+        d.setBillTotal(total);
+        d.setAmount(amt - left);
+        d.setReason(why.length() > 300 ? why.substring(0, 300) : why);
+        d.setGivenBy(LoggerUser.getEmail());
+        d.setGivenByName(CashUpService.nameOf(LoggerUser.getUser()));
+        d.setGivenAt(java.time.LocalDateTime.now());
+        billDiscountRepository.save(d);
+        log.info(LoggerUser.getEmail() + " gave " + d.getAmount() + " off bill " + bill.getSalesCode() + ": " + why);
+        return new Response<>(bill);
+    }
+
+    public com.midland.bar.Utils.Responses.ResponseList<com.midland.bar.Bar.Model.BillDiscount> discounts(String filter) {
+        java.time.LocalDateTime[] range = ReportRange.of(filter);
+        return new com.midland.bar.Utils.Responses.ResponseList<>(billDiscountRepository.between(LoggerUser.getBranchUIDOrMain(), range[0], range[1]));
+    }
+
+    /**
+     * Takes [amount] of a sold line back out of everything the sale wrote: its
+     * split report (all of it when [whole]), the week's pots and the Other
+     * split, the week's stock-purchase pot and the seller's commission - on
+     * the day and week it was sold. Used by take-off, refund and discount.
+     */
+    private void unsplit(BarSales line, BarServiceEntity service, int amount, boolean whole, List<BarReports> reports, String branchUID) {
         java.time.LocalDateTime soldAt = line.getSoldAt() != null ? line.getSoldAt()
                 : (line.getCreatedAt() != null ? line.getCreatedAt().atStartOfDay() : java.time.LocalDateTime.now());
         LocalDate soldDay = soldAt.toLocalDate();
         LocalDate soldWeek = soldDay.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
         Commission commission = service == null ? null : loadCommissionsByService(List.of(service)).get(service.getUid());
 
-        List<BarReports> reports = barReportsRepository.findBySalesLine(line.getUid());
         int sellerCut = 0;
         for (BarReports report : reports) {
             if (whole) {
@@ -1327,42 +1458,6 @@ public class BarService {
         if (line.getBarStaff() != null && sellerCut != 0)
             addStaffCommission(line.getBarStaff().getUid(), branchUID, soldDay, List.of(-sellerCut));
 
-        BillLineVoid record = new BillLineVoid();
-        record.setBillUid(bill.getUid());
-        record.setSalesCode(bill.getSalesCode());
-        record.setServiceName(service == null ? null : service.getServiceName());
-        record.setQuantity(qty);
-        record.setUnitPrice(unitPrice);
-        record.setAmount(amount);
-        BarStaff seller = line.getBarStaff();
-        record.setStaffName(seller == null ? null
-                : ((seller.getFirstName() == null ? "" : seller.getFirstName()) + " " + (seller.getLastName() == null ? "" : seller.getLastName())).trim());
-        record.setSoldAt(soldAt);
-        record.setReason(reason.length() > 300 ? reason.substring(0, 300) : reason);
-        record.setVoidedBy(LoggerUser.getEmail());
-        record.setVoidedByName(CashUpService.nameOf(LoggerUser.getUser()));
-        record.setVoidedAt(com.midland.bar.Utils.Offline.OfflineContext.now());
-        billLineVoidRepository.save(record);
-
-        if (whole) {
-            barReportsRepository.deleteAll(reports);
-            barSalesRepository.delete(line);
-        } else {
-            barReportsRepository.saveAll(reports);
-            line.setQuantity(lineQty - qty);
-            line.setLineTotal((line.getLineTotal() == null ? unitPrice * lineQty : line.getLineTotal()) - amount);
-            if (line.getStockUnits() != null)
-                line.setStockUnits(line.getStockUnits() - (line.getStockUnits() / lineQty) * qty);
-            barSalesRepository.save(line);
-        }
-
-        bill.setBill(Math.max(0, (bill.getBill() == null ? 0 : bill.getBill()) - amount));
-        bill.update();
-        salesOpenedRepository.save(bill);
-        log.info(LoggerUser.getEmail() + " took " + qty + " x " + record.getServiceName() + " off bill " + bill.getSalesCode() + ": " + reason);
-        offlineOps.claim("REMOVE_LINE", bill.getUid());
-        // The bill was reached through the line, so it is a lazy proxy - Jackson can't write one.
-        return new Response<>((SalesOpened) org.hibernate.Hibernate.unproxy(bill));
     }
 
     private static Integer minus(Integer value, int by) {
@@ -1483,19 +1578,26 @@ public class BarService {
         Pageable pageable = PageRequest.of(page, size);
         return new ResponsePage<>(barSalesRepository.findBarSalesPage(pageable, LoggerUser.getBranchUID()));
     }
+    /**
+     * Deleting a sale line is taking it off its bill, whole: the same undoing
+     * as removeBillLine (stock back, split, pots, commission, a void record),
+     * never a bare delete that left the stock short. A paid bill's line goes
+     * back through a refund instead.
+     */
+    @Transactional
     public Response<BarSales> deleteBarSales(String barSalesUID){
-        log.info(LoggerUser.getEmail() + "Is Deleting Sales");
-        Optional<BarSales> optionalBarSales = barSalesRepository.findSalesByUID(barSalesUID, LoggerUser.getBranchUID());
-        if(optionalBarSales.isEmpty())
+        Optional<BarSales> line = barSalesRepository.findSalesByUID(barSalesUID, LoggerUser.getBranchUID());
+        if (line.isEmpty())
             return new Response<>("Sales Not Found");
-        BarSales sales=optionalBarSales.get();
-        try{
-            barSalesRepository.delete(optionalBarSales.get());
-            return new Response<>(sales);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return new Response<>("Error in deleting sales");
-        }
+        workShiftService.requireOpen();
+        RemoveBillLineDTO dto = new RemoveBillLineDTO();
+        dto.setBarSalesUID(barSalesUID);
+        dto.setReason("Deleted");
+        Response<SalesOpened> done = takeOffBillLine(dto, false);
+        if (done.getData() == null)
+            return new Response<>(done.getMessage());
+        log.info(LoggerUser.getEmail() + " deleted sale line " + barSalesUID);
+        return new Response<>((BarSales) org.hibernate.Hibernate.unproxy(line.get()));
     }
     /**
      * Removes a bill opened by mistake. Only while nothing is on it - no line, and no

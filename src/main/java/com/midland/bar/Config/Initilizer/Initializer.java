@@ -149,7 +149,9 @@ public class Initializer implements ApplicationRunner {
                         // Customers' debts: see them, set each one's limit, write off.
                         "VIEW_DEBT", "MANAGE_DEBT", "WRITE_OFF_DEBT",
                         // Approves money back on a paid bill.
-                        "REFUND_SALES"
+                        "REFUND_SALES",
+                        // Happy hours / offers, and discounts beyond the cashier limit.
+                        "MANAGE_PRICE_RULES", "DISCOUNT_ANY"
                 )
         );
 
@@ -165,7 +167,7 @@ public class Initializer implements ApplicationRunner {
                         "SAVE_STAFF", "VIEW_STAFF", "DELETE_STAFF",
                         "VIEW_REPORT", "VIEW_EXPENSES", "VIEW_STOCK_AND_PURCHASE",
                         "SAVE_STORE", "VIEW_STORE", "DELETE_STORE",
-                        "VIEW_DEBT", "MANAGE_DEBT", "REFUND_SALES"
+                        "VIEW_DEBT", "MANAGE_DEBT", "REFUND_SALES", "MANAGE_PRICE_RULES", "DISCOUNT_ANY"
                 )
         );
 

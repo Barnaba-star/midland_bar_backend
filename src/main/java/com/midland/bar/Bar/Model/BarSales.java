@@ -91,4 +91,20 @@ public class BarSales extends TenantEntity {
      */
     @Column(name = "add_op_id")
     private String addOpId;
+
+    /** The menu price when sold - unitPrice is lower when a happy hour applied. */
+    @Column(name = "list_price")
+    private Integer listPrice;
+
+    /** The happy hour / offer that priced this line, if any. */
+    @Column(name = "price_rule_name", length = 80)
+    private String priceRuleName;
+
+    /** Units given free by a "buy X get Y" offer - in quantity, not in lineTotal. */
+    @Column(name = "free_units")
+    private Integer freeUnits;
+
+    /** Taken off this line by a discount on the bill (lineTotal is after it). */
+    @Column(name = "discount_amount")
+    private Integer discountAmount;
 }

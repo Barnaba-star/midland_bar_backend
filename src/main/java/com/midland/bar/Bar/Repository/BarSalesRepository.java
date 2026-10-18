@@ -54,7 +54,11 @@ public interface BarSalesRepository extends JpaRepository<BarSales, String> {
         ss.serviceCode as serviceCode,
         COALESCE(s.unitPrice, ss.price) as price,
         COALESCE(s.quantity, 1) as quantity,
-        COALESCE(s.lineTotal, s.unitPrice, ss.price) as lineTotal
+        COALESCE(s.lineTotal, s.unitPrice, ss.price) as lineTotal,
+        s.listPrice as listPrice,
+        s.priceRuleName as priceRuleName,
+        s.freeUnits as freeUnits,
+        s.discountAmount as discountAmount
     FROM BarSales s
     JOIN s.salesOpened so
     LEFT JOIN s.barStaff st
@@ -104,4 +108,14 @@ public interface BarSalesRepository extends JpaRepository<BarSales, String> {
     java.util.Optional<String> findAddedBy(@org.springframework.data.repository.query.Param("opId") String opId,
                                            @org.springframework.data.repository.query.Param("serviceUid") String serviceUid,
                                            @org.springframework.data.repository.query.Param("billUid") String billUid);
+
+    /** One product on a bill so far: [units, free units] - for buy-and-get-free offers. */
+    @Query("SELECT COALESCE(SUM(b.quantity), 0), COALESCE(SUM(b.freeUnits), 0) FROM BarSales b " +
+           "WHERE b.salesOpened.uid = :billUid AND b.barServiceEntity.uid = :serviceUid")
+    java.util.List<Object[]> unitsAndFreeOnBill(@org.springframework.data.repository.query.Param("billUid") String billUid,
+                              @org.springframework.data.repository.query.Param("serviceUid") String serviceUid);
+
+    /** A bill's sold lines, oldest first - for spreading a discount. */
+    @Query("SELECT b FROM BarSales b WHERE b.salesOpened.uid = :billUid ORDER BY b.soldAt")
+    java.util.List<BarSales> findLinesOfBill(@org.springframework.data.repository.query.Param("billUid") String billUid);
 }
