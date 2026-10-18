@@ -15,4 +15,10 @@ public interface OtherCommissionEntryRepository extends JpaRepository<OtherCommi
            "WHERE e.branchUid = :branchUID AND e.isActive = true AND e.entryDate >= :start AND e.entryDate < :end " +
            "GROUP BY e.itemName ORDER BY SUM(e.amount) DESC")
     List<Object[]> totalsByItem(@Param("branchUID") String branchUID, @Param("start") LocalDate start, @Param("end") LocalDate end);
+
+    /** A day's Other split per item: [itemName, amount]. */
+    @org.springframework.data.jpa.repository.Query("SELECT e.itemName, SUM(e.amount) FROM OtherCommissionEntry e " +
+           "WHERE e.isActive = true AND e.branchUid = :branchUID AND e.entryDate = :day GROUP BY e.itemName")
+    java.util.List<Object[]> byItemOn(@org.springframework.data.repository.query.Param("branchUID") String branchUID,
+                                      @org.springframework.data.repository.query.Param("day") java.time.LocalDate day);
 }

@@ -338,4 +338,11 @@ public interface BarReportsRepository extends JpaRepository<BarReports, String> 
             ORDER BY COALESCE(SUM(COALESCE(r.staffAmount, 0)), 0) DESC
             """)
     List<StaffEarningsProjection> staffEarningsSince(@Param("branchUID") String branchUID, @Param("startDate") LocalDate startDate);
+
+    /** A day's sale splits summed: staff, owner, TRA, emergency, maintenance, other, LUKU, water, rent, loan, stock purchase. */
+    @Query("SELECT SUM(r.staffAmount), SUM(r.ownerAmount), SUM(r.traAmount), SUM(r.emergencyAmount), SUM(r.maintenanceAmount), " +
+           "SUM(r.othersAmount), SUM(r.lukuAmount), SUM(r.waterAmount), SUM(r.rentAmount), SUM(r.loanAmount), SUM(r.stockPurchaseAmount) " +
+           "FROM BarReports r WHERE r.isActive = true AND r.branchUid = :branchUID AND r.createdAt = :day")
+    java.util.List<Object[]> splitOfDay(@org.springframework.data.repository.query.Param("branchUID") String branchUID,
+                                        @org.springframework.data.repository.query.Param("day") java.time.LocalDate day);
 }

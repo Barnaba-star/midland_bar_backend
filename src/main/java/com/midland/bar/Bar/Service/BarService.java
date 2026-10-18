@@ -78,6 +78,7 @@ public class BarService {
   private final OpenStoreRepository openStoreRepository;
   private final ServiceAndStoreReportRepository serviceAndStoreReportRepository;
   private final IncomeExpensesRepository incomeExpensesRepository;
+  private final com.midland.bar.Bar.Repository.OtherCommissionEntryRepository otherCommissionEntryRepository;
   private final IncomeExpensesDescriptionRepository incomeExpensesDescriptionRepository;
   private final StockAndPurchaseRepository stockAndPurchaseRepository;
   private final StockAndPurchaseDescriptionsRepository stockAndPurchaseDescriptionsRepository;
@@ -2219,6 +2220,11 @@ public class BarService {
         LocalDate today = LocalDate.now();
         LocalDate startDate;
         LocalDate endDate;
+        // Pots are kept per week; a day is worked out from that day's sales.
+        if ("TODAY".equalsIgnoreCase(filter) || "DAY".equalsIgnoreCase(filter))
+            return incomeExpensesOfDay(today);
+        if ("YESTERDAY".equalsIgnoreCase(filter))
+            return incomeExpensesOfDay(today.minusDays(1));
         switch (filter.toUpperCase()) {
 
             case "THIS_WEEK":
@@ -2317,6 +2323,56 @@ public class BarService {
                 startDate,
                 endDate));
     }
+    /**
+     * Mapato na Matumizi for one day (owner, 2026-10-19). The pots are weekly,
+     * so the day is built from what happened on it: each pot's income from
+     * that day's sale splits (bar_reports, already net of refunds, discounts
+     * and offers; Other per item from its entries), its expenses from what
+     * was paid out of it that day. Each row keeps its week pot's uid, so Pay
+     * and Details still act on the real pot. Nothing here is saved.
+     */
+    private ResponseList<IncomeExpenses> incomeExpensesOfDay(LocalDate day) {
+        String branchUID = LoggerUser.getBranchUID();
+        LocalDate week = day.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        Map<String, java.math.BigDecimal> income = new LinkedHashMap<>();
+        for (Object[] r : barReportsRepository.splitOfDay(branchUID, day)) {
+            String[] names = {"Staff", "Owner", "TRA", "Emergency", "Maintenance", "Other", "LUKU", "Water", "Rent", "Loan", "Stock Purchase"};
+            for (int i = 0; i < names.length; i++)
+                income.put(names[i], java.math.BigDecimal.valueOf(r[i] == null ? 0 : ((Number) r[i]).longValue()));
+        }
+        java.math.BigDecimal otherItems = java.math.BigDecimal.ZERO;
+        for (Object[] e : otherCommissionEntryRepository.byItemOn(branchUID, day)) {
+            java.math.BigDecimal amount = e[1] == null ? java.math.BigDecimal.ZERO : (java.math.BigDecimal) e[1];
+            income.merge(OtherCommissionService.POT_PREFIX + e[0], amount, java.math.BigDecimal::add);
+            otherItems = otherItems.add(amount);
+        }
+        List<IncomeExpenses> out = new ArrayList<>();
+        for (IncomeExpenses pot : incomeExpensesRepository.findByBranchAndWeekRange(branchUID, week, week)) {
+            IncomeExpenses row = new IncomeExpenses();
+            row.setUid(pot.getUid());
+            row.setName(pot.getName());
+            row.setWeekStartDate(pot.getWeekStartDate());
+            row.setPaymentMethod(pot.getPaymentMethod());
+            java.math.BigDecimal in = income.getOrDefault(pot.getName(), java.math.BigDecimal.ZERO);
+            if ("Other".equals(pot.getName()))
+                in = in.subtract(otherItems);
+            row.setIncome(in);
+            List<IncomeExpensesDescription> spends = new ArrayList<>();
+            java.math.BigDecimal spent = java.math.BigDecimal.ZERO;
+            for (IncomeExpensesDescription d : pot.getSpends()) {
+                LocalDate on = d.getPaidAt() != null ? d.getPaidAt().toLocalDate() : d.getDescriptionDate();
+                if (day.equals(on)) {
+                    spends.add(d);
+                    spent = spent.add(d.getSpendAmount() == null ? java.math.BigDecimal.ZERO : d.getSpendAmount());
+                }
+            }
+            row.setSpends(spends);
+            row.setExpenses(spent);
+            out.add(row);
+        }
+        return new ResponseList<>(out);
+    }
+
     @Transactional
     public Response<IncomeExpenses> addSpend(SpendDTO spendDTO) {
         workShiftService.requireOpenForPayout();
