@@ -23,6 +23,9 @@ public class SubscriptionExpiryJob {
     private final BranchRepository branchRepository;
 
     @Scheduled(cron = "0 0 1 * * *") // once a day, 01:00
+    // An UPDATE query needs a transaction - without one it failed every night
+    // ("Executing an update/delete query") and nothing was ever marked.
+    @org.springframework.transaction.annotation.Transactional
     public void markExpiredSubscriptions() {
         int updated = branchRepository.markExpiredSubscriptions(LocalDate.now());
         if (updated > 0) {
