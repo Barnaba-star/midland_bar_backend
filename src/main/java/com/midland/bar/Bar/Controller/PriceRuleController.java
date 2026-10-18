@@ -39,6 +39,12 @@ public class PriceRuleController {
         return priceRuleService.runningNow();
     }
 
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_SALES')")
+    @GetMapping("/priceRules/preview")
+    public Response<Map<String, Object>> preview(@RequestParam String serviceUid, @RequestParam(defaultValue = "1") int qty) {
+        return priceRuleService.preview(serviceUid, qty);
+    }
+
     @PreAuthorize("@authChecker.hasPermissionOrRoot('MANAGE_PRICE_RULES')")
     @PostMapping("/priceRules")
     public Response<PriceRule> create(@RequestBody Map<String, Object> body) {

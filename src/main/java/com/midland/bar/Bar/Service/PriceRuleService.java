@@ -29,6 +29,7 @@ public class PriceRuleService {
 
     private final PriceRuleRepository ruleRepository;
     private final BarSalesRepository barSalesRepository;
+    private final com.midland.bar.Bar.Repository.BarServiceRepository barServiceRepository;
 
     /** A line's price: per unit charged, the total, the menu price, the offer's name and free units. */
     public record Priced(int unitPrice, int lineTotal, int listPrice, String ruleName, int freeUnits) {}
@@ -96,6 +97,54 @@ public class PriceRuleService {
         if (!t.isBefore(from))
             return days.indexOf('0' + at.getDayOfWeek().getValue()) >= 0;
         return t.isBefore(to) && days.indexOf('0' + at.minusDays(1).getDayOfWeek().getValue()) >= 0;
+    }
+
+    /**
+     * "Jaribu ofa": what [qty] of a product costs right now, and for every
+     * offer of the branch why it does or does not apply - so a CEO can see
+     * at once that an offer's hours, days or product are not what they meant.
+     */
+    public Response<Map<String, Object>> preview(String serviceUid, int qty) {
+        String branchUID = LoggerUser.getBranchUIDOrMain();
+        BarServiceEntity s = barServiceRepository.findById(serviceUid).filter(x -> branchUID.equals(x.getBranchUid())).orElse(null);
+        if (s == null)
+            return new Response<>("Product not found");
+        int q = Math.max(1, qty);
+        LocalDateTime now = LocalDateTime.now();
+        Priced p = price(s, q, now, null);
+        List<Map<String, Object>> rules = new java.util.ArrayList<>();
+        for (PriceRule r : ruleRepository.findInBranch(branchUID)) {
+            String why;
+            if (!Boolean.TRUE.equals(r.getEnabled()))
+                why = "OFF";
+            else if (!applies(r, s))
+                why = r.getServiceUid() != null ? "OTHER_PRODUCT" : "OTHER_CATEGORY";
+            else if (!runs(r, now))
+                why = "NOT_NOW";
+            else if (PriceRule.BUY_GET.equals(r.getKind()) && q < (r.getBuyQty() == null ? 0 : r.getBuyQty()) + (r.getFreeQty() == null ? 0 : r.getFreeQty()))
+                why = "NEED_MORE";
+            else
+                why = "APPLIES";
+            Map<String, Object> m = new java.util.LinkedHashMap<>();
+            m.put("name", r.getName());
+            m.put("kind", r.getKind());
+            m.put("why", why);
+            m.put("startTime", r.getStartTime());
+            m.put("endTime", r.getEndTime());
+            m.put("days", r.getDays());
+            rules.add(m);
+        }
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("serviceName", s.getServiceName());
+        out.put("category", s.getCategory());
+        out.put("quantity", q);
+        out.put("listPrice", p.listPrice());
+        out.put("lineTotal", p.lineTotal());
+        out.put("freeUnits", p.freeUnits());
+        out.put("offer", p.ruleName());
+        out.put("serverTime", now);
+        out.put("rules", rules);
+        return new Response<>(out);
     }
 
     // ------------------------------------------------------------ the list
