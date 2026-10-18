@@ -48,4 +48,8 @@ public class WorkShift extends TenantEntity {
 
     @Column(name = "cash_up_uid")
     private String cashUpUid;
+
+    /** The CEO was told this shift has been open too long - told once. */
+    @Column(name = "long_open_alerted")
+    private Boolean longOpenAlerted;
 }

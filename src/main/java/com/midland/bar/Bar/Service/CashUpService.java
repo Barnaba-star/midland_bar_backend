@@ -50,6 +50,7 @@ public class CashUpService {
     private final com.midland.bar.Bar.Repository.DebtEntryRepository debtEntryRepository;
     private final com.midland.bar.Bar.Repository.DebtCustomerRepository debtCustomerRepository;
     private final com.midland.bar.Bar.Repository.BillRefundRepository billRefundRepository;
+    private final com.midland.bar.Bar.Alert.OwnerAlertService ownerAlertService;
 
     /** The signed-in login's closed shift, waiting for its cash-up: when it ran, and what each method should hold. */
     public Response<Map<String, Object>> preview() {
@@ -163,6 +164,9 @@ public class CashUpService {
             lineRepository.save(line);
         }
         workShiftService.markCashedUp(closed.get(), saved);
+        // Short by more than the branch allows: the owner hears of it.
+        ownerAlertService.cashUpShort(branchUID, saved.getCashierName() != null ? saved.getCashierName() : saved.getCashierEmail(),
+                saved.getVariance() == null ? 0 : saved.getVariance());
         return new Response<>(saved);
     }
 

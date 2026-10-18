@@ -15,4 +15,9 @@ public interface BillLineVoidRepository extends JpaRepository<BillLineVoid, Stri
            "AND v.voidedAt >= :from AND v.voidedAt < :to AND (:email IS NULL OR v.voidedBy = :email) ORDER BY v.voidedAt DESC")
     List<BillLineVoid> findIn(@Param("branchUID") String branchUID, @Param("from") LocalDateTime from,
                               @Param("to") LocalDateTime to, @Param("email") String email);
+
+    /** Items one login took off bills since a time - its shift so far. Refunds are not counted. */
+    @Query("SELECT COUNT(v) FROM BillLineVoid v WHERE v.branchUid = :branchUID AND v.voidedBy = :email AND v.voidedAt >= :since " +
+           "AND v.reason NOT LIKE 'Refund:%'")
+    long countBySince(@Param("branchUID") String branchUID, @Param("email") String email, @Param("since") LocalDateTime since);
 }

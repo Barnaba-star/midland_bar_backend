@@ -51,6 +51,8 @@ public class BarService {
     /** Selling and paying out need the login's shift open. */
     private final WorkShiftService workShiftService;
     private final PriceRuleService priceRuleService;
+    private final com.midland.bar.Bar.Alert.OwnerAlertService ownerAlertService;
+    private final com.midland.bar.Bar.Repository.WorkShiftRepository workShiftRepository;
     private final com.midland.bar.Bar.Repository.BillDiscountRepository billDiscountRepository;
     private final com.midland.bar.Setting.Repository.SystemSettingRepository systemSettingRepository;
     private final com.midland.bar.Config.Security.AuthChecker authChecker;
@@ -1300,6 +1302,12 @@ public class BarService {
         record.setVoidedByName(CashUpService.nameOf(LoggerUser.getUser()));
         record.setVoidedAt(com.midland.bar.Utils.Offline.OfflineContext.now());
         billLineVoidRepository.save(record);
+        // Many items taken off in one shift: the owner hears of it.
+        if (!refund) {
+            workShiftRepository.findUnfinished(branchUID, LoggerUser.getEmail()).stream().findFirst().ifPresent(shift ->
+                    ownerAlertService.voidsReached(branchUID, record.getVoidedByName() != null ? record.getVoidedByName() : record.getVoidedBy(),
+                            (int) billLineVoidRepository.countBySince(branchUID, LoggerUser.getEmail(), shift.getOpenedAt())));
+        }
 
         if (whole) {
             barReportsRepository.deleteAll(reports);
