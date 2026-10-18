@@ -108,4 +108,11 @@ public class SalesOpened extends TenantEntity {
      */
     @Column(name = "payment_breakdown", columnDefinition = "TEXT")
     private String paymentBreakdown;
+
+    /** TRA: the fiscal receipt number and verification code once a VFD issues one (not yet connected). */
+    @Column(name = "tra_receipt_no", length = 60)
+    private String traReceiptNo;
+
+    @Column(name = "tra_verify_code", length = 120)
+    private String traVerifyCode;
 }

@@ -42,6 +42,7 @@ public class BillPaymentService {
     private final com.midland.bar.Utils.Offline.OfflineOps offlineOps;
     private final com.midland.bar.Uaa.Repository.UserRepository userRepository;
     private final DebtService debtService;
+    private final com.midland.bar.Setting.Repository.SystemSettingRepository systemSettingRepository;
 
     /**
      * Settles a bill in one or more payments. The amount due is worked out
@@ -277,6 +278,14 @@ public class BillPaymentService {
         // A Staff Sell bill was served by its staff member, not by whoever took the money.
         receipt.put("staffName", bill.getStaffName());
         receipt.put("paidAt", bill.getPaidAt());
+        // TRA details the CEO set (Mipangilio > Tawi), printed under the branch name.
+        systemSettingRepository.findByBranchUid(branchUID).ifPresent(st -> {
+            receipt.put("taxTin", st.getTaxTin());
+            receipt.put("taxVrn", st.getTaxVrn());
+            receipt.put("efdSerial", st.getEfdSerial());
+        });
+        receipt.put("traReceiptNo", bill.getTraReceiptNo());
+        receipt.put("traVerifyCode", bill.getTraVerifyCode());
         receipt.put("lines", lines);
         receipt.put("payments", payments);
         return new Response<>(receipt);
