@@ -98,4 +98,9 @@ public interface StockReceiptRepository extends JpaRepository<StockReceipt, Stri
     Page<StockReceiptProjection> findByService(@Param("branchUID") String branchUID,
                                                @Param("serviceUID") String serviceUID,
                                                Pageable pageable);
+
+    /** What one product was bought at, newest first - with whom and when. */
+    @Query("SELECT r FROM StockReceipt r WHERE r.barService.uid = :serviceUid AND r.branchUid = :b ORDER BY r.receivedAt DESC")
+    java.util.List<com.midland.bar.Bar.Model.StockReceipt> priceHistory(@org.springframework.data.repository.query.Param("serviceUid") String serviceUid,
+                                                                       @org.springframework.data.repository.query.Param("b") String branchUID);
 }

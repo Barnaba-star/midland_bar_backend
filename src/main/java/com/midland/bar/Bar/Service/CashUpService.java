@@ -51,6 +51,8 @@ public class CashUpService {
     private final com.midland.bar.Bar.Repository.DebtCustomerRepository debtCustomerRepository;
     private final com.midland.bar.Bar.Repository.BillRefundRepository billRefundRepository;
     private final com.midland.bar.Bar.Alert.OwnerAlertService ownerAlertService;
+    private final com.midland.bar.Bar.Supplier.SupplierEntryRepository supplierEntryRepository;
+    private final com.midland.bar.Bar.Supplier.SupplierRepository supplierRepository;
 
     /** The signed-in login's closed shift, waiting for its cash-up: when it ran, and what each method should hold. */
     public Response<Map<String, Object>> preview() {
@@ -237,6 +239,21 @@ public class CashUpService {
             shift.payoutsTotal += amount;
             shift.payouts.merge(lossMethod, amount, Long::sum);
         }
+        // A supplier paid out of this login's drawer.
+        for (com.midland.bar.Bar.Supplier.SupplierEntry e : supplierEntryRepository.paidFromDrawerBy(branchUID, email, from, to)) {
+            long amount = e.getAmount() == null ? 0 : e.getAmount();
+            String method = e.getMethod() == null ? "cash" : e.getMethod();
+            Map<String, Object> payout = new LinkedHashMap<>();
+            payout.put("pot", "Supplier");
+            payout.put("description", e.getDetail() == null ? "" : e.getDetail());
+            payout.put("paidTo", supplierRepository.findById(e.getSupplierUid()).map(com.midland.bar.Bar.Supplier.Supplier::getName).orElse(null));
+            payout.put("amount", amount);
+            payout.put("paidAt", e.getEntryAt());
+            payout.put("method", method);
+            shift.payoutRows.add(payout);
+            shift.payoutsTotal += amount;
+            shift.payouts.merge(method, amount, Long::sum);
+        }
         // Money handed back on a paid bill (an approved refund this login asked for).
         for (com.midland.bar.Bar.Model.BillRefund r : billRefundRepository.paidOutBy(branchUID, email, from, to)) {
             long amount = r.getAmount() == null ? 0 : r.getAmount();
@@ -287,7 +304,7 @@ public class CashUpService {
         return user.getRoles() != null && user.getRoles().stream().anyMatch(r -> SEES_ALL.contains(r.getCode()));
     }
 
-    static String nameOf(User user) {
+    public static String nameOf(User user) {
         if (user == null)
             return null;
         String name = ((user.getFirstName() == null ? "" : user.getFirstName()) + " "

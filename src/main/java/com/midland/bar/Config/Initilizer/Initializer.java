@@ -151,7 +151,9 @@ public class Initializer implements ApplicationRunner {
                         // Approves money back on a paid bill.
                         "REFUND_SALES",
                         // Happy hours / offers, and discounts beyond the cashier limit.
-                        "MANAGE_PRICE_RULES", "DISCOUNT_ANY"
+                        "MANAGE_PRICE_RULES", "DISCOUNT_ANY",
+                        // The supplier list, orders and paying suppliers.
+                        "MANAGE_SUPPLIERS"
                 )
         );
 
@@ -167,7 +169,7 @@ public class Initializer implements ApplicationRunner {
                         "SAVE_STAFF", "VIEW_STAFF", "DELETE_STAFF",
                         "VIEW_REPORT", "VIEW_EXPENSES", "VIEW_STOCK_AND_PURCHASE",
                         "SAVE_STORE", "VIEW_STORE", "DELETE_STORE",
-                        "VIEW_DEBT", "MANAGE_DEBT", "REFUND_SALES", "MANAGE_PRICE_RULES", "DISCOUNT_ANY"
+                        "VIEW_DEBT", "MANAGE_DEBT", "REFUND_SALES", "MANAGE_PRICE_RULES", "DISCOUNT_ANY", "MANAGE_SUPPLIERS"
                 )
         );
 

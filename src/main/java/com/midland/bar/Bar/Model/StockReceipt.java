@@ -66,4 +66,11 @@ public class StockReceipt extends TenantEntity {
     /** The product's count right after this delivery. */
     @Column(name = "stock_after")
     private Integer stockAfter;
+
+    /** The supplier it came from (Supplier) and the order it was received against, if any. */
+    @Column(name = "supplier_uid")
+    private String supplierUid;
+
+    @Column(name = "po_code", length = 20)
+    private String poCode;
 }

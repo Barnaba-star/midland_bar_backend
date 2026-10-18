@@ -34,6 +34,8 @@ public class StockService {
     private final BarServiceRepository barServiceRepository;
     private final StockReceiptRepository stockReceiptRepository;
     private final StockAdjustmentRepository stockAdjustmentRepository;
+    private final com.midland.bar.Bar.Supplier.SupplierRepository supplierRepository;
+    private final com.midland.bar.Bar.Supplier.SupplierEntryRepository supplierEntryRepository;
 
     /**
      * Records a delivery and raises the service's count by it. The service's
@@ -81,6 +83,26 @@ public class StockService {
         receipt.setPackPrice(packPrice);
         receipt.setTotalCost(Math.round((double) unitsAdded * packPrice / perPack));
         receipt.setSupplier(trimToNull(dto.getSupplier()));
+        // From a supplier on the list: their name, and the delivery on what is owed to them.
+        if (dto.getSupplierUid() != null && !dto.getSupplierUid().isBlank()) {
+            com.midland.bar.Bar.Supplier.Supplier supplier = supplierRepository.findInBranch(dto.getSupplierUid(), LoggerUser.getBranchUIDOrMain()).orElse(null);
+            if (supplier == null)
+                return new Response<>("Supplier not found");
+            receipt.setSupplierUid(supplier.getUid());
+            receipt.setSupplier(supplier.getName());
+            if (!dto.isOnOrder()) {
+                com.midland.bar.Bar.Supplier.SupplierEntry e = new com.midland.bar.Bar.Supplier.SupplierEntry();
+                e.setSupplierUid(supplier.getUid());
+                e.setKind(com.midland.bar.Bar.Supplier.SupplierEntry.DELIVERY);
+                e.setAmount(receipt.getTotalCost());
+                e.setDetail(service.getServiceName() + " x " + unitsAdded);
+                e.setEntryBy(LoggerUser.getEmail());
+                e.setEntryByName(com.midland.bar.Bar.Service.CashUpService.nameOf(LoggerUser.getUser()));
+                e.setEntryAt(LocalDateTime.now());
+                supplierEntryRepository.save(e);
+            }
+        }
+        receipt.setPoCode(dto.getPoCode());
         receipt.setNote(trimToNull(dto.getNote()));
         receipt.setReceivedBy(LoggerUser.getEmail());
         receipt.setReceivedAt(LocalDateTime.now());

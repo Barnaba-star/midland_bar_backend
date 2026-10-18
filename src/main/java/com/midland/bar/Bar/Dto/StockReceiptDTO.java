@@ -26,4 +26,14 @@ public class StockReceiptDTO {
 
     @Size(max = 500, message = "Note is too long")
     private String note;
+
+    /** A supplier from the list: the delivery goes on what is owed to them. */
+    private String supplierUid;
+
+    /** Set by a purchase-order receive: the order puts the whole delivery on the supplier's account itself. */
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private boolean onOrder;
+
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private String poCode;
 }
