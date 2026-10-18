@@ -112,7 +112,7 @@ public interface BarSalesRepository extends JpaRepository<BarSales, String> {
 
     /** One product on a bill so far: [units, free units] - for buy-and-get-free offers. */
     @Query("SELECT COALESCE(SUM(b.quantity), 0), COALESCE(SUM(b.freeUnits), 0) FROM BarSales b " +
-           "WHERE b.salesOpened.uid = :billUid AND b.barServiceEntity.uid = :serviceUid")
+           "WHERE b.isActive = true AND b.salesOpened.uid = :billUid AND b.barServiceEntity.uid = :serviceUid")
     java.util.List<Object[]> unitsAndFreeOnBill(@org.springframework.data.repository.query.Param("billUid") String billUid,
                               @org.springframework.data.repository.query.Param("serviceUid") String serviceUid);
 

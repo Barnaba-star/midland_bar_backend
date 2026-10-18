@@ -110,9 +110,9 @@ public class OwnerAlertService {
                 "WHERE branch_uid = :b AND is_active = true AND voided_at >= :from AND voided_at < :to AND reason NOT LIKE 'Refund:%'", p);
         d.put("voids", v.get("n"));
         d.put("voidAmount", v.get("t"));
-        d.put("refunds", jdbc.queryForObject("SELECT COALESCE(SUM(amount),0) FROM bill_refunds WHERE branch_uid = :b AND status = 'APPROVED' " +
+        d.put("refunds", jdbc.queryForObject("SELECT COALESCE(SUM(amount),0) FROM bill_refunds WHERE branch_uid = :b AND is_active = true AND status = 'APPROVED' " +
                 "AND decided_at >= :from AND decided_at < :to", p, Long.class));
-        d.put("discounts", jdbc.queryForObject("SELECT COALESCE(SUM(amount),0) FROM bill_discounts WHERE branch_uid = :b " +
+        d.put("discounts", jdbc.queryForObject("SELECT COALESCE(SUM(amount),0) FROM bill_discounts WHERE branch_uid = :b AND is_active = true " +
                 "AND given_at >= :from AND given_at < :to", p, Long.class));
         d.put("offers", jdbc.queryForObject("SELECT COALESCE(SUM(amount),0) FROM offer_uses WHERE branch_uid = :b AND is_active = true " +
                 "AND used_at >= :from AND used_at < :to", p, Long.class));

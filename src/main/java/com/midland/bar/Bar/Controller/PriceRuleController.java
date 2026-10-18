@@ -26,6 +26,7 @@ public class PriceRuleController {
 
     private final PriceRuleService priceRuleService;
     private final BarService barService;
+    private final com.midland.bar.Bar.Service.GiveawayReportService giveawayReportService;
 
     @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_SALES')")
     @GetMapping("/priceRules")
@@ -74,6 +75,13 @@ public class PriceRuleController {
     @GetMapping("/discounts/{filter}")
     public ResponseList<BillDiscount> discounts(@PathVariable String filter) {
         return barService.discounts(filter);
+    }
+
+    /** Reports > Ofa na Punguzo: offers, discounts, customers' offers and refunds in a period, apart from sales. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_REPORT')")
+    @GetMapping("/reports/giveaways/{filter}")
+    public Response<Map<String, Object>> giveaways(@PathVariable String filter) {
+        return giveawayReportService.report(filter);
     }
 
     private static Integer num(Object v) {

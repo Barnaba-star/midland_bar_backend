@@ -75,11 +75,20 @@ public class PriceRuleService {
             for (Object[] row : barSalesRepository.unitsAndFreeOnBill(billUid, service.getUid()))
                 before = new long[]{((Number) row[0]).longValue(), ((Number) row[1]).longValue()};
         long total = before[0] + qty;
-        long earned = (total / (buy + free)) * free;
+        // Buy 5 get 2: the 6th and 7th are free. Once per bill gives that one
+        // time; otherwise it starts again after every 7 (the 13th and 14th...).
+        long earned = freeEarned(total, buy, free, r.once());
         int owed = (int) Math.max(0, Math.min(qty, earned - before[1]));
         if (owed == 0)
             return null;
         return new Priced(list, list * (qty - owed), list, r.getName(), owed);
+    }
+
+    /** Free units [total] bought on one bill earn under buy [buy] get [free]. */
+    static long freeEarned(long total, int buy, int free, boolean once) {
+        if (once)
+            return Math.min(free, Math.max(0, total - buy));
+        return (total / (buy + free)) * free + Math.min(free, Math.max(0, total % (buy + free) - buy));
     }
 
     private static boolean applies(PriceRule r, BarServiceEntity s) {
@@ -121,7 +130,7 @@ public class PriceRuleService {
                 why = r.getServiceUid() != null ? "OTHER_PRODUCT" : "OTHER_CATEGORY";
             else if (!runs(r, now))
                 why = "NOT_NOW";
-            else if (PriceRule.BUY_GET.equals(r.getKind()) && q < (r.getBuyQty() == null ? 0 : r.getBuyQty()) + (r.getFreeQty() == null ? 0 : r.getFreeQty()))
+            else if (PriceRule.BUY_GET.equals(r.getKind()) && q <= (r.getBuyQty() == null ? 0 : r.getBuyQty()))
                 why = "NEED_MORE";
             else
                 why = "APPLIES";
@@ -214,6 +223,7 @@ public class PriceRuleService {
             }
         }
         r.setEnabled(b.get("enabled") == null || Boolean.parseBoolean(String.valueOf(b.get("enabled"))));
+        r.setOncePerBill(b.get("oncePerBill") == null || Boolean.parseBoolean(String.valueOf(b.get("oncePerBill"))));
         if (uid != null)
             r.update();
         log.info("{} saved offer {} ({})", LoggerUser.getEmail(), r.getName(), kind);

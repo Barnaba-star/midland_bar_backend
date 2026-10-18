@@ -61,6 +61,14 @@ public class PriceRule extends TenantEntity {
     @Column(name = "end_time", nullable = false)
     private LocalTime endTime;
 
+    /** Buy-and-get-free: given once per bill (true, the default) or every time the bill buys enough again. */
+    @Column(name = "once_per_bill")
+    private Boolean oncePerBill;
+
+    public boolean once() {
+        return oncePerBill == null || oncePerBill;
+    }
+
     @Column(name = "enabled", nullable = false)
     private Boolean enabled = true;
 }

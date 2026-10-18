@@ -8,6 +8,6 @@ import java.util.List;
 
 public interface PurchaseOrderLineRepository extends JpaRepository<PurchaseOrderLine, String> {
 
-    @Query("SELECT l FROM PurchaseOrderLine l WHERE l.poUid = :po ORDER BY l.serviceName")
+    @Query("SELECT l FROM PurchaseOrderLine l WHERE l.isActive = true AND l.poUid = :po ORDER BY l.serviceName")
     List<PurchaseOrderLine> findByPo(@Param("po") String poUid);
 }

@@ -40,4 +40,19 @@ class PriceRuleRunsTest {
         assertFalse(PriceRuleService.runs(fri, LocalDateTime.parse("2026-10-24T23:30")), "Saturday night is not");
         assertFalse(PriceRuleService.runs(fri, LocalDateTime.parse("2026-10-24T02:00")));
     }
+
+    @Test
+    void buyFiveGetTwo() {
+        // Once per bill: 6 -> the 6th free, 7 and 10 -> 2 free, 20 -> still 2.
+        assertEquals(0, PriceRuleService.freeEarned(5, 5, 2, true));
+        assertEquals(1, PriceRuleService.freeEarned(6, 5, 2, true));
+        assertEquals(2, PriceRuleService.freeEarned(7, 5, 2, true));
+        assertEquals(2, PriceRuleService.freeEarned(10, 5, 2, true));
+        assertEquals(2, PriceRuleService.freeEarned(20, 5, 2, true));
+        // Every time: again after each 7 - 10 -> 2, 13 -> 3, 14 -> 4, 20 -> 5 (6-7, 13-14, 20).
+        assertEquals(2, PriceRuleService.freeEarned(10, 5, 2, false));
+        assertEquals(3, PriceRuleService.freeEarned(13, 5, 2, false));
+        assertEquals(4, PriceRuleService.freeEarned(14, 5, 2, false));
+        assertEquals(5, PriceRuleService.freeEarned(20, 5, 2, false));
+    }
 }

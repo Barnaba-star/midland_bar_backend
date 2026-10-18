@@ -12,9 +12,9 @@ import java.util.List;
 @Repository
 public interface BillDiscountRepository extends JpaRepository<BillDiscount, String> {
 
-    @Query("SELECT d FROM BillDiscount d WHERE d.branchUid = :branchUID AND d.givenAt >= :from AND d.givenAt < :to ORDER BY d.givenAt DESC")
+    @Query("SELECT d FROM BillDiscount d WHERE d.isActive = true AND d.branchUid = :branchUID AND d.givenAt >= :from AND d.givenAt < :to ORDER BY d.givenAt DESC")
     List<BillDiscount> between(@Param("branchUID") String branchUID, @Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 
-    @Query("SELECT COALESCE(SUM(d.amount), 0) FROM BillDiscount d WHERE d.billUid = :billUid")
+    @Query("SELECT COALESCE(SUM(d.amount), 0) FROM BillDiscount d WHERE d.isActive = true AND d.billUid = :billUid")
     long totalOnBill(@Param("billUid") String billUid);
 }
