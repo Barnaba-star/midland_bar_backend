@@ -43,23 +43,37 @@ public class UserController {
     private final JwtTokenUtil jwtTokenUtil;
     private final PlatformSettingService platformSettingService;
     private final SettingService settingService;
+    private final com.midland.bar.Config.Security.LoginThrottle loginThrottle;
 
 
 
 
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody LoginDTO loginDTO, HttpServletResponse response) {
+    public ResponseEntity<?> login(@RequestBody LoginDTO loginDTO, HttpServletResponse response,
+                                   jakarta.servlet.http.HttpServletRequest request) {
         if (loginDTO == null) {
             return ResponseEntity
                     .badRequest()
                     .body("Provide Login Details");
         }
 
+        // Too many wrong guesses lately: closed for a while, right or wrong.
+        long locked = loginThrottle.lockedMinutes(loginDTO.getUsername(), request);
+        if (locked > 0) {
+            return tooManyAttempts(locked);
+        }
+
+        // An unknown username gets the same answer as a wrong password, so
+        // the reply never tells a guesser which usernames exist.
         User user = userRepository.findByUsername(loginDTO.getUsername());
         if (user == null) {
+            long lockedNow = loginThrottle.failed(loginDTO.getUsername(), request);
+            if (lockedNow > 0) {
+                return tooManyAttempts(lockedNow);
+            }
             return ResponseEntity
-                    .status(HttpStatus.NOT_FOUND)
-                    .body("User Not Found");
+                    .status(HttpStatus.UNAUTHORIZED)
+                    .body("Invalid Username or Password");
         }
 
         boolean awaitingActivation = Boolean.TRUE.equals(user.getMustChangePassword());
@@ -77,10 +91,15 @@ public class UserController {
                 }
                 userRepository.save(user);
             }
+            long lockedNow = loginThrottle.failed(loginDTO.getUsername(), request);
+            if (lockedNow > 0) {
+                return tooManyAttempts(lockedNow);
+            }
             return ResponseEntity
                     .status(HttpStatus.UNAUTHORIZED)
                     .body("Invalid Username or Password");
         }
+        loginThrottle.succeeded(loginDTO.getUsername());
 
         if (Boolean.TRUE.equals(user.getIsBlocked())) {
             // A code, not a sentence: "Account Blocked" reached the screen in
@@ -248,5 +267,14 @@ public class UserController {
     @PostMapping("/paySubscription")
     public Response<Branch> paySubscription(@Valid @RequestBody ExpiredSubscriptionPaymentDTO dto) {
         return settingService.payExpiredSubscription(dto);
+    }
+
+    /** 429 with the minutes left - the screens say "too many tries, wait N minutes". */
+    private static ResponseEntity<Map<String, Object>> tooManyAttempts(long minutes) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("status", 429);
+        body.put("code", "TOO_MANY_ATTEMPTS");
+        body.put("minutes", minutes);
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(body);
     }
 }

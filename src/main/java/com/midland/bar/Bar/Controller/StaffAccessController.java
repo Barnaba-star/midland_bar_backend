@@ -55,6 +55,7 @@ public class StaffAccessController {
     private final PlatformSettingService platformSettingService;
     private final BCryptPasswordEncoder passwordEncoder;
     private final com.midland.bar.Bar.Service.StaffCodeService staffCodeService;
+    private final com.midland.bar.Config.Security.LoginThrottle loginThrottle;
     private final org.springframework.beans.factory.ObjectProvider<com.midland.bar.Bar.Service.BarService> barServiceProvider;
 
     /**
@@ -102,8 +103,8 @@ public class StaffAccessController {
      * it still fits staff in two branches they are asked which (CHOOSE_BRANCH).
      */
     @PostMapping("/authentication/staffLogin")
-    public ResponseEntity<Map<String, Object>> staffLogin(@RequestBody StaffLoginDTO dto) {
-        Object checked = authenticate(dto);
+    public ResponseEntity<Map<String, Object>> staffLogin(@RequestBody StaffLoginDTO dto, jakarta.servlet.http.HttpServletRequest request) {
+        Object checked = throttled(dto, request);
         if (!(checked instanceof BarStaff staff))
             return asResponse(checked);
         // Added with a code and PIN the system chose: they pick their own
@@ -125,8 +126,8 @@ public class StaffAccessController {
      * branch holds, or keep theirs) and their own PIN, and are signed in.
      */
     @PostMapping("/authentication/staffSetup")
-    public ResponseEntity<Map<String, Object>> staffSetup(@RequestBody StaffSetupDTO dto) {
-        Object checked = authenticate(dto);
+    public ResponseEntity<Map<String, Object>> staffSetup(@RequestBody StaffSetupDTO dto, jakarta.servlet.http.HttpServletRequest request) {
+        Object checked = throttled(dto, request);
         if (!(checked instanceof BarStaff staff))
             return asResponse(checked);
         if (!Boolean.TRUE.equals(staff.getMustSetCode()))
@@ -175,6 +176,24 @@ public class StaffAccessController {
                 .filter(x -> x != null && !x.isBlank()).map(String::trim).collect(Collectors.joining(" "));
         log.info("Staff {} signed in with their code in branch {}", staff.getUid(), branchUID);
         return ResponseEntity.ok(Map.of("token", jwtTokenUtil.generateStaffToken(staff, branchUID, fullName)));
+    }
+
+    /**
+     * authenticate, behind the address throttle: one machine trying many
+     * codes is closed for a while (each code also locks on its own after
+     * MAX_PIN_TRIES wrong PINs).
+     */
+    private Object throttled(StaffLoginDTO dto, jakarta.servlet.http.HttpServletRequest request) {
+        long locked = loginThrottle.lockedMinutes(null, request);
+        if (locked > 0)
+            return refuse(HttpStatus.TOO_MANY_REQUESTS, "TOO_MANY_ATTEMPTS", locked);
+        Object checked = authenticate(dto);
+        if (checked instanceof ResponseEntity<?> r && r.getStatusCode().value() == HttpStatus.UNAUTHORIZED.value()) {
+            long lockedNow = loginThrottle.failed(null, request);
+            if (lockedNow > 0)
+                return refuse(HttpStatus.TOO_MANY_REQUESTS, "TOO_MANY_ATTEMPTS", lockedNow);
+        }
+        return checked;
     }
 
     /**

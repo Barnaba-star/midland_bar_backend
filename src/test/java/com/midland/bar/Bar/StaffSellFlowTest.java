@@ -331,7 +331,7 @@ class StaffSellFlowTest {
         dto.setDeviceToken(otherDevice);
         dto.setStaffCode(code);
         dto.setPin("4826");
-        var res = staffAccessController.staffLogin(dto);
+        var res = staffAccessController.staffLogin(dto, new org.springframework.mock.web.MockHttpServletRequest());
         assertEquals(200, res.getStatusCode().value(), String.valueOf(res.getBody()));
         assertNotNull(res.getBody().get("token"));
     }
