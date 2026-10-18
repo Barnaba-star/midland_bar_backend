@@ -47,6 +47,8 @@ public class DebtService {
 
     /** The payment method a bill part goes on credit by. Not a way money comes in, so not in BillPaymentService.METHODS. */
     public static final String METHOD = "deni";
+    /** A bill part given free out of the customer's monthly offer (owner, 2026-10-19). */
+    public static final String OFFER_METHOD = "ofa";
 
     public static final String SMS_CHARGE = "DEBT_CHARGE";
     public static final String SMS_PAYMENT = "DEBT_PAYMENT";
@@ -60,15 +62,27 @@ public class DebtService {
     private final SmsService smsService;
     private final UserRepository userRepository;
     private final BranchRepository branchRepository;
+    private final com.midland.bar.Bar.Repository.OfferUseRepository offerUseRepository;
+
+    /** The month an offer counts in: from the 1st, 00:00. */
+    private static LocalDateTime monthStart() {
+        return LocalDate.now().withDayOfMonth(1).atStartOfDay();
+    }
 
     /** Every credit customer in the branch with what they owe and since when, most owed first. */
     public ResponseList<Map<String, Object>> customers() {
         String branchUID = LoggerUser.getBranchUIDOrMain();
         Map<String, Long> balances = balances(branchUID);
         Map<String, LocalDateTime> since = owedSince(branchUID, balances);
+        Map<String, Long> offered = new HashMap<>();
+        for (Object[] r : offerUseRepository.usedByCustomerSince(branchUID, monthStart()))
+            offered.put((String) r[0], ((Number) r[1]).longValue());
         List<Map<String, Object>> rows = new ArrayList<>();
-        for (DebtCustomer c : customerRepository.findInBranch(branchUID))
-            rows.add(row(c, balances.getOrDefault(c.getUid(), 0L), since.get(c.getUid())));
+        for (DebtCustomer c : customerRepository.findInBranch(branchUID)) {
+            Map<String, Object> r = row(c, balances.getOrDefault(c.getUid(), 0L), since.get(c.getUid()));
+            putOffer(r, c, offered.getOrDefault(c.getUid(), 0L));
+            rows.add(r);
+        }
         rows.sort(Comparator.comparingLong((Map<String, Object> r) -> -(Long) r.get("balance"))
                 .thenComparing(r -> String.valueOf(r.get("name"))));
         return new ResponseList<>(rows);
@@ -84,6 +98,8 @@ public class DebtService {
         Map<String, Object> out = row(customer.get(), balance,
                 owedSince(branchUID, Map.of(customerUid, balance)).get(customerUid));
         out.put("entries", entryRepository.ledger(customerUid, branchUID));
+        putOffer(out, customer.get(), offerUseRepository.usedSince(customerUid, monthStart()));
+        out.put("offers", offerUseRepository.ofCustomer(customerUid));
         return new Response<>(out);
     }
 
@@ -133,12 +149,19 @@ public class DebtService {
                 customer.setLimitSetAt(LocalDateTime.now());
             }
         }
+        if (dto.getMonthlyOffer() != null && canSetLimit) {
+            if (dto.getMonthlyOffer() < 0 || dto.getMonthlyOffer() > 100_000_000)
+                return new Response<>("The monthly offer must be between 0 and 100,000,000");
+            customer.setMonthlyOffer(dto.getMonthlyOffer());
+        }
         if (uid != null)
             customer.update();
         DebtCustomer saved = customerRepository.save(customer);
         log.info("{} {} credit customer {} (limit {})", LoggerUser.getEmail(), uid == null ? "registered" : "updated", saved.getUid(), saved.getCreditLimit());
         long balance = entryRepository.balanceOf(saved.getUid());
-        return new Response<>(row(saved, balance, null));
+        Map<String, Object> out = row(saved, balance, null);
+        putOffer(out, saved, offerUseRepository.usedSince(saved.getUid(), monthStart()));
+        return new Response<>(out);
     }
 
     /**
@@ -178,6 +201,46 @@ public class DebtService {
                 branchName(branchUID), tzs(amount), bill.getSalesCode(), tzs(total)));
         log.info("{} put {} of bill {} on credit for customer {} (now owes {})", LoggerUser.getEmail(), amount, bill.getSalesCode(), customerUid, total);
         return saved;
+    }
+
+    /**
+     * Gives part of a bill free out of the customer's monthly offer: within
+     * what is left this month or not at all, never offline. The caller takes
+     * it off the bill's lines (BarService.spreadOff).
+     */
+    @Transactional
+    public com.midland.bar.Bar.Model.OfferUse useOffer(SalesOpened bill, String customerUid, int amount, LocalDateTime at) {
+        if (OfflineContext.isReplay())
+            throw new BusinessException("An offer is given only with internet - take it again online");
+        String branchUID = LoggerUser.getBranchUIDOrMain();
+        if (customerUid == null || customerUid.isBlank())
+            throw new BusinessException("Choose the customer the offer is for");
+        DebtCustomer customer = customerRepository.findForUpdate(customerUid, branchUID)
+                .orElseThrow(() -> new BusinessException("Customer not found"));
+        int monthly = customer.getMonthlyOffer() == null ? 0 : customer.getMonthlyOffer();
+        if (monthly <= 0)
+            throw new BusinessException(customer.getName() + " has no offer - a CEO or manager sets it in Madeni");
+        long left = monthly - offerUseRepository.usedSince(customerUid, monthStart());
+        if (amount > left)
+            throw new BusinessException(customer.getName() + " has only " + tzs(Math.max(0, left)) + " of this month's offer left");
+        com.midland.bar.Bar.Model.OfferUse use = new com.midland.bar.Bar.Model.OfferUse();
+        use.setCustomerUid(customerUid);
+        use.setCustomerName(customer.getName());
+        use.setBillUid(bill.getUid());
+        use.setBillCode(bill.getSalesCode());
+        use.setAmount(amount);
+        use.setUsedBy(LoggerUser.getEmail());
+        use.setUsedByName(displayName(LoggerUser.getEmail()));
+        use.setUsedAt(at);
+        log.info("{} gave {} of bill {} free as {}'s offer", LoggerUser.getEmail(), amount, bill.getSalesCode(), customerUid);
+        return offerUseRepository.save(use);
+    }
+
+    private static void putOffer(Map<String, Object> r, DebtCustomer c, long used) {
+        int monthly = c.getMonthlyOffer() == null ? 0 : c.getMonthlyOffer();
+        r.put("monthlyOffer", monthly);
+        r.put("offerUsed", used);
+        r.put("offerLeft", Math.max(0, monthly - used));
     }
 
     /** The customer's name, for the bill payment it was charged by. */
@@ -305,11 +368,27 @@ public class DebtService {
             lines.add(l);
         }
         long owedNow = balances(branchUID).values().stream().mapToLong(Long::longValue).filter(b -> b > 0).sum();
+        long offered = 0;
+        for (com.midland.bar.Bar.Model.OfferUse o : offerUseRepository.between(branchUID, range[0], range[1])) {
+            offered += o.getAmount();
+            Map<String, Object> l = new LinkedHashMap<>();
+            l.put("uid", o.getUid());
+            l.put("customerUid", o.getCustomerUid());
+            l.put("customerName", o.getCustomerName());
+            l.put("kind", "OFFER");
+            l.put("amount", o.getAmount());
+            l.put("billCode", o.getBillCode());
+            l.put("by", o.getUsedByName() != null ? o.getUsedByName() : o.getUsedBy());
+            l.put("at", o.getUsedAt());
+            lines.add(l);
+        }
+        lines.sort((a, b) -> String.valueOf(b.get("at")).compareTo(String.valueOf(a.get("at"))));
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("charged", charged);
         out.put("paid", paid);
         out.put("writtenOff", writtenOff);
         out.put("owedNow", owedNow);
+        out.put("offered", offered);
         out.put("lines", lines);
         return new Response<>(out);
     }

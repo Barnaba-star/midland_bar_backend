@@ -42,6 +42,8 @@ public class BillPaymentService {
     private final com.midland.bar.Utils.Offline.OfflineOps offlineOps;
     private final com.midland.bar.Uaa.Repository.UserRepository userRepository;
     private final DebtService debtService;
+    private final BarService barService;
+    private final com.midland.bar.Bar.Repository.OfferUseRepository offerUseRepository;
     private final com.midland.bar.Setting.Repository.SystemSettingRepository systemSettingRepository;
 
     /**
@@ -84,8 +86,11 @@ public class BillPaymentService {
         for (PayBillDTO.Part part : dto.getPayments()) {
             String method = part.getMethod() == null ? "" : part.getMethod().trim().toLowerCase();
             boolean credit = DebtService.METHOD.equals(method);
-            if (!METHODS.contains(method) && !credit)
+            boolean offer = DebtService.OFFER_METHOD.equals(method);
+            if (!METHODS.contains(method) && !credit && !offer)
                 return new Response<>("Unknown payment method: " + part.getMethod());
+            if (offer && (part.getCustomerUid() == null || part.getCustomerUid().isBlank()))
+                return new Response<>("Choose the customer the offer is for");
             if (credit && (part.getCustomerUid() == null || part.getCustomerUid().isBlank()))
                 return new Response<>("Choose the customer the bill goes on credit to");
             int amount = part.getAmount();
@@ -103,7 +108,7 @@ public class BillPaymentService {
             row.setAmount(amount);
             row.setTendered(tendered);
             row.setChangeGiven(change);
-            if (credit) {
+            if (credit || offer) {
                 row.setCustomerUid(part.getCustomerUid());
                 row.setCustomerName(debtService.nameOf(part.getCustomerUid()));
             }
@@ -120,11 +125,23 @@ public class BillPaymentService {
         for (BillPayment row : rows)
             if (DebtService.METHOD.equals(row.getMethod()))
                 debtService.charge(bill, row.getCustomerUid(), row.getAmount(), now);
+        // An offer (ofa) is no payment: the bar gives that much away - off the
+        // lines and their split, within the customer's month - and no money is
+        // expected for it in any cash-up.
+        int offered = 0;
+        for (BillPayment row : rows) {
+            if (!DebtService.OFFER_METHOD.equals(row.getMethod()))
+                continue;
+            debtService.useOffer(bill, row.getCustomerUid(), row.getAmount(), now);
+            barService.spreadOff(bill, row.getAmount(), due - offered, bill.getBranchUid(), true);
+            offered += row.getAmount();
+        }
+        rows.removeIf(r -> DebtService.OFFER_METHOD.equals(r.getMethod()));
         billPaymentRepository.saveAll(rows);
-        bill.setBill(due);
-        bill.setPaidAmount(paid);
+        bill.setBill(due - offered);
+        bill.setPaidAmount(paid - offered);
         bill.setPaymentStatus("PAID");
-        bill.setPaymentMethod(rows.size() == 1 ? rows.get(0).getMethod() : "split");
+        bill.setPaymentMethod(rows.isEmpty() ? DebtService.OFFER_METHOD : rows.size() == 1 && offered == 0 ? rows.get(0).getMethod() : "split");
         bill.setPaidBy(by);
         bill.setPaidAt(now);
         try {
@@ -250,6 +267,7 @@ public class BillPaymentService {
             l.put("offer", line.getPriceRuleName());
             l.put("freeUnits", line.getFreeUnits());
             l.put("discount", line.getDiscountAmount());
+            l.put("offerAmount", line.getOfferAmount());
             lines.add(l);
         }
         List<Map<String, Object>> payments = new ArrayList<>();
@@ -290,6 +308,10 @@ public class BillPaymentService {
             receipt.put("efdSerial", st.getEfdSerial());
         });
         receipt.put("discountTotal", lines.stream().mapToInt(x -> x.get("discount") == null ? 0 : ((Number) x.get("discount")).intValue()).sum());
+        // Given free as a customer's offer: one line under the items, with whose.
+        List<com.midland.bar.Bar.Model.OfferUse> offers = offerUseRepository.ofBill(bill.getUid());
+        receipt.put("offerTotal", offers.stream().mapToInt(com.midland.bar.Bar.Model.OfferUse::getAmount).sum());
+        receipt.put("offerCustomer", offers.isEmpty() ? null : offers.get(0).getCustomerName());
         receipt.put("traReceiptNo", bill.getTraReceiptNo());
         receipt.put("traVerifyCode", bill.getTraVerifyCode());
         receipt.put("lines", lines);

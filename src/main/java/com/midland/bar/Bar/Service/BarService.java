@@ -1364,23 +1364,7 @@ public class BarService {
             return new Response<>("A cashier may discount up to " + limit + "% of the bill (" + (int) Math.floor(gross * limit / 100.0)
                     + ") - a manager or CEO gives more");
 
-        List<BarSales> lines = barSalesRepository.findLinesOfBill(bill.getUid());
-        int left = amt;
-        for (int i = 0; i < lines.size(); i++) {
-            BarSales line = lines.get(i);
-            int lt = line.getLineTotal() == null ? 0 : line.getLineTotal();
-            int share = i == lines.size() - 1 ? left : (int) Math.floor((double) amt * lt / total);
-            share = Math.min(share, lt);
-            if (share <= 0)
-                continue;
-            left -= share;
-            List<BarReports> reports = barReportsRepository.findBySalesLine(line.getUid());
-            unsplit(line, line.getBarServiceEntity(), share, false, reports, branchUID);
-            barReportsRepository.saveAll(reports);
-            line.setLineTotal(lt - share);
-            line.setDiscountAmount((line.getDiscountAmount() == null ? 0 : line.getDiscountAmount()) + share);
-            barSalesRepository.save(line);
-        }
+        int left = amt - spreadOff(bill, amt, total, branchUID, false);
         bill.setBill(Math.max(0, (bill.getBill() == null ? total : bill.getBill()) - amt));
         bill.update();
         salesOpenedRepository.save(bill);
@@ -1397,6 +1381,36 @@ public class BarService {
         billDiscountRepository.save(d);
         log.info(LoggerUser.getEmail() + " gave " + d.getAmount() + " off bill " + bill.getSalesCode() + ": " + why);
         return new Response<>(bill);
+    }
+
+    /**
+     * Takes [amt] off a bill's lines by their share of [total]: each line's
+     * total and split come down by its part (no stock moves) and it records
+     * the discount on the line. Returns what was taken off. A discount and a
+     * bill given as an offer (ofa) both go through here.
+     */
+    public int spreadOff(SalesOpened bill, int amt, int total, String branchUID, boolean offer) {
+        List<BarSales> lines = barSalesRepository.findLinesOfBill(bill.getUid());
+        int left = amt;
+        for (int i = 0; i < lines.size(); i++) {
+            BarSales line = lines.get(i);
+            int lt = line.getLineTotal() == null ? 0 : line.getLineTotal();
+            int share = i == lines.size() - 1 ? left : (int) Math.floor((double) amt * lt / total);
+            share = Math.min(share, lt);
+            if (share <= 0)
+                continue;
+            left -= share;
+            List<BarReports> reports = barReportsRepository.findBySalesLine(line.getUid());
+            unsplit(line, line.getBarServiceEntity(), share, false, reports, branchUID);
+            barReportsRepository.saveAll(reports);
+            line.setLineTotal(lt - share);
+            if (offer)
+                line.setOfferAmount((line.getOfferAmount() == null ? 0 : line.getOfferAmount()) + share);
+            else
+                line.setDiscountAmount((line.getDiscountAmount() == null ? 0 : line.getDiscountAmount()) + share);
+            barSalesRepository.save(line);
+        }
+        return amt - left;
     }
 
     public com.midland.bar.Utils.Responses.ResponseList<com.midland.bar.Bar.Model.BillDiscount> discounts(String filter) {

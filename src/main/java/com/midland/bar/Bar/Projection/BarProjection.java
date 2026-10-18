@@ -193,4 +193,5 @@ public interface BarProjection {
     String getPriceRuleName();
     Integer getFreeUnits();
     Integer getDiscountAmount();
+    Integer getOfferAmount();
 }

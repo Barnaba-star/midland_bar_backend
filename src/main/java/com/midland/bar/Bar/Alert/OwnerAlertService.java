@@ -79,9 +79,9 @@ public class OwnerAlertService {
                 if (((Number) d.get("sales")).longValue() == 0 && ((Number) d.get("bills")).longValue() == 0)
                     continue;
                 d.put("day", day.toString());
-                String sms = String.format("%s jana: Mauzo Tsh %s (bili %s). Upungufu cash-up Tsh %s. Vimeondolewa %s (Tsh %s). Refund Tsh %s. Punguzo Tsh %s. Madeni Tsh %s. Stock chini: %s.",
+                String sms = String.format("%s jana: Mauzo Tsh %s (bili %s). Upungufu cash-up Tsh %s. Vimeondolewa %s (Tsh %s). Refund Tsh %s. Punguzo Tsh %s. Ofa Tsh %s. Madeni Tsh %s. Stock chini: %s.",
                         b.getBranchName(), tzs(d.get("sales")), d.get("bills"), tzs(d.get("short")), d.get("voids"), tzs(d.get("voidAmount")),
-                        tzs(d.get("refunds")), tzs(d.get("discounts")), tzs(d.get("owed")), d.get("lowStock"));
+                        tzs(d.get("refunds")), tzs(d.get("discounts")), tzs(d.get("offers")), tzs(d.get("owed")), d.get("lowStock"));
                 Map<String, Object> params = new LinkedHashMap<>();
                 d.forEach((k, v) -> params.put(k, v instanceof Number n && !"bills".equals(k) && !"voids".equals(k) && !"lowStock".equals(k) ? tzs(n) : v));
                 send(b.getUid(), "ALERTS.DIGEST_TITLE", "ALERTS.DIGEST_MESSAGE", params, "/pos", sms);
@@ -114,6 +114,8 @@ public class OwnerAlertService {
                 "AND decided_at >= :from AND decided_at < :to", p, Long.class));
         d.put("discounts", jdbc.queryForObject("SELECT COALESCE(SUM(amount),0) FROM bill_discounts WHERE branch_uid = :b " +
                 "AND given_at >= :from AND given_at < :to", p, Long.class));
+        d.put("offers", jdbc.queryForObject("SELECT COALESCE(SUM(amount),0) FROM offer_uses WHERE branch_uid = :b AND is_active = true " +
+                "AND used_at >= :from AND used_at < :to", p, Long.class));
         d.put("owed", jdbc.queryForObject("SELECT COALESCE(SUM(GREATEST(bal,0)),0) FROM (SELECT SUM(CASE WHEN kind='CHARGE' THEN amount ELSE -amount END) AS bal " +
                 "FROM debt_entries WHERE branch_uid = :b AND is_active = true GROUP BY customer_uid) x", p, Long.class));
         d.put("lowStock", jdbc.queryForObject("SELECT COUNT(*) FROM bar_services WHERE branch_uid = :b AND is_active = true AND track_stock = true " +

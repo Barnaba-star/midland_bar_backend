@@ -107,4 +107,8 @@ public class BarSales extends TenantEntity {
     /** Taken off this line by a discount on the bill (lineTotal is after it). */
     @Column(name = "discount_amount")
     private Integer discountAmount;
+
+    /** Given free as a customer's offer (ofa) - lineTotal is after it. */
+    @Column(name = "offer_amount")
+    private Integer offerAmount;
 }

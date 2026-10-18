@@ -9,4 +9,5 @@ public class DebtCustomerDTO {
     private String phone;
     private String note;
     private Integer creditLimit;
+    private Integer monthlyOffer;
 }

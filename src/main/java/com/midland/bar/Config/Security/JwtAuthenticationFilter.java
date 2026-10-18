@@ -92,7 +92,21 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 authorities = List.of(new SimpleGrantedAuthority("ROOT"));
             } else {
                 List<SimpleGrantedAuthority> roles = jwtTokenUtil.extractRoles(token);
-                List<SimpleGrantedAuthority> permissions = jwtTokenUtil.extractPermission(token);
+                List<SimpleGrantedAuthority> permissions = new ArrayList<>(jwtTokenUtil.extractPermission(token));
+                // Plus what their roles hold now: a permission added to a role
+                // (a new feature, or Settings > Role) works without signing in
+                // again - the token only knew the ones of the day they signed in.
+                if (user != null && user.getRoles() != null) {
+                    java.util.Set<String> have = new java.util.HashSet<>();
+                    permissions.forEach(a -> have.add(a.getAuthority()));
+                    user.getRoles().forEach(r -> {
+                        if (r.getPermission() != null)
+                            r.getPermission().forEach(p -> {
+                                if (p.getName() != null && have.add(p.getName()))
+                                    permissions.add(new SimpleGrantedAuthority(p.getName()));
+                            });
+                    });
+                }
                 authorities = mergeAuthorities(roles, permissions);
             }
 

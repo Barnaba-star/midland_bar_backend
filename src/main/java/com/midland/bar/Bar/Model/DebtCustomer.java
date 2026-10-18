@@ -35,6 +35,10 @@ public class DebtCustomer extends TenantEntity {
     @Column(name = "credit_limit", nullable = false)
     private Integer creditLimit = 0;
 
+    /** Drinks the bar gives this customer free each month (ofa), in TZS; 0 = none. Set by a CEO or manager. */
+    @Column(name = "monthly_offer")
+    private Integer monthlyOffer;
+
     @Column(name = "note", length = 200)
     private String note;
 

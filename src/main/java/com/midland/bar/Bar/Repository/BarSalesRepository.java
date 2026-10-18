@@ -58,7 +58,8 @@ public interface BarSalesRepository extends JpaRepository<BarSales, String> {
         s.listPrice as listPrice,
         s.priceRuleName as priceRuleName,
         s.freeUnits as freeUnits,
-        s.discountAmount as discountAmount
+        s.discountAmount as discountAmount,
+        s.offerAmount as offerAmount
     FROM BarSales s
     JOIN s.salesOpened so
     LEFT JOIN s.barStaff st
