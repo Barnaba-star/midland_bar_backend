@@ -45,6 +45,7 @@ class MoneyFlowTest {
     @Autowired WorkShiftService workShiftService;
     @Autowired BarSalesRepository barSalesRepository;
     @Autowired BarReportsRepository barReportsRepository;
+    @Autowired jakarta.persistence.EntityManager em;
 
     @BeforeEach
     void signIn() {
@@ -165,5 +166,20 @@ class MoneyFlowTest {
         var line = barSalesRepository.findLinesOfBill(b.getUid()).get(0);
         assertEquals("test hour", line.getPriceRuleName());
         assertEquals(Math.round(line.getListPrice() * 0.5f) * 2, line.getLineTotal());
+    }
+
+    @Test
+    void aPaidBillNotifiesOnlyTheBranchCeosAndManagers() {
+        SalesOpened b = bill(1);
+        assertNotNull(billPaymentService.payBill(pay(b, "cash", total(b), null)).getData());
+        em.flush();
+        List<String> told = em.createQuery("SELECT n.targetUserUID FROM Notification n WHERE n.titleKey = 'NOTIFICATIONS.NEW_SALE_TITLE' " +
+                "AND n.paramsJson LIKE :code", String.class).setParameter("code", "%\"" + b.getSalesCode() + "\"%").getResultList();
+        List<String> expected = em.createQuery("SELECT DISTINCT u.uid FROM User u JOIN u.roles r LEFT JOIN u.extraBranches eb " +
+                "WHERE u.isActive = true AND (u.branch.uid = :b OR eb.uid = :b) AND r.code IN ('CEO', 'MANAGER')", String.class)
+                .setParameter("b", b.getBranchUid()).getResultList();
+        assertFalse(told.isEmpty(), "someone hears of the sale");
+        assertEquals(new java.util.HashSet<>(expected), new java.util.HashSet<>(told));
+        assertEquals(told.size(), new java.util.HashSet<>(told).size(), "one note each");
     }
 }

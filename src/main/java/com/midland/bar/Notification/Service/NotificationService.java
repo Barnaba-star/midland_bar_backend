@@ -63,9 +63,8 @@ public class NotificationService {
     }
 
     /**
-     * Notifies everyone assigned to the sale's branch that a sale was
-     * completed — this is the "mauzo mangapi" (how many sales) signal
-     * the header notification bell is meant to surface.
+     * Tells the branch's CEOs and managers that a sale was completed — the
+     * "mauzo mangapi" (how many sales) signal on the header bell.
      */
     @Transactional
     public void notifySaleCompleted(SalesOpened sale) {
@@ -74,7 +73,8 @@ public class NotificationService {
             return;
         }
 
-        List<String> branchUsers = userRepository.findUidsInBranch(sale.getBranchUid());
+        // The owner side only - a note per sale to every cashier and waiter was noise, and 10 rows a sale.
+        List<String> branchUsers = userRepository.findUidsInBranchWithRoles(sale.getBranchUid(), List.of("CEO", "MANAGER"));
 
         Map<String, Object> params = new HashMap<>();
         params.put("code", sale.getSalesCode());

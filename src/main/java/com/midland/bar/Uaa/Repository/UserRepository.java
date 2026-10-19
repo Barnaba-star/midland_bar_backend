@@ -88,9 +88,14 @@ public interface UserRepository extends JpaRepository<User, String> {
 """)
     List<User> findAllUsersWithBranchAndRoles(@Param("branchUID")String branchUID);
 
-    /** Just the uids of a branch's live users - for notifying them, without loading each user, their roles and branches. */
-    @Query("SELECT u.uid FROM User u WHERE u.branch.uid = :branchUID AND u.isActive = true")
-    List<String> findUidsInBranch(@Param("branchUID") String branchUID);
+    /**
+     * The uids of a branch's live users holding one of these role codes -
+     * home branch or given it as an extra one. For notifying them without
+     * loading each user, their roles and branches.
+     */
+    @Query("SELECT DISTINCT u.uid FROM User u JOIN u.roles r LEFT JOIN u.extraBranches eb " +
+           "WHERE u.isActive = true AND (u.branch.uid = :branchUID OR eb.uid = :branchUID) AND UPPER(r.code) IN :roleCodes")
+    List<String> findUidsInBranchWithRoles(@Param("branchUID") String branchUID, @Param("roleCodes") java.util.Collection<String> roleCodes);
 
     /**
      * The heartbeat's write: last_seen only. Saving the whole user every 30 s
