@@ -33,6 +33,7 @@ import java.util.*;
 @RequiredArgsConstructor
 @Slf4j
 public class ManunuziService {
+    private final com.midland.bar.Utils.MoneyLock moneyLock;
 
     private final StockAndPurchaseRepository stockAndPurchaseRepository;
     private final StockAndPurchaseDescriptionsRepository descriptionsRepository;
@@ -90,6 +91,7 @@ public class ManunuziService {
      * supplier later is what comes off a cash-up.
      */
     public void takeOnDelivery(String branchUID, SupplierDeliveryItem item, String supplierName) {
+        moneyLock.hold(branchUID); // before any row lock - see MoneyLock
         String label = "Mzigo " + (item.getPoCode() != null ? item.getPoCode() + " · " : "") + supplierName + " · " + item.getServiceName();
         long amount = item.getAmount() == null ? 0 : item.getAmount();
         item.setPotCovered(amount <= 0 ? 0 : spend(branchUID, item.getServiceUid(), amount, label, null, null, supplierName));
@@ -104,6 +106,7 @@ public class ManunuziService {
      * covered; the rest had no savings to come from.
      */
     public long spend(String branchUID, String serviceUid, long amount, String label, String method, String payer, String paidTo) {
+        moneyLock.hold(branchUID); // before any row lock - see MoneyLock
         long left = amount;
         for (StockAndPurchase row : stockAndPurchaseRepository.withRemaining(branchUID, serviceUid)) {
             if (left <= 0)

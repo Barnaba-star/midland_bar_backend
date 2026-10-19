@@ -37,6 +37,7 @@ import java.util.Optional;
 @RequiredArgsConstructor
 @Slf4j
 public class StaffOrderService {
+    private final com.midland.bar.Utils.MoneyLock moneyLock;
 
     /** Selling and paying out need the login's shift open. */
     private final WorkShiftService workShiftService;
@@ -300,6 +301,7 @@ public class StaffOrderService {
      */
     @Transactional
     public Response<StaffOrder> receive(String orderUid) {
+        moneyLock.hold(com.midland.bar.Config.Security.LoggerUser.getBranchUIDOrMain()); // before any row lock - see MoneyLock
         StaffOrder order = staffOrderRepository.findForUpdate(orderUid, branch()).orElse(null);
         if (order == null)
             return new Response<>("Order Not Found");
@@ -370,6 +372,7 @@ public class StaffOrderService {
      */
     @Transactional
     public Response<StaffOrder> recordOffline(com.midland.bar.Bar.Dto.StaffOfflineOrderDTO dto) {
+        moneyLock.hold(com.midland.bar.Config.Security.LoggerUser.getBranchUIDOrMain()); // before any row lock - see MoneyLock
         Optional<String> done = offlineOps.alreadyApplied();
         if (done.isPresent())
             return staffOrderRepository.findById(done.get()).map(Response::new).orElseGet(() -> new Response<>("Order Not Found"));

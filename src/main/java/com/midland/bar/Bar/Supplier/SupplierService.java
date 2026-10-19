@@ -32,6 +32,7 @@ import java.util.*;
 @RequiredArgsConstructor
 @Slf4j
 public class SupplierService {
+    private final com.midland.bar.Utils.MoneyLock moneyLock;
 
     private final SupplierRepository supplierRepository;
     private final SupplierEntryRepository entryRepository;
@@ -99,6 +100,7 @@ public class SupplierService {
      */
     @Transactional
     public Response<Map<String, Object>> pay(Map<String, Object> body) {
+        moneyLock.hold(com.midland.bar.Config.Security.LoggerUser.getBranchUIDOrMain()); // before any row lock - see MoneyLock
         String b = LoggerUser.getBranchUIDOrMain();
         String uid = str(body.get("supplierUid"));
         Supplier s = uid == null ? null : supplierRepository.findInBranch(uid, b).orElse(null);
@@ -253,6 +255,7 @@ public class SupplierService {
      */
     @Transactional
     public Response<Map<String, Object>> receive(String uid, Map<String, Object> body) {
+        moneyLock.hold(com.midland.bar.Config.Security.LoggerUser.getBranchUIDOrMain()); // before any row lock - see MoneyLock
         String b = LoggerUser.getBranchUIDOrMain();
         PurchaseOrder po = poRepository.findForUpdate(uid, b).orElse(null);
         if (po == null)

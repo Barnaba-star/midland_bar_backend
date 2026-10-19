@@ -26,6 +26,7 @@ import java.util.*;
 @RequiredArgsConstructor
 @Slf4j
 public class BillPaymentService {
+    private final com.midland.bar.Utils.MoneyLock moneyLock;
 
     /** Selling and paying out need the login's shift open. */
     private final WorkShiftService workShiftService;
@@ -55,6 +56,7 @@ public class BillPaymentService {
      */
     @Transactional
     public Response<SalesOpened> payBill(PayBillDTO dto) {
+        moneyLock.hold(com.midland.bar.Config.Security.LoggerUser.getBranchUIDOrMain()); // before any row lock - see MoneyLock
         // A queued payment sent twice is applied once.
         if (offlineOps.alreadyApplied().isPresent())
             return salesOpenedRepository.findById(dto.getSalesOpenedUID())

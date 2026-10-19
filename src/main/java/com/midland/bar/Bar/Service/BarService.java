@@ -47,6 +47,7 @@ import java.util.Objects;
 @Log
 @RequiredArgsConstructor
 public class BarService {
+    private final com.midland.bar.Utils.MoneyLock moneyLock;
 
     /** Selling and paying out need the login's shift open. */
     private final WorkShiftService workShiftService;
@@ -717,6 +718,7 @@ public class BarService {
      */
     @Transactional
     public ResponseList<BarSales> saveBarSales(BarSalesDTO barSalesDTO) {
+        moneyLock.hold(com.midland.bar.Config.Security.LoggerUser.getBranchUIDOrMain()); // before any row lock - see MoneyLock
         workShiftService.requireOpen();
         log.info("{} is saving bar sales"+ LoggerUser.getEmail());
         if (barSalesDTO == null) {
@@ -951,6 +953,7 @@ public class BarService {
      */
     @Transactional
     public Response<SalesOpened> addItemsToBill(SaleItemsDTO dto) {
+        moneyLock.hold(com.midland.bar.Config.Security.LoggerUser.getBranchUIDOrMain()); // before any row lock - see MoneyLock
         String branchUID = LoggerUser.getBranchUID();
         SalesOpened bill = salesOpenedRepository.findById(dto.getSalesOpenedUID())
                 .filter(so -> Optional.ofNullable(branchUID).orElse("MAIN_OFFICE").equals(so.getBranchUid()))
@@ -1184,6 +1187,7 @@ public class BarService {
      */
     @Transactional
     public Response<SalesOpened> removeBillLine(RemoveBillLineDTO dto) {
+        moneyLock.hold(com.midland.bar.Config.Security.LoggerUser.getBranchUIDOrMain()); // before any row lock - see MoneyLock
         // Sent twice from the offline queue: applied once.
         Optional<String> done = offlineOps.alreadyApplied();
         if (done.isPresent())
@@ -1201,6 +1205,7 @@ public class BarService {
      */
     @Transactional
     public Response<SalesOpened> takeOffForExchange(String barSalesUID, int quantity, String reason) {
+        moneyLock.hold(com.midland.bar.Config.Security.LoggerUser.getBranchUIDOrMain()); // before any row lock - see MoneyLock
         RemoveBillLineDTO dto = new RemoveBillLineDTO();
         dto.setBarSalesUID(barSalesUID);
         dto.setQuantity(quantity);
@@ -1215,6 +1220,7 @@ public class BarService {
      */
     @Transactional
     public Response<SalesOpened> takeOffForRefund(String barSalesUID, int quantity, String reason) {
+        moneyLock.hold(com.midland.bar.Config.Security.LoggerUser.getBranchUIDOrMain()); // before any row lock - see MoneyLock
         RemoveBillLineDTO dto = new RemoveBillLineDTO();
         dto.setBarSalesUID(barSalesUID);
         dto.setQuantity(quantity);
@@ -1223,6 +1229,7 @@ public class BarService {
     }
 
     private Response<SalesOpened> takeOffBillLine(RemoveBillLineDTO dto, boolean refund) {
+        moneyLock.hold(com.midland.bar.Config.Security.LoggerUser.getBranchUIDOrMain()); // before any row lock - see MoneyLock
         String branchUID = LoggerUser.getBranchUID();
         if (dto != null && dto.getBarSalesUID() == null && dto.getAddOpId() != null)
             dto.setBarSalesUID(barSalesRepository.findAddedBy(dto.getAddOpId(), dto.getBarServiceUID(), dto.getSalesOpenedUID()).orElse(null));
@@ -1341,6 +1348,7 @@ public class BarService {
      */
     @Transactional
     public Response<SalesOpened> discountBill(String billUid, Integer amount, Integer percent, String reason) {
+        moneyLock.hold(com.midland.bar.Config.Security.LoggerUser.getBranchUIDOrMain()); // before any row lock - see MoneyLock
         if (com.midland.bar.Config.Security.StaffSession.active())
             throw new BusinessException("Only the cashier can give a discount");
         workShiftService.requireOpen();
@@ -1392,6 +1400,7 @@ public class BarService {
      * bill given as an offer (ofa) both go through here.
      */
     public int spreadOff(SalesOpened bill, int amt, int total, String branchUID, boolean offer) {
+        moneyLock.hold(branchUID); // before any row lock - see MoneyLock
         List<BarSales> lines = barSalesRepository.findLinesOfBill(bill.getUid());
         int left = amt;
         for (int i = 0; i < lines.size(); i++) {
@@ -1610,6 +1619,7 @@ public class BarService {
      */
     @Transactional
     public Response<BarSales> deleteBarSales(String barSalesUID){
+        moneyLock.hold(com.midland.bar.Config.Security.LoggerUser.getBranchUIDOrMain()); // before any row lock - see MoneyLock
         Optional<BarSales> line = barSalesRepository.findSalesByUID(barSalesUID, LoggerUser.getBranchUID());
         if (line.isEmpty())
             return new Response<>("Sales Not Found");
@@ -2222,6 +2232,7 @@ public class BarService {
      * and a pot created here is put in it (see addIncomeExpense).
      */
     private Map<String, IncomeExpenses> weekPots(String branchUID, LocalDate week) {
+        moneyLock.hold(branchUID); // read the pots only under the branch's money lock
         return com.midland.bar.Utils.TxMemo.get("weekPots:" + branchUID + ":" + week, () -> {
             Map<String, IncomeExpenses> pots = new HashMap<>();
             for (IncomeExpenses pot : incomeExpensesRepository.findWeekPots(branchUID, week))
@@ -2429,6 +2440,7 @@ public class BarService {
 
     @Transactional
     public Response<IncomeExpenses> addSpend(SpendDTO spendDTO) {
+        moneyLock.hold(com.midland.bar.Config.Security.LoggerUser.getBranchUIDOrMain()); // before any row lock - see MoneyLock
         workShiftService.requireOpenForPayout();
 
         log.info(LoggerUser.getEmail() + " is Saving Spend");
@@ -3411,6 +3423,7 @@ public class BarService {
     // so a failure there used to leave it marked paid with no money moved.
     @Transactional
     public Response<StaffCommissions> payStaffCommission(StaffCommissionDTO staffCommissionDTO){
+        moneyLock.hold(com.midland.bar.Config.Security.LoggerUser.getBranchUIDOrMain()); // before any row lock - see MoneyLock
         workShiftService.requireOpenForPayout();
         log.info(LoggerUser.getEmail() + "Is Paying Staff Commission");
         if(staffCommissionDTO == null)
@@ -4146,6 +4159,7 @@ public class BarService {
     }
     @Transactional
     public Response<StockAndPurchase> payStockAndPurchase(PayStockAndPurchaseDTO dto) {
+        moneyLock.hold(com.midland.bar.Config.Security.LoggerUser.getBranchUIDOrMain()); // before any row lock - see MoneyLock
         workShiftService.requireOpenForPayout();
 
         log.info(LoggerUser.getEmail() + " Is Paying Stock and Purchase");

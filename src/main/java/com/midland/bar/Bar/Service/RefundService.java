@@ -28,6 +28,7 @@ import java.util.*;
 @RequiredArgsConstructor
 @Slf4j
 public class RefundService {
+    private final com.midland.bar.Utils.MoneyLock moneyLock;
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -42,6 +43,7 @@ public class RefundService {
 
     @Transactional
     public Response<BillRefund> request(RefundRequestDTO dto) {
+        moneyLock.hold(com.midland.bar.Config.Security.LoggerUser.getBranchUIDOrMain()); // before any row lock - see MoneyLock
         workShiftService.requireOpen();
         String branchUID = LoggerUser.getBranchUIDOrMain();
         SalesOpened bill = dto == null || dto.getSalesOpenedUID() == null ? null
@@ -130,6 +132,7 @@ public class RefundService {
     /** Approve (the items come off, the money goes back) or reject. */
     @Transactional
     public Response<BillRefund> decide(String uid, boolean approve, String note) {
+        moneyLock.hold(com.midland.bar.Config.Security.LoggerUser.getBranchUIDOrMain()); // before any row lock - see MoneyLock
         String branchUID = LoggerUser.getBranchUIDOrMain();
         BillRefund refund = refundRepository.findForUpdate(uid, branchUID).orElse(null);
         if (refund == null)

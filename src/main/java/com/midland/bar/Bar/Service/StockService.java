@@ -30,6 +30,7 @@ import java.util.Optional;
 @RequiredArgsConstructor
 @Slf4j
 public class StockService {
+    private final com.midland.bar.Utils.MoneyLock moneyLock;
 
     private final BarServiceRepository barServiceRepository;
     private final StockReceiptRepository stockReceiptRepository;
@@ -46,6 +47,7 @@ public class StockService {
      */
     @Transactional
     public Response<StockReceipt> addStock(StockReceiptDTO dto) {
+        moneyLock.hold(com.midland.bar.Config.Security.LoggerUser.getBranchUIDOrMain()); // before any row lock - see MoneyLock
         Optional<BarServiceEntity> found =
                 barServiceRepository.findForUpdate(dto.getBarServiceUID(), LoggerUser.getBranchUID());
         if (found.isEmpty())
