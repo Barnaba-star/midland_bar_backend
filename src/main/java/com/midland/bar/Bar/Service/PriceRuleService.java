@@ -38,7 +38,8 @@ public class PriceRuleService {
     public Priced price(BarServiceEntity service, int qty, LocalDateTime at, String billUid) {
         int list = service.getPrice() == null ? 0 : service.getPrice();
         Priced best = new Priced(list, list * qty, list, null, 0);
-        for (PriceRule r : ruleRepository.enabledInBranch(service.getBranchUid())) {
+        String branch = service.getBranchUid();
+        for (PriceRule r : com.midland.bar.Utils.TxMemo.get("priceRules:" + branch, () -> ruleRepository.enabledInBranch(branch))) {
             if (!applies(r, service) || !runs(r, at))
                 continue;
             Priced p = switch (r.getKind()) {
@@ -227,6 +228,7 @@ public class PriceRuleService {
         if (uid != null)
             r.update();
         log.info("{} saved offer {} ({})", LoggerUser.getEmail(), r.getName(), kind);
+        com.midland.bar.Utils.TxMemo.forget("priceRules:");
         return new Response<>(ruleRepository.save(r));
     }
 
@@ -236,6 +238,7 @@ public class PriceRuleService {
         if (r == null)
             return new Response<>("Offer not found");
         r.delete();
+        com.midland.bar.Utils.TxMemo.forget("priceRules:");
         ruleRepository.save(r);
         return new Response<>(Boolean.TRUE);
     }

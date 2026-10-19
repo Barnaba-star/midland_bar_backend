@@ -10,8 +10,8 @@ import java.time.LocalDateTime;
 
 /**
  * One product's part of a delivery from a supplier: what it cost and how much
- * of it is paid. Paying a supplier settles these oldest first, and each part
- * is taken from that product's Manunuzi (Stock Purchase) savings.
+ * of it is paid. Its Manunuzi (Stock Purchase) savings are used when it
+ * arrives; paying a supplier then settles these oldest first.
  */
 @Entity
 @Getter
@@ -46,4 +46,13 @@ public class SupplierDeliveryItem extends TenantEntity {
 
     @Column(name = "received_at", nullable = false)
     private LocalDateTime receivedAt;
+
+    /**
+     * What the product's Manunuzi covered when the goods arrived (owner,
+     * 2026-10-19: the Manunuzi and Income & Expenses reports show a delivery
+     * the day it is received). Null on deliveries from before, whose
+     * Manunuzi is taken when the supplier is paid.
+     */
+    @Column(name = "pot_covered")
+    private Long potCovered;
 }

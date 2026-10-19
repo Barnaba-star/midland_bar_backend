@@ -26,6 +26,10 @@ public interface IncomeExpensesRepository
                 @Param("weekStartDate") LocalDate weekStartDate
         );
 
+        /** Every live pot of one week - a sale's split reads them once, not once per pot. */
+        @Query("SELECT ie FROM IncomeExpenses ie WHERE ie.branchUid = :branchUID AND ie.isActive = true AND ie.weekStartDate = :week")
+        List<IncomeExpenses> findWeekPots(@Param("branchUID") String branchUID, @Param("week") LocalDate week);
+
         @Query("""
         SELECT ie
         FROM IncomeExpenses ie

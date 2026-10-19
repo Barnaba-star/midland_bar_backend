@@ -37,6 +37,7 @@ public class StockService {
     private final com.midland.bar.Bar.Supplier.SupplierRepository supplierRepository;
     private final com.midland.bar.Bar.Supplier.SupplierEntryRepository supplierEntryRepository;
     private final com.midland.bar.Bar.Supplier.SupplierDeliveryItemRepository supplierDeliveryItemRepository;
+    private final com.midland.bar.Bar.Supplier.ManunuziService manunuziService;
 
     /**
      * Records a delivery and raises the service's count by it. The service's
@@ -108,6 +109,7 @@ public class StockService {
                 item.setServiceName(service.getServiceName());
                 item.setAmount(receipt.getTotalCost());
                 item.setReceivedAt(LocalDateTime.now());
+                manunuziService.takeOnDelivery(LoggerUser.getBranchUIDOrMain(), item, supplier.getName());
                 supplierDeliveryItemRepository.save(item);
             }
         }

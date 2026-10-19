@@ -22,4 +22,8 @@ public interface CashUpRepository extends JpaRepository<CashUp, String> {
 
     @Query("SELECT c FROM CashUp c WHERE c.uid = :uid AND c.branchUid = :branchUID")
     Optional<CashUp> findInBranch(@Param("uid") String uid, @Param("branchUID") String branchUID);
+
+    /** Several at once - one query for a list of shifts instead of one per row. */
+    @Query("SELECT c FROM CashUp c WHERE c.uid IN :uids AND c.branchUid = :branchUID")
+    List<CashUp> findInBranch(@Param("uids") java.util.Collection<String> uids, @Param("branchUID") String branchUID);
 }

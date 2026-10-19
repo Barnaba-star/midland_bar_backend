@@ -84,6 +84,18 @@ public class ManunuziService {
     }
 
     /**
+     * Goods from a supplier arrived: the product's Manunuzi savings are used
+     * for them now, so the Manunuzi and Income & Expenses reports show the
+     * delivery the day it came. Nobody's drawer pays yet - paying the
+     * supplier later is what comes off a cash-up.
+     */
+    public void takeOnDelivery(String branchUID, SupplierDeliveryItem item, String supplierName) {
+        String label = "Mzigo " + (item.getPoCode() != null ? item.getPoCode() + " · " : "") + supplierName + " · " + item.getServiceName();
+        long amount = item.getAmount() == null ? 0 : item.getAmount();
+        item.setPotCovered(amount <= 0 ? 0 : spend(branchUID, item.getServiceUid(), amount, label, null, null, supplierName));
+    }
+
+    /**
      * Pays [amount] for a product out of its Manunuzi savings, oldest week
      * first: each week's row records it as paid, the week's Stock Purchase
      * pot as spent (with a line in its details), and the Manunuzi report a

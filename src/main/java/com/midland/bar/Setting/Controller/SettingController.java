@@ -49,7 +49,7 @@ public class SettingController {
 
             user.setLastSeen(LocalDateTime.now());
 
-            userRepository.save(user);
+            userRepository.touchLastSeen(user.getUid(), user.getLastSeen());
 
             return ResponseEntity.ok(
                     Map.of(

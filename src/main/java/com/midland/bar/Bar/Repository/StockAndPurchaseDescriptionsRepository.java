@@ -27,7 +27,14 @@ public interface StockAndPurchaseDescriptionsRepository
 
     );
 
-
-
+    /**
+     * [day, description, product, amount] - what was paid out of Manunuzi in
+     * [from, to], whichever week's savings it came from; one payment spread
+     * over several weeks comes back as one line.
+     */
+    @Query("SELECT d.createdAt, d.descriptions, s.barService.serviceName, SUM(d.amount) FROM StockAndPurchaseDescriptions d JOIN d.stockAndPurchase s " +
+           "WHERE s.branchUid = :b AND d.isActive = true AND d.createdAt BETWEEN :from AND :to " +
+           "GROUP BY d.createdAt, d.descriptions, s.barService.serviceName ORDER BY d.createdAt DESC, d.descriptions")
+    List<Object[]> spentBetween(@Param("b") String branchUID, @Param("from") java.time.LocalDate from, @Param("to") java.time.LocalDate to);
 }
 

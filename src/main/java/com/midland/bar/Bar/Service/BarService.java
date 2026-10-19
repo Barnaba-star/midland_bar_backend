@@ -82,6 +82,7 @@ public class BarService {
   private final IncomeExpensesDescriptionRepository incomeExpensesDescriptionRepository;
   private final StockAndPurchaseRepository stockAndPurchaseRepository;
   private final StockAndPurchaseDescriptionsRepository stockAndPurchaseDescriptionsRepository;
+  private final com.midland.bar.Bar.Supplier.SupplierDeliveryItemRepository supplierDeliveryItemRepository;
   private final NotificationService notificationService;
   private final PlatformSettingService platformSettingService;
   private final BillCodeService billCodeService;
@@ -2096,12 +2097,8 @@ public class BarService {
          * branch
          * week
          */
-        Optional<IncomeExpenses> existing =
-                incomeExpensesRepository.findByNameAndWeek(
-                        name,
-                        branchUID,
-                        weekStartDate
-                );
+        Map<String, IncomeExpenses> pots = weekPots(branchUID, weekStartDate);
+        Optional<IncomeExpenses> existing = Optional.ofNullable(pots.get(name));
 
         /*
          * ============================
@@ -2209,12 +2206,28 @@ public class BarService {
                     incomeExpensesRepository.save(
                             incomeExpenses
                     );
+            pots.put(name, saved);
 
             /*
              * Add kwenye response
              */
             result.add(saved);
         }
+    }
+
+    /**
+     * The week's pots by name, read once per transaction: a sale splits every
+     * line into 11+ pots, and looking each one up was 11+ queries a line. The
+     * map holds the managed rows, so later lines of the same sale add to them,
+     * and a pot created here is put in it (see addIncomeExpense).
+     */
+    private Map<String, IncomeExpenses> weekPots(String branchUID, LocalDate week) {
+        return com.midland.bar.Utils.TxMemo.get("weekPots:" + branchUID + ":" + week, () -> {
+            Map<String, IncomeExpenses> pots = new HashMap<>();
+            for (IncomeExpenses pot : incomeExpensesRepository.findWeekPots(branchUID, week))
+                pots.putIfAbsent(pot.getName(), pot);
+            return pots;
+        });
     }
     public ResponseList<IncomeExpenses> getIncomeExpenses(String filter) {
         LocalDate today = LocalDate.now();
@@ -2318,10 +2331,49 @@ public class BarService {
                 );
         }
 
-        return new ResponseList<>(incomeExpensesRepository.findByBranchAndWeekRange(
+        return incomeExpensesByWhenPaid(incomeExpensesRepository.findByBranchAndWeekRange(
                 LoggerUser.getBranchUID(),
                 startDate,
                 endDate));
+    }
+
+    /**
+     * The week pots, each showing what was paid out in its week (owner,
+     * 2026-10-19). A payout comes from the pot whose money it used - Stock
+     * Purchase from the oldest week's savings first - so a delivery received
+     * today may be paid from weeks ago; here it shows in the week it
+     * happened. Copies, so the pots themselves are not changed.
+     */
+    private ResponseList<IncomeExpenses> incomeExpensesByWhenPaid(List<IncomeExpenses> pots) {
+        if (pots.isEmpty())
+            return new ResponseList<>(pots);
+        LocalDate from = pots.stream().map(IncomeExpenses::getWeekStartDate).min(LocalDate::compareTo).get();
+        LocalDate to = pots.stream().map(IncomeExpenses::getWeekStartDate).max(LocalDate::compareTo).get().plusDays(7);
+        Map<String, IncomeExpenses> rows = new LinkedHashMap<>();
+        List<IncomeExpenses> out = new ArrayList<>();
+        for (IncomeExpenses pot : pots) {
+            IncomeExpenses row = new IncomeExpenses();
+            row.setUid(pot.getUid());
+            row.setName(pot.getName());
+            row.setWeekStartDate(pot.getWeekStartDate());
+            row.setPaymentMethod(pot.getPaymentMethod());
+            row.setIncome(pot.getIncome());
+            row.setSpends(new ArrayList<>());
+            row.setExpenses(java.math.BigDecimal.ZERO);
+            rows.put(pot.getName() + "|" + pot.getWeekStartDate(), row);
+            out.add(row);
+        }
+        for (IncomeExpensesDescription d : incomeExpensesDescriptionRepository.paidBetween(LoggerUser.getBranchUID(),
+                from.atStartOfDay(), to.atStartOfDay(), from, to)) {
+            LocalDate on = d.getPaidAt() != null ? d.getPaidAt().toLocalDate() : d.getDescriptionDate();
+            LocalDate week = on.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+            IncomeExpenses row = rows.get(d.getIncomeExpenses().getName() + "|" + week);
+            if (row == null)
+                continue;
+            row.getSpends().add(d);
+            row.setExpenses(row.getExpenses().add(d.getSpendAmount() == null ? java.math.BigDecimal.ZERO : d.getSpendAmount()));
+        }
+        return new ResponseList<>(out);
     }
     /**
      * Mapato na Matumizi for one day (owner, 2026-10-19). The pots are weekly,
@@ -2346,6 +2398,8 @@ public class BarService {
             income.merge(OtherCommissionService.POT_PREFIX + e[0], amount, java.math.BigDecimal::add);
             otherItems = otherItems.add(amount);
         }
+        List<IncomeExpensesDescription> paidThatDay = incomeExpensesDescriptionRepository.paidBetween(branchUID,
+                day.atStartOfDay(), day.plusDays(1).atStartOfDay(), day, day.plusDays(1));
         List<IncomeExpenses> out = new ArrayList<>();
         for (IncomeExpenses pot : incomeExpensesRepository.findByBranchAndWeekRange(branchUID, week, week)) {
             IncomeExpenses row = new IncomeExpenses();
@@ -2357,11 +2411,11 @@ public class BarService {
             if ("Other".equals(pot.getName()))
                 in = in.subtract(otherItems);
             row.setIncome(in);
+            // Whatever was paid out that day, from this pot or an older week's of the same name.
             List<IncomeExpensesDescription> spends = new ArrayList<>();
             java.math.BigDecimal spent = java.math.BigDecimal.ZERO;
-            for (IncomeExpensesDescription d : pot.getSpends()) {
-                LocalDate on = d.getPaidAt() != null ? d.getPaidAt().toLocalDate() : d.getDescriptionDate();
-                if (day.equals(on)) {
+            for (IncomeExpensesDescription d : paidThatDay) {
+                if (pot.getName().equals(d.getIncomeExpenses().getName())) {
                     spends.add(d);
                     spent = spent.add(d.getSpendAmount() == null ? java.math.BigDecimal.ZERO : d.getSpendAmount());
                 }
@@ -4277,6 +4331,50 @@ public class BarService {
         log.info(" Stock And Purchase Descriptions UID :" + incomeExpensesDescription1.getUid());
         return new Response<>(savedStock);
     }
+    /**
+     * Manunuzi > what was bought in the period (owner, 2026-10-19): every
+     * payment out of Manunuzi on the days it was made - a delivery today
+     * shows today, though its money came from several weeks' savings.
+     */
+    public ResponseList<Map<String, Object>> stockPurchaseSpends(String filter) {
+        LocalDate today = LocalDate.now();
+        LocalDate monday = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        LocalDate from, to;
+        switch (filter.toUpperCase()) {
+            case "TODAY", "DAY" -> { from = today; to = today; }
+            case "YESTERDAY" -> { from = today.minusDays(1); to = from; }
+            case "THIS_WEEK" -> { from = monday; to = monday.plusDays(6); }
+            case "LAST_WEEK" -> { from = monday.minusWeeks(1); to = from.plusDays(6); }
+            case "THIS_MONTH" -> { from = today.withDayOfMonth(1); to = today.with(TemporalAdjusters.lastDayOfMonth()); }
+            case "LAST_MONTH" -> { from = today.minusMonths(1).withDayOfMonth(1); to = from.with(TemporalAdjusters.lastDayOfMonth()); }
+            case "THIS_YEAR" -> { from = today.withDayOfYear(1); to = today.with(TemporalAdjusters.lastDayOfYear()); }
+            case "LAST_YEAR" -> { from = today.minusYears(1).withDayOfYear(1); to = from.with(TemporalAdjusters.lastDayOfYear()); }
+            default -> throw new BusinessException("Invalid filter: " + filter);
+        }
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Object[] r : stockAndPurchaseDescriptionsRepository.spentBetween(LoggerUser.getBranchUID(), from, to)) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("date", r[0]);
+            m.put("description", r[1]);
+            m.put("serviceName", r[2]);
+            m.put("amount", r[3] == null ? 0 : ((Number) r[3]).longValue());
+            m.put("outside", false);
+            out.add(m);
+        }
+        // What a delivery cost beyond its product's savings - paid, but not out of Manunuzi.
+        for (Object[] r : supplierDeliveryItemRepository.outsideBetween(LoggerUser.getBranchUID(), from.atStartOfDay(), to.plusDays(1).atStartOfDay())) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("date", ((LocalDateTime) r[0]).toLocalDate());
+            m.put("description", "Mzigo " + (r[1] != null ? r[1] + " · " : "") + r[2] + " · " + r[3]);
+            m.put("serviceName", r[3]);
+            m.put("amount", r[4] == null ? 0 : ((Number) r[4]).longValue());
+            m.put("outside", true);
+            out.add(m);
+        }
+        out.sort((a, b) -> ((LocalDate) b.get("date")).compareTo((LocalDate) a.get("date")));
+        return new ResponseList<>(out);
+    }
+
     public ResponseList<StockAndPurchaseDescriptions> findStockPurchaseByUid(String stockUID){
         log.info(LoggerUser.getEmail() + "Is Accessing Stock And Purchase     " + stockUID);
         log.info(LoggerUser.getEmail() + "Is Accessing Stock And Purchase     " + LoggerUser.getBranchUID());

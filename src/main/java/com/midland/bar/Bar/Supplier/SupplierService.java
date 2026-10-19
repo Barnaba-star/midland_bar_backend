@@ -117,8 +117,8 @@ public class SupplierService {
         boolean fromDrawer = !"false".equalsIgnoreCase(String.valueOf(body.get("fromDrawer")));
         if (fromDrawer)
             workShiftService.requireOpenForPayout();
-        // Each delivered product's part comes out of its Manunuzi savings, the
-        // oldest deliveries first; the Manunuzi report follows.
+        // Oldest deliveries first. Their Manunuzi was used when they arrived;
+        // older ones (from before that) take it now, as they always did.
         String payer = fromDrawer ? LoggerUser.getEmail() : null;
         long left = amount;
         long covered = 0;
@@ -126,8 +126,11 @@ public class SupplierService {
             if (left <= 0)
                 break;
             long part = Math.min(left, item.getAmount() - item.getPaid());
-            String label = "Msambazaji " + s.getName() + (item.getPoCode() != null ? " · " + item.getPoCode() : "") + " · " + item.getServiceName();
-            covered += manunuziService.spend(LoggerUser.getBranchUIDOrMain(), item.getServiceUid(), part, label, method, payer, s.getName());
+            // A delivery whose Manunuzi was used when it arrived is only settled here.
+            if (item.getPotCovered() == null) {
+                String label = "Msambazaji " + s.getName() + (item.getPoCode() != null ? " · " + item.getPoCode() : "") + " · " + item.getServiceName();
+                covered += manunuziService.spend(LoggerUser.getBranchUIDOrMain(), item.getServiceUid(), part, label, method, payer, s.getName());
+            }
             item.setPaid(item.getPaid() + part);
             deliveryItemRepository.save(item);
             left -= part;
@@ -203,17 +206,22 @@ public class SupplierService {
             total += price * packs;
         }
         // Within each product's Manunuzi budget, unless a CEO or manager chose to go over.
+        // A whole pack is bought to replace what was sold (owner, 2026-10-19):
+        // savings that cover part of a pack allow that pack, so going over by
+        // less than one pack is not over the budget.
         Map<String, Long> byProduct = new LinkedHashMap<>();
+        Map<String, Long> packOf = new HashMap<>();
         Map<String, String> names = new HashMap<>();
         for (PurchaseOrderLine l : lines) {
             byProduct.merge(l.getServiceUid(), (long) l.getPacks() * l.getPackPrice(), Long::sum);
+            packOf.merge(l.getServiceUid(), (long) l.getPackPrice(), Math::max);
             names.put(l.getServiceUid(), l.getServiceName());
         }
         Map<String, long[]> budgets = manunuziService.budgets(b);
         List<String> over = new ArrayList<>();
         byProduct.forEach((svc, value) -> {
             long free = budgets.getOrDefault(svc, new long[4])[3];
-            if (value > free)
+            if (value > free && (free <= 0 || value - free >= packOf.get(svc)))
                 over.add(names.get(svc) + " (Tshs " + value + " > Manunuzi Tshs " + Math.max(0, free) + ")");
         });
         boolean allowOver = "true".equalsIgnoreCase(String.valueOf(body.get("allowOverBudget")));
@@ -304,7 +312,11 @@ public class SupplierService {
         e.setEntryByName(CashUpService.nameOf(LoggerUser.getUser()));
         e.setEntryAt(LocalDateTime.now());
         SupplierEntry savedEntry = entryRepository.save(e);
-        delivered.forEach(i -> i.setEntryUid(savedEntry.getUid()));
+        String supplierName = supplierRepository.findById(po.getSupplierUid()).map(Supplier::getName).orElse("");
+        delivered.forEach(i -> {
+            i.setEntryUid(savedEntry.getUid());
+            manunuziService.takeOnDelivery(b, i, supplierName);
+        });
         deliveryItemRepository.saveAll(delivered);
         boolean all = lines.values().stream().allMatch(l -> l.getReceivedPacks() >= l.getPacks());
         po.setStatus(all ? PurchaseOrder.RECEIVED : PurchaseOrder.PARTIAL);

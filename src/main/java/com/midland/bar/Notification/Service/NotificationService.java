@@ -4,7 +4,6 @@ import com.midland.bar.Config.Security.LoggerUser;
 import com.midland.bar.Notification.Model.Notification;
 import com.midland.bar.Notification.Repository.NotificationRepository;
 import com.midland.bar.Bar.Model.SalesOpened;
-import com.midland.bar.Uaa.Model.User;
 import com.midland.bar.Uaa.Repository.UserRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -27,9 +26,11 @@ public class NotificationService {
     private final NotificationRepository notificationRepository;
     private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
+    private final jakarta.persistence.EntityManager entityManager;
 
     private static final int MAX_NOTIFICATIONS = 30;
 
+    @Transactional
     public void notify(
             String userUID,
             String titleKey,
@@ -57,7 +58,8 @@ public class NotificationService {
             }
         }
 
-        notificationRepository.save(notification);
+        // Always a new row: persist, not save - save() would read it first (the uid is set up front).
+        entityManager.persist(notification);
     }
 
     /**
@@ -65,21 +67,22 @@ public class NotificationService {
      * completed — this is the "mauzo mangapi" (how many sales) signal
      * the header notification bell is meant to surface.
      */
+    @Transactional
     public void notifySaleCompleted(SalesOpened sale) {
 
         if (sale.getBranchUid() == null) {
             return;
         }
 
-        List<User> branchUsers = userRepository.findAllUsersWithBranchAndRoles(sale.getBranchUid());
+        List<String> branchUsers = userRepository.findUidsInBranch(sale.getBranchUid());
 
         Map<String, Object> params = new HashMap<>();
         params.put("code", sale.getSalesCode());
         params.put("amount", sale.getPaidAmount());
 
-        for (User user : branchUsers) {
+        for (String userUid : branchUsers) {
             notify(
-                    user.getUid(),
+                    userUid,
                     "NOTIFICATIONS.NEW_SALE_TITLE",
                     "NOTIFICATIONS.NEW_SALE_MESSAGE",
                     params,

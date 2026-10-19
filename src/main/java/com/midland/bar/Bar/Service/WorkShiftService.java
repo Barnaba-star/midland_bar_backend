@@ -174,6 +174,11 @@ public class WorkShiftService {
             shifts.put(s.getUid(), s);
         for (WorkShift s : shiftRepository.findOpenedIn(branchUID, range[0], range[1], email))
             shifts.putIfAbsent(s.getUid(), s);
+        List<String> cashUpUids = shifts.values().stream().map(WorkShift::getCashUpUid).filter(java.util.Objects::nonNull).toList();
+        Map<String, CashUp> cashUps = new java.util.HashMap<>();
+        if (!cashUpUids.isEmpty())
+            for (CashUp c : cashUpRepository.findInBranch(cashUpUids, branchUID))
+                cashUps.put(c.getUid(), c);
         List<Map<String, Object>> rows = new ArrayList<>();
         for (WorkShift s : shifts.values()) {
             Map<String, Object> row = new LinkedHashMap<>();
@@ -185,8 +190,7 @@ public class WorkShiftService {
             row.put("status", s.getStatus());
             LocalDateTime end = s.getClosedAt() != null ? s.getClosedAt() : LocalDateTime.now();
             row.put("minutes", Duration.between(s.getOpenedAt(), end).toMinutes());
-            CashUp cashUp = s.getCashUpUid() == null ? null
-                    : cashUpRepository.findInBranch(s.getCashUpUid(), branchUID).orElse(null);
+            CashUp cashUp = s.getCashUpUid() == null ? null : cashUps.get(s.getCashUpUid());
             row.put("cashUpUid", s.getCashUpUid());
             row.put("expectedTotal", cashUp == null ? null : cashUp.getExpectedTotal());
             row.put("countedTotal", cashUp == null ? null : cashUp.getCountedTotal());

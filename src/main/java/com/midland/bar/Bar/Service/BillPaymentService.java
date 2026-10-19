@@ -225,7 +225,14 @@ public class BillPaymentService {
         java.time.LocalDate start = from == null ? java.time.LocalDate.now() : from;
         java.time.LocalDate end = to == null || to.isBefore(start) ? start : to;
         List<Map<String, Object>> rows = new ArrayList<>();
-        for (SalesOpened bill : salesOpenedRepository.findPaymentNotes(branchUID, start.atStartOfDay(), end.plusDays(1).atStartOfDay())) {
+        List<SalesOpened> bills = salesOpenedRepository.findPaymentNotes(branchUID, start.atStartOfDay(), end.plusDays(1).atStartOfDay());
+        // Unpaid bills have no amount yet: their lines' totals, in one query for all of them.
+        List<String> unpaid = bills.stream().filter(b -> !"PAID".equals(b.getPaymentStatus()) || b.getBill() == null).map(SalesOpened::getUid).toList();
+        Map<String, Long> totals = new java.util.HashMap<>();
+        if (!unpaid.isEmpty())
+            for (Object[] t : barSalesRepository.billTotals(unpaid))
+                totals.put((String) t[0], ((Number) t[1]).longValue());
+        for (SalesOpened bill : bills) {
             Map<String, Object> row = new java.util.LinkedHashMap<>();
             row.put("billUid", bill.getUid());
             row.put("salesCode", bill.getSalesCode());
@@ -234,7 +241,7 @@ public class BillPaymentService {
             row.put("reference", bill.getPaymentNoteRef());
             row.put("notedAt", bill.getPaymentNoteAt());
             row.put("notedBy", bill.getPaymentNoteBy());
-            row.put("amount", "PAID".equals(bill.getPaymentStatus()) && bill.getBill() != null ? bill.getBill() : barSalesRepository.billTotal(bill.getUid()));
+            row.put("amount", "PAID".equals(bill.getPaymentStatus()) && bill.getBill() != null ? bill.getBill() : totals.getOrDefault(bill.getUid(), 0L));
             row.put("owner", bill.getStaffName() != null ? bill.getStaffName() // never the staff code - it is secret
                     : bill.getOpenedByName() != null ? bill.getOpenedByName() : bill.getOpenedBy());
             row.put("paymentStatus", bill.getPaymentStatus());

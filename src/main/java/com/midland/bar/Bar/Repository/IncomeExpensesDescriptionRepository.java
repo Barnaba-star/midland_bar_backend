@@ -14,4 +14,14 @@ public interface IncomeExpensesDescriptionRepository extends JpaRepository<Incom
                                        @org.springframework.data.repository.query.Param("email") String email,
                                        @org.springframework.data.repository.query.Param("from") java.time.LocalDateTime from,
                                        @org.springframework.data.repository.query.Param("to") java.time.LocalDateTime to);
+
+    /** Every pot's payouts made in [from, to) in a branch, with their pot - the reports place them by when they were paid. */
+    @org.springframework.data.jpa.repository.Query("SELECT d FROM IncomeExpensesDescription d JOIN FETCH d.incomeExpenses ie " +
+           "WHERE ie.branchUid = :branchUID AND d.isActive = true AND ((d.paidAt >= :from AND d.paidAt < :to) " +
+           "OR (d.paidAt IS NULL AND d.descriptionDate >= :fromDay AND d.descriptionDate < :toDay))")
+    java.util.List<IncomeExpensesDescription> paidBetween(@org.springframework.data.repository.query.Param("branchUID") String branchUID,
+                                                          @org.springframework.data.repository.query.Param("from") java.time.LocalDateTime from,
+                                                          @org.springframework.data.repository.query.Param("to") java.time.LocalDateTime to,
+                                                          @org.springframework.data.repository.query.Param("fromDay") java.time.LocalDate fromDay,
+                                                          @org.springframework.data.repository.query.Param("toDay") java.time.LocalDate toDay);
 }

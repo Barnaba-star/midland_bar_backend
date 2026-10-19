@@ -27,7 +27,7 @@ class OtherCommissionSplitTest {
     private OtherCommissionService serviceWith(List<OtherCommissionItem> items) {
         OtherCommissionItemRepository repo = mock(OtherCommissionItemRepository.class);
         when(repo.findActive("B1")).thenReturn(items);
-        return new OtherCommissionService(repo, mock(com.midland.bar.Bar.Repository.OtherCommissionEntryRepository.class));
+        return new OtherCommissionService(repo, mock(com.midland.bar.Bar.Repository.OtherCommissionEntryRepository.class), mock(jakarta.persistence.EntityManager.class));
     }
 
     @Test

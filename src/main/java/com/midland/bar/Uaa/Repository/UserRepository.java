@@ -88,6 +88,21 @@ public interface UserRepository extends JpaRepository<User, String> {
 """)
     List<User> findAllUsersWithBranchAndRoles(@Param("branchUID")String branchUID);
 
+    /** Just the uids of a branch's live users - for notifying them, without loading each user, their roles and branches. */
+    @Query("SELECT u.uid FROM User u WHERE u.branch.uid = :branchUID AND u.isActive = true")
+    List<String> findUidsInBranch(@Param("branchUID") String branchUID);
+
+    /**
+     * The heartbeat's write: last_seen only. Saving the whole user every 30 s
+     * per device read the user's roles and branches back first, wrote every
+     * column from a possibly stale copy, and - through the entity listener -
+     * emptied PrincipalCache for everyone each time. A bulk update does none of that.
+     */
+    @Modifying
+    @org.springframework.transaction.annotation.Transactional
+    @Query("UPDATE User u SET u.lastSeen = :at WHERE u.uid = :uid")
+    int touchLastSeen(@Param("uid") String uid, @Param("at") LocalDateTime at);
+
     @Query("""
     SELECT
         u.uid AS uid,

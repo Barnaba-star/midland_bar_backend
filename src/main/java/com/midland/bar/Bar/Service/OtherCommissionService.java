@@ -41,6 +41,12 @@ public class OtherCommissionService {
 
     private final OtherCommissionItemRepository repository;
     private final OtherCommissionEntryRepository entryRepository;
+    private final jakarta.persistence.EntityManager entityManager;
+
+    /** The live list, once per transaction - every line of a sale splits over it. */
+    private List<OtherCommissionItem> activeItems(String branchUID) {
+        return com.midland.bar.Utils.TxMemo.get("otherItems:" + branchUID, () -> repository.findActive(branchUID));
+    }
 
     public ResponseList<OtherCommissionItem> findItems() {
         return new ResponseList<>(repository.findActive(LoggerUser.getBranchUID()));
@@ -53,6 +59,7 @@ public class OtherCommissionService {
      */
     @Transactional
     public ResponseList<OtherCommissionItem> saveItems(List<OtherCommissionItemDTO> items) {
+        com.midland.bar.Utils.TxMemo.forget("otherItems:");
         String branchUID = LoggerUser.getBranchUID();
         if (branchUID == null)
             return new ResponseList<>("No branch found for the current user");
@@ -100,7 +107,7 @@ public class OtherCommissionService {
      */
     public Map<String, BigDecimal> split(BigDecimal otherAmount, String branchUID) {
         Map<String, BigDecimal> parts = new LinkedHashMap<>();
-        List<OtherCommissionItem> list = repository.findActive(branchUID);
+        List<OtherCommissionItem> list = activeItems(branchUID);
         if (list.isEmpty() || otherAmount == null)
             return parts;
         BigDecimal given = BigDecimal.ZERO;
@@ -117,13 +124,15 @@ public class OtherCommissionService {
     }
 
     /** Keeps each item's share of one sale's Other, on the sale's day, for the report. */
+    @org.springframework.transaction.annotation.Transactional
     public void record(Map<String, BigDecimal> parts, LocalDate day) {
         parts.forEach((pot, share) -> {
             OtherCommissionEntry entry = new OtherCommissionEntry();
             entry.setItemName(pot.startsWith(POT_PREFIX) ? pot.substring(POT_PREFIX.length()) : pot);
             entry.setAmount(share);
             entry.setEntryDate(day);
-            entryRepository.save(entry);
+            // Always a new row: persist, not save - save() would read it first (the uid is set up front).
+            entityManager.persist(entry);
         });
     }
 

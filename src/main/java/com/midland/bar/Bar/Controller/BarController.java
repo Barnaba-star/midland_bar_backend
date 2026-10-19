@@ -511,6 +511,11 @@ public class BarController {
     public ResponseList<StockAndPurchaseProjection> getStockAndPurchaseByFilter(@PathVariable  String weekFilter){
         return barService.getStockAndPurchaseByFilter(weekFilter);
     }
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_REPORT')")
+    @GetMapping("/stockPurchaseSpends/{filter}")
+    public ResponseList<java.util.Map<String, Object>> stockPurchaseSpends(@PathVariable String filter) {
+        return barService.stockPurchaseSpends(filter);
+    }
     @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_STOCK_AND_PURCHASE')")
     @PostMapping("/payStockAndPurchase")
     public Response<StockAndPurchase> payStockAndPurchase(@RequestBody  PayStockAndPurchaseDTO payStockAndPurchaseDTO){
