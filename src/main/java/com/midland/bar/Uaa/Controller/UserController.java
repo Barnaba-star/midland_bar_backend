@@ -56,6 +56,11 @@ public class UserController {
                     .badRequest()
                     .body("Provide Login Details");
         }
+        // A browser's autofill or a phone keyboard leaves a space at the end
+        // ("root@root.com "); the app trimmed it, the website did not, so
+        // the same login worked in one and failed in the other.
+        if (loginDTO.getUsername() != null)
+            loginDTO.setUsername(loginDTO.getUsername().trim());
 
         // Too many wrong guesses lately: closed for a while, right or wrong.
         long locked = loginThrottle.lockedMinutes(loginDTO.getUsername(), request);
