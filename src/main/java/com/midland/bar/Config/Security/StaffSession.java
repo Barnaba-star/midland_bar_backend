@@ -29,6 +29,9 @@ public final class StaffSession {
             new Route("GET", Pattern.compile("^/bar/staffSell/[^/]+$")),
             new Route("GET", Pattern.compile("^/bar/live$")),
             new Route("POST", Pattern.compile("^/bar/staffSell/openBill$")),
+            // Handing a bill to a colleague going on with the customer.
+            new Route("GET", Pattern.compile("^/bar/staffSell/colleagues$")),
+            new Route("POST", Pattern.compile("^/bar/staffSell/transfer$")),
             new Route("GET", Pattern.compile("^/bar/staffSell/handover/[^/]+$")),
             new Route("POST", Pattern.compile("^/bar/staffSell/handover/[^/]+/send$")),
             new Route("POST", Pattern.compile("^/bar/staffSell/handover/[^/]+/recall$")),
@@ -61,6 +64,12 @@ public final class StaffSession {
     private static Info info() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         return auth != null && auth.getDetails() instanceof Info i ? i : null;
+    }
+
+    /** The signed-in staff member's uid, or null for an ordinary login. */
+    public static String staffUid() {
+        Info i = info();
+        return i == null ? null : i.staffUid();
     }
 
     /** True while the request comes from a staff code sign-in. */

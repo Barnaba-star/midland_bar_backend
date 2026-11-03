@@ -31,6 +31,10 @@ public interface StaffOrderRepository extends JpaRepository<StaffOrder, String> 
     @Query("SELECT o FROM StaffOrder o WHERE o.staffUid = :staffUid AND o.branchUid = :branchUID AND o.status = 'DRAFT'")
     List<StaffOrder> findDraftsByStaff(@Param("staffUid") String staffUid, @Param("branchUID") String branchUID);
 
+    /** Every order written on a bill, whatever its state - they follow the bill to a new staff member. */
+    @Query("SELECT o FROM StaffOrder o WHERE o.salesOpenedUid = :billUid AND o.branchUid = :branchUID")
+    List<StaffOrder> findAllOnBill(@Param("billUid") String billUid, @Param("branchUID") String branchUID);
+
     /** What the supervisor still has to decide, oldest first. */
     @Query("SELECT DISTINCT o FROM StaffOrder o WHERE o.branchUid = :branchUID AND o.status = 'SENT' ORDER BY o.sentAt")
     List<StaffOrder> findPending(@Param("branchUID") String branchUID);

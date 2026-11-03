@@ -90,6 +90,7 @@ public class BarService {
   private final StaffCodeService staffCodeService;
   private final StaffOrderRepository staffOrderRepository;
   private final BillLineVoidRepository billLineVoidRepository;
+  private final com.midland.bar.Bar.Repository.BillTransferRepository billTransferRepository;
   private final com.midland.bar.Bar.Repository.BarSaleStockRepository barSaleStockRepository;
   private final StaffLossRepository staffLossRepository;
   private final com.midland.bar.Utils.Offline.OfflineOps offlineOps;
@@ -1174,6 +1175,115 @@ public class BarService {
 
         log.info(soldBy + " added " + lines.size() + " line(s) worth " + added + " to bill " + bill.getSalesCode());
         return new Response<>(bill);
+    }
+
+    /**
+     * Hands an unpaid staff bill to another staff member - the waiter going off
+     * while their customer is still drinking. The bill takes the new staff
+     * member's name and code series (JM-2 → AK-1); every line on it, the
+     * lines' split reports and the commission they earned move to them, each
+     * day's commission on the day it was sold; orders still waiting on the
+     * bill go with it, so what the counter receives later is theirs too. The
+     * pots do not change - the money is the same, only whose it is. A
+     * staff session may only give away its own bill. A BillTransfer keeps the
+     * record.
+     */
+    @Transactional
+    public Response<SalesOpened> transferBill(com.midland.bar.Bar.Dto.BillTransferDTO dto) {
+        moneyLock.hold(com.midland.bar.Config.Security.LoggerUser.getBranchUIDOrMain()); // before any row lock - see MoneyLock
+        String branchUID = LoggerUser.getBranchUIDOrMain();
+        SalesOpened bill = salesOpenedRepository.findForUpdate(dto.getBillUid(), branchUID).orElse(null);
+        if (bill == null)
+            return new Response<>("Open Sale Not Found");
+        com.midland.bar.Config.Security.StaffSession.requireOwnBill(bill);
+        if (bill.getStaffUid() == null)
+            return new Response<>("Only a staff member's bill can be handed over");
+        if (!"PENDING".equals(bill.getPaymentStatus()) || "CANCELLED".equals(bill.getStatus()))
+            return new Response<>("Bill " + bill.getSalesCode() + " is already paid - it cannot be handed over");
+        if (bill.getStaffUid().equals(dto.getToStaffUid()))
+            return new Response<>("The bill is already theirs");
+        // Sent for handover: the cashier is counting it. Taken back first.
+        if (bill.getHandoverSentAt() != null)
+            throw new BusinessException(StaffOrderService.HANDOVER_SENT);
+        BarStaff to = barStaffRepository.findBarStaffByUID(dto.getToStaffUid(), branchUID).orElse(null);
+        if (to == null)
+            return new Response<>("That staff member is not in this branch");
+        if (salesOpenedRepository.handoverWaiting(to.getUid(), branchUID))
+            return new Response<>(StaffSellService.fullName(to) + " has already sent their handover - they cannot take a bill now");
+
+        String fromUid = bill.getStaffUid();
+        String fromName = bill.getStaffName();
+        String oldCode = bill.getSalesCode();
+        String toName = StaffSellService.fullName(to);
+
+        // Each line's commission leaves the old staff member's day and lands on the new one's.
+        Map<LocalDate, Integer> cutsByDay = new java.util.TreeMap<>();
+        int moved = 0;
+        for (BarSales line : barSalesRepository.findLinesOfBill(bill.getUid())) {
+            String sellerUid = line.getBarStaff() == null ? null : line.getBarStaff().getUid();
+            List<BarReports> reports = barReportsRepository.findBySalesLine(line.getUid());
+            int cut = 0;
+            for (BarReports report : reports) {
+                cut += report.getStaffAmount() == null ? 0 : report.getStaffAmount();
+                report.setBarStaff(to);
+            }
+            barReportsRepository.saveAll(reports);
+            if (sellerUid != null && !sellerUid.equals(to.getUid()) && cut != 0) {
+                LocalDate soldDay = line.getSoldAt() != null ? line.getSoldAt().toLocalDate()
+                        : (line.getCreatedAt() != null ? line.getCreatedAt() : LocalDate.now());
+                addStaffCommission(sellerUid, branchUID, soldDay, List.of(-cut));
+                cutsByDay.merge(soldDay, cut, Integer::sum);
+                moved += cut;
+            }
+            line.setBarStaff(to);
+            barSalesRepository.save(line);
+        }
+        cutsByDay.forEach((day, cut) -> addStaffCommission(to.getUid(), branchUID, day, List.of(cut)));
+
+        for (StaffOrder order : staffOrderRepository.findAllOnBill(bill.getUid(), branchUID)) {
+            order.setStaffUid(to.getUid());
+            order.setStaffCode(to.getStaffCode());
+            order.setStaffName(toName);
+            staffOrderRepository.save(order);
+        }
+
+        // The new staff member's next free code, so their bill list stays in one series.
+        String prefix = StaffSellService.billPrefix(to) + "-";
+        Set<String> held = new HashSet<>(salesOpenedRepository.findOpenBillCodes(branchUID));
+        int n = 1;
+        while (held.contains(prefix + n))
+            n++;
+        bill.setSalesCode(prefix + n);
+        bill.setStaffUid(to.getUid());
+        bill.setStaffName(toName);
+        bill.setStaffCode(to.getStaffCode());
+        bill.update();
+        salesOpenedRepository.save(bill);
+
+        com.midland.bar.Bar.Model.BillTransfer record = new com.midland.bar.Bar.Model.BillTransfer();
+        record.setBillUid(bill.getUid());
+        record.setOldSalesCode(oldCode);
+        record.setNewSalesCode(bill.getSalesCode());
+        record.setFromStaffUid(fromUid);
+        record.setFromStaffName(fromName);
+        record.setToStaffUid(to.getUid());
+        record.setToStaffName(toName);
+        record.setAmount((int) barSalesRepository.billTotal(bill.getUid()));
+        record.setCommission(moved);
+        String reason = dto.getReason() == null ? "" : dto.getReason().trim();
+        record.setReason(reason.isEmpty() ? null : (reason.length() > 300 ? reason.substring(0, 300) : reason));
+        record.setTransferredBy(LoggerUser.getEmail());
+        record.setTransferredByName(com.midland.bar.Config.Security.StaffSession.active() ? fromName : CashUpService.nameOf(LoggerUser.getUser()));
+        record.setTransferredAt(java.time.LocalDateTime.now());
+        billTransferRepository.save(record);
+        log.info(LoggerUser.getEmail() + " handed bill " + oldCode + " from staff " + fromUid + " to staff " + to.getUid() + " as " + bill.getSalesCode() + " (commission " + moved + ")");
+        return new Response<>(bill);
+    }
+
+    /** Bills handed between staff in a period, newest first. */
+    public com.midland.bar.Utils.Responses.ResponseList<com.midland.bar.Bar.Model.BillTransfer> findBillTransfers(String filter) {
+        java.time.LocalDateTime[] range = ReportRange.of(filter);
+        return new com.midland.bar.Utils.Responses.ResponseList<>(billTransferRepository.findBetween(LoggerUser.getBranchUIDOrMain(), range[0], range[1]));
     }
 
     /**

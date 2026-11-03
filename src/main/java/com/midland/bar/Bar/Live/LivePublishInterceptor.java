@@ -27,7 +27,7 @@ public class LivePublishInterceptor implements HandlerInterceptor {
             new Rule(Pattern.compile("^/bar/staffOrders/(send/[^/]+|offline|exchange|[^/]+/(receive|reject|review))$"), "orders"),
             new Rule(Pattern.compile("^/bar/(payBill|addSaleItems|saveOpenSale|saveBarSales|removeBillLine|staffLoss"
                     + "|deleteEmptyBill/[^/]+|deleteBarSales/[^/]+|bills/[^/]+/(paymentNote|discount)|refunds/.+"
-                    + "|staffSell/openBill|staffSell/handover/.+)$"), "bills")
+                    + "|staffSell/openBill|staffSell/transfer|staffSell/handover/.+)$"), "bills")
     );
 
     private final LiveEvents liveEvents;

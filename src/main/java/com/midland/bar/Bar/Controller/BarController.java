@@ -247,6 +247,27 @@ public class BarController {
         return liveEvents.subscribe(com.midland.bar.Config.Security.LoggerUser.getBranchUIDOrMain(), seesOrders, station);
     }
 
+    /** Staff Sell: who a bill can be handed to - the branch's other staff, by name. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_SALES')")
+    @GetMapping("/staffSell/colleagues")
+    public Response<java.util.List<java.util.Map<String, Object>>> staffSellColleagues(@RequestParam(required = false) String except){
+        return staffSellService.colleagues(except);
+    }
+
+    /** Staff Sell / Sales: hand an unpaid staff bill to another staff member - its commission goes with it. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
+    @PostMapping("/staffSell/transfer")
+    public Response<SalesOpened> transferStaffBill(@Valid @RequestBody com.midland.bar.Bar.Dto.BillTransferDTO dto){
+        return barService.transferBill(dto);
+    }
+
+    /** Bills handed between staff in a period. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_REPORT')")
+    @GetMapping("/staffSell/transfers/{filter}")
+    public ResponseList<com.midland.bar.Bar.Model.BillTransfer> staffBillTransfers(@PathVariable String filter){
+        return barService.findBillTransfers(filter);
+    }
+
     /** Staff Sell: the staff member behind a code, and their unpaid bills. */
     @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_SALES')")
     @GetMapping("/staffSell/{staffCode}")

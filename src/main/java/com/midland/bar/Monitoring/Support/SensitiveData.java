@@ -23,7 +23,7 @@ public final class SensitiveData {
 
     // Staff Sell paths carry the code: /bar/staffSell/1234, .../handover/1234/send, /bar/staffOrders/send/1234.
     private static final Pattern STAFF_CODE_IN_PATH = Pattern.compile(
-            "(/bar/staffSell/handover/|/bar/staffOrders/send/|/bar/staffSell/(?!handover(?:/|$)|unlock$|openBill$|summary/))(?!receive$)[^/?]+"
+            "(/bar/staffSell/handover/|/bar/staffOrders/send/|/bar/staffSell/(?!handover(?:/|$)|unlock$|openBill$|transfer$|colleagues$|transfers/|summary/))(?!receive$)[^/?]+"
     );
 
     private SensitiveData() {

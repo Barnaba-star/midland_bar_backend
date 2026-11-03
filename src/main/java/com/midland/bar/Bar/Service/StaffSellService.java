@@ -337,6 +337,31 @@ public class StaffSellService {
         return staffOrderService.send(staff.get());
     }
 
+    /**
+     * Who a bill can be handed to: the branch's other active staff, by name
+     * only (codes are secret), with whether they have already sent their
+     * handover (they cannot take one then).
+     */
+    public Response<List<Map<String, Object>>> colleagues(String exceptStaffUid) {
+        String branch = LoggerUser.getBranchUIDOrMain();
+        String except = com.midland.bar.Config.Security.StaffSession.active()
+                ? com.midland.bar.Config.Security.StaffSession.staffUid() : exceptStaffUid;
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (var s : barStaffRepository.findBarStaffList(branch)) {
+            if (s.getUid().equals(except))
+                continue;
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("uid", s.getUid());
+            String name = ((s.getFirstName() == null ? "" : s.getFirstName().trim()) + " "
+                    + (s.getLastName() == null ? "" : s.getLastName().trim())).trim();
+            row.put("name", name);
+            row.put("handoverSent", salesOpenedRepository.handoverWaiting(s.getUid(), branch));
+            out.add(row);
+        }
+        out.sort(java.util.Comparator.comparing(r -> ((String) r.get("name")).toUpperCase()));
+        return new Response<>(out);
+    }
+
     private Optional<BarStaff> byCode(String code) {
         String c = StaffCodeService.normalise(code);
         if (c.isEmpty())
