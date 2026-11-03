@@ -67,6 +67,12 @@ public class OwnerAlertService {
                 String.format("Zamu ya %s iko wazi kwa saa %d bila kufungwa.", who, hours));
     }
 
+    /** A staff member reached a Jack Point - waiting for the owner to approve the reward. */
+    public void jackPointWon(String branchUid, String who, String game) {
+        send(branchUid, "ALERTS.JACK_TITLE", "ALERTS.JACK_MESSAGE", Map.of("who", who, "game", game), "/pos/jackPoint",
+                String.format("%s amefikia Jack Point \"%s\". Thibitisha zawadi yake kwenye POS > Jack Point.", who, game));
+    }
+
     /** Yesterday in one message, to every branch that did something. */
     public int morningDigest() {
         LocalDate day = LocalDate.now().minusDays(1);

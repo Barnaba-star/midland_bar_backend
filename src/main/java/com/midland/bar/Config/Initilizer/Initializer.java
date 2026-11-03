@@ -153,7 +153,9 @@ public class Initializer implements ApplicationRunner {
                         // Happy hours / offers, and discounts beyond the cashier limit.
                         "MANAGE_PRICE_RULES", "DISCOUNT_ANY",
                         // The supplier list, orders and paying suppliers.
-                        "MANAGE_SUPPLIERS"
+                        "MANAGE_SUPPLIERS",
+                        // Jack Point: the waiters' game - set up, and approve the winners.
+                        "MANAGE_JACK_POINT"
                 )
         );
 
@@ -169,7 +171,8 @@ public class Initializer implements ApplicationRunner {
                         "SAVE_STAFF", "VIEW_STAFF", "DELETE_STAFF",
                         "VIEW_REPORT", "VIEW_EXPENSES", "VIEW_STOCK_AND_PURCHASE",
                         "SAVE_STORE", "VIEW_STORE", "DELETE_STORE",
-                        "VIEW_DEBT", "MANAGE_DEBT", "REFUND_SALES", "MANAGE_PRICE_RULES", "DISCOUNT_ANY", "MANAGE_SUPPLIERS"
+                        "VIEW_DEBT", "MANAGE_DEBT", "REFUND_SALES", "MANAGE_PRICE_RULES", "DISCOUNT_ANY", "MANAGE_SUPPLIERS",
+                        "MANAGE_JACK_POINT"
                 )
         );
 
@@ -192,6 +195,22 @@ public class Initializer implements ApplicationRunner {
                         "VIEW_STOCK_AND_PURCHASE", "SAVE_STOCK_AND_PURCHASE",
                         // Puts a bill on credit within the customer's limit, and takes their payments.
                         "VIEW_DEBT"
+                )
+        );
+
+        // The accountant (mhasibu, owner 2026-11-04): reads the money side -
+        // sales, reports, expenses, commission, stock and debts - and runs
+        // Jack Point, the waiters' game. Changes nothing else; paying out
+        // stays with the cashier.
+        seedRoleWithPermissions(
+                "ACCOUNTANT",
+                "Accountant - reads sales, reports, expenses and commission; sets up Jack Point and approves its winners",
+                List.of(
+                        "VIEW_BRANCH",
+                        "VIEW_SALES", "VIEW_SERVICE", "VIEW_STAFF",
+                        "VIEW_REPORT", "VIEW_EXPENSES", "VIEW_STOCK_AND_PURCHASE",
+                        "VIEW_STORE", "VIEW_DEBT",
+                        "MANAGE_JACK_POINT"
                 )
         );
 

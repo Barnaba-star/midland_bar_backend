@@ -42,6 +42,10 @@ public class StaffCommissions extends TenantEntity {
     @Column(name = "loss_amount")
     private Integer lossAmount=0;
 
+    /** Jack Point bonuses added to this day - in totalAmount and remainingAmount, but not commission earned on sales. */
+    @Column(name = "bonus_amount")
+    private Integer bonusAmount=0;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "bar_staff_uid")
     @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})

@@ -32,6 +32,8 @@ public final class StaffSession {
             // Handing a bill to a colleague going on with the customer.
             new Route("GET", Pattern.compile("^/bar/staffSell/colleagues$")),
             new Route("POST", Pattern.compile("^/bar/staffSell/transfer$")),
+            // Their own progress on Jack Point, the waiters' game.
+            new Route("POST", Pattern.compile("^/bar/jackPoints/mine$")),
             new Route("GET", Pattern.compile("^/bar/staffSell/handover/[^/]+$")),
             new Route("POST", Pattern.compile("^/bar/staffSell/handover/[^/]+/send$")),
             new Route("POST", Pattern.compile("^/bar/staffSell/handover/[^/]+/recall$")),

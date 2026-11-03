@@ -3396,6 +3396,15 @@ public class BarService {
         }
         return staffCommissionsRepository.save(commission);
     }
+    /** A Jack Point bonus: onto the staff member's commission owed for [day], paid out like any commission. */
+    @Transactional
+    public StaffCommissions addJackPointBonus(String staffUid, String branchUid, LocalDate day, int amount) {
+        moneyLock.hold(branchUid); // before any row lock - see MoneyLock
+        StaffCommissions row = addStaffCommission(staffUid, branchUid, day, List.of(amount));
+        row.setBonusAmount((row.getBonusAmount() == null ? 0 : row.getBonusAmount()) + amount);
+        return staffCommissionsRepository.save(row);
+    }
+
     /** The days a Staff report filter covers: a date (d-M-yyyy) or TODAY, THIS_WEEK, LAST_MONTH... */
     private LocalDate[] staffCommissionRange(String range) {
         LocalDate today = LocalDate.now();

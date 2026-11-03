@@ -26,6 +26,16 @@ public interface StaffCommissionsRepository extends JpaRepository<StaffCommissio
             """)
     Optional<StaffCommissions> findCommission(@Param("staffUid") String staffUid, @Param("branchUid") String branchUid, @Param("date") LocalDate date);
 
+    /** Commission earned on sales per staff member per day (Jack Point bonuses left out): [staffUid, day, amount]. */
+    @Query("""
+                SELECT s.barStaff.uid, s.createdAt, SUM(COALESCE(s.totalAmount, 0) - COALESCE(s.bonusAmount, 0))
+                FROM StaffCommissions s
+                WHERE s.branchUid = :branchUid AND s.isActive = true
+                  AND s.createdAt >= :from AND s.createdAt <= :to
+                GROUP BY s.barStaff.uid, s.createdAt
+            """)
+    List<Object[]> earnedByDay(@Param("branchUid") String branchUid, @Param("from") LocalDate from, @Param("to") LocalDate to);
+
     @Query("""
     SELECT
         s.uid AS uid,
