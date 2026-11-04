@@ -63,6 +63,7 @@ public class DebtService {
     private final UserRepository userRepository;
     private final BranchRepository branchRepository;
     private final com.midland.bar.Bar.Repository.OfferUseRepository offerUseRepository;
+    private final LoyaltyService loyaltyService;
 
     /** The month an offer counts in: from the 1st, 00:00. */
     private static LocalDateTime monthStart() {
@@ -219,21 +220,45 @@ public class DebtService {
         DebtCustomer customer = customerRepository.findForUpdate(customerUid, branchUID)
                 .orElseThrow(() -> new BusinessException("Customer not found"));
         int monthly = customer.getMonthlyOffer() == null ? 0 : customer.getMonthlyOffer();
-        if (monthly <= 0)
-            throw new BusinessException(customer.getName() + " has no offer - a CEO or manager sets it in Madeni");
-        long left = monthly - offerUseRepository.usedSince(customerUid, monthStart());
-        if (amount > left)
-            throw new BusinessException(customer.getName() + " has only " + tzs(Math.max(0, left)) + " of this month's offer left");
+        long monthlyLeft = Math.max(0, monthly - offerUseRepository.usedSince(customerUid, monthStart()));
+        java.util.LinkedHashMap<com.midland.bar.Bar.Model.LoyaltyReward, Long> rewards = loyaltyService.liveRewards(customerUid);
+        long rewardLeft = rewards.values().stream().mapToLong(Long::longValue).sum();
+        if (monthlyLeft + rewardLeft <= 0)
+            throw new BusinessException(customer.getName() + " has no offer left");
+        if (amount > monthlyLeft + rewardLeft)
+            throw new BusinessException(customer.getName() + " has only " + tzs(monthlyLeft + rewardLeft) + " of offer left");
+        // The month's offer first, then earned rewards, soonest to expire first.
+        com.midland.bar.Bar.Model.OfferUse first = null;
+        long rest = amount;
+        long fromMonth = Math.min(rest, monthlyLeft);
+        if (fromMonth > 0) {
+            first = saveUse(bill, customer, (int) fromMonth, null, at);
+            rest -= fromMonth;
+        }
+        for (var e : rewards.entrySet()) {
+            if (rest <= 0)
+                break;
+            long take = Math.min(rest, e.getValue());
+            com.midland.bar.Bar.Model.OfferUse u = saveUse(bill, customer, (int) take, e.getKey().getUid(), at);
+            if (first == null)
+                first = u;
+            rest -= take;
+        }
+        log.info("{} gave {} of bill {} free as {}'s offer", LoggerUser.getEmail(), amount, bill.getSalesCode(), customerUid);
+        return first;
+    }
+
+    private com.midland.bar.Bar.Model.OfferUse saveUse(SalesOpened bill, DebtCustomer customer, int amount, String rewardUid, LocalDateTime at) {
         com.midland.bar.Bar.Model.OfferUse use = new com.midland.bar.Bar.Model.OfferUse();
-        use.setCustomerUid(customerUid);
+        use.setCustomerUid(customer.getUid());
         use.setCustomerName(customer.getName());
         use.setBillUid(bill.getUid());
         use.setBillCode(bill.getSalesCode());
         use.setAmount(amount);
+        use.setRewardUid(rewardUid);
         use.setUsedBy(LoggerUser.getEmail());
         use.setUsedByName(displayName(LoggerUser.getEmail()));
         use.setUsedAt(at);
-        log.info("{} gave {} of bill {} free as {}'s offer", LoggerUser.getEmail(), amount, bill.getSalesCode(), customerUid);
         return offerUseRepository.save(use);
     }
 
@@ -292,36 +317,30 @@ public class DebtService {
     }
 
     /**
-     * A waiter notes a bill as ofa / deni for a customer: the code the
-     * customer gave must be theirs, and the bill must fit in what they have
-     * left now (it is checked again when the cashier takes it). Returns the
-     * customer's name.
+     * A waiter notes a bill as ofa / deni: the customer typed their phone and
+     * PIN, and the bill must fit in what they have left now (checked again
+     * when the cashier takes it).
      */
-    public String checkForNote(String method, String customerUid, String code, long billTotal) {
-        String branchUID = LoggerUser.getBranchUIDOrMain();
+    public DebtCustomer checkForNote(String method, String phone, String pin, long billTotal) {
         boolean offer = OFFER_METHOD.equals(method);
-        if (customerUid == null || customerUid.isBlank())
-            throw new BusinessException(offer ? "Choose the customer the offer is for" : "Choose the customer the bill goes on credit to");
-        DebtCustomer c = customerRepository.findInBranch(customerUid, branchUID)
-                .orElseThrow(() -> new BusinessException("Customer not found"));
-        String given = code == null ? "" : code.trim();
-        if (c.getCustomerCode() == null || !c.getCustomerCode().equals(given))
-            throw new BusinessException("WRONG_CUSTOMER_CODE");
-        long left = offer
-                ? (c.getMonthlyOffer() == null ? 0 : c.getMonthlyOffer()) - offerUseRepository.usedSince(customerUid, monthStart())
-                : (c.getCreditLimit() == null ? 0 : c.getCreditLimit()) - entryRepository.balanceOf(customerUid);
+        DebtCustomer c = loyaltyService.verify(phone, pin);
+        long left = offer ? loyaltyService.offerLeft(c)
+                : (c.getCreditLimit() == null ? 0 : c.getCreditLimit()) - entryRepository.balanceOf(c.getUid());
         if (billTotal > left)
             throw new BusinessException(offer
-                    ? c.getName() + " has only " + tzs(Math.max(0, left)) + " of this month's offer left"
+                    ? c.getName() + " has only " + tzs(Math.max(0, left)) + " of offer left"
                     : c.getName() + " can take at most " + tzs(Math.max(0, left)) + " more on credit");
-        return c.getName();
+        return c;
     }
 
-    private static void putOffer(Map<String, Object> r, DebtCustomer c, long used) {
+    private void putOffer(Map<String, Object> r, DebtCustomer c, long used) {
         int monthly = c.getMonthlyOffer() == null ? 0 : c.getMonthlyOffer();
+        long reward = loyaltyService.rewardLeft(c.getUid());
         r.put("monthlyOffer", monthly);
         r.put("offerUsed", used);
-        r.put("offerLeft", Math.max(0, monthly - used));
+        r.put("rewardLeft", reward);
+        r.put("offerLeft", Math.max(0, monthly - used) + reward);
+        r.put("hasPin", c.getPinHash() != null);
     }
 
     /** The customer's name, for the bill payment it was charged by. */
@@ -529,7 +548,6 @@ public class DebtService {
         r.put("uid", c.getUid());
         r.put("name", c.getName());
         r.put("phone", c.getPhone());
-        r.put("customerCode", c.getCustomerCode());
         r.put("note", c.getNote());
         r.put("creditLimit", limit);
         r.put("balance", balance);

@@ -73,6 +73,13 @@ public class SalesOpened extends TenantEntity {
     @Column(name = "payment_note_customer_uid")
     private String paymentNoteCustomerUid;
 
+    /** The customer who gave their phone + PIN on this bill: it counts towards their loyalty reward. */
+    @Column(name = "loyalty_customer_uid")
+    private String loyaltyCustomerUid;
+
+    @Column(name = "loyalty_customer_name", length = 80)
+    private String loyaltyCustomerName;
+
     @Column(name = "payment_note_by")
     private String paymentNoteBy;
 

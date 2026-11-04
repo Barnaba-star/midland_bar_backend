@@ -17,7 +17,7 @@ public final class SensitiveData {
     // A staff member's code is their secret too (typed at Staff Sell to open
     // their bills), as is their PIN: "staffCode": "1234" -> "staffCode": "***".
     private static final Pattern STAFF_SECRET_FIELD = Pattern.compile(
-            "(\"(?:staffCode|newCode|currentCode|pin|newPin|confirmPin|issuedPin)\"\\s*:\\s*)(?:\"[^\"]*\"|\\d+)",
+            "(\"(?:staffCode|newCode|currentCode|pin|newPin|confirmPin|issuedPin|customerPin)\"\\s*:\\s*)(?:\"[^\"]*\"|\\d+)",
             Pattern.CASE_INSENSITIVE
     );
 

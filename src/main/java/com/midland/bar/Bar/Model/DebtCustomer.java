@@ -46,6 +46,17 @@ public class DebtCustomer extends TenantEntity {
     @Column(name = "customer_code", length = 6)
     private String customerCode;
 
+    /** The customer's own PIN (bcrypt) - typed by them, never seen by the waiter. */
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    @Column(name = "pin_hash")
+    private String pinHash;
+
+    @Column(name = "pin_tries")
+    private Integer pinTries;
+
+    @Column(name = "pin_locked_until")
+    private LocalDateTime pinLockedUntil;
+
     @Column(name = "note", length = 200)
     private String note;
 

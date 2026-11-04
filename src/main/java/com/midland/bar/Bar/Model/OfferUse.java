@@ -37,6 +37,10 @@ public class OfferUse extends TenantEntity {
     @Column(name = "amount", nullable = false)
     private Integer amount;
 
+    /** The loyalty reward this part came out of; null = the customer's monthly offer. */
+    @Column(name = "reward_uid")
+    private String rewardUid;
+
     @Column(name = "used_by", nullable = false)
     private String usedBy;
 

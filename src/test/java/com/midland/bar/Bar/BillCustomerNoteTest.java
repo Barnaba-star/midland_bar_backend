@@ -77,6 +77,10 @@ class BillCustomerNoteTest {
         total = barSalesRepository.billTotal(bill.getUid());
     }
 
+    @Autowired com.midland.bar.Bar.Service.LoyaltyService loyaltyService;
+
+    private static final String PIN = "4826";
+
     private Map<String, Object> customer(String phone, int limit, int offer) {
         DebtCustomerDTO c = new DebtCustomerDTO();
         c.setName("Mteja Test");
@@ -84,15 +88,16 @@ class BillCustomerNoteTest {
         c.setCreditLimit(limit);
         c.setMonthlyOffer(offer);
         Map<String, Object> saved = debtService.save(null, c, true).getData();
-        assertNotNull(saved.get("customerCode"), "every new customer gets a code");
+        loyaltyService.register(null, phone, PIN);
+        saved.put("phone", phone);
         return saved;
     }
 
-    private PaymentNoteDTO note(String method, Map<String, Object> c, String code) {
+    private PaymentNoteDTO note(String method, Map<String, Object> c, String pin) {
         PaymentNoteDTO dto = new PaymentNoteDTO();
         dto.setMethod(method);
-        dto.setCustomerUid((String) c.get("uid"));
-        dto.setCustomerCode(code);
+        dto.setPhone((String) c.get("phone"));
+        dto.setPin(pin);
         return dto;
     }
 
@@ -109,18 +114,16 @@ class BillCustomerNoteTest {
     }
 
     @Test
-    void anOfferBillNeedsTheCustomersCodeAndIsTakenAtHandover() {
+    void anOfferBillNeedsTheCustomersPinAndIsTakenAtHandover() {
         Map<String, Object> c = customer("0711000031", 0, (int) total + 5000);
-        String code = (String) c.get("customerCode");
 
         BusinessException wrong = assertThrows(BusinessException.class,
-                () -> billPaymentService.paymentNote(bill.getUid(), note("ofa", c, code.equals("0000") ? "1111" : "0000")));
-        assertEquals("WRONG_CUSTOMER_CODE", wrong.getMessage());
+                () -> billPaymentService.paymentNote(bill.getUid(), note("ofa", c, "9371")));
+        assertEquals(com.midland.bar.Bar.Service.LoyaltyService.WRONG_PIN, wrong.getMessage());
 
-        SalesOpened noted = billPaymentService.paymentNote(bill.getUid(), note("ofa", c, code)).getData();
+        SalesOpened noted = billPaymentService.paymentNote(bill.getUid(), note("ofa", c, PIN)).getData();
         assertEquals("ofa", noted.getPaymentNoteMethod());
         assertEquals("MTEJA TEST", noted.getPaymentNotePayer());
-        assertTrue(debtService.noteCustomers("ofa").getData().stream().anyMatch(r -> c.get("uid").equals(r.get("uid"))));
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> rows = (List<Map<String, Object>>) ((Map<String, Object>) staffSellService.handover(waiter.getStaffCode()).getData().get("open")).get("byMethod");
@@ -133,20 +136,97 @@ class BillCustomerNoteTest {
     }
 
     @Test
+    void ofaAtTheTillNeedsThePinOnTheBill() {
+        Map<String, Object> c = customer("0711000034", 0, (int) total + 5000);
+        PayBillDTO pay = new PayBillDTO();
+        pay.setSalesOpenedUID(bill.getUid());
+        PayBillDTO.Part part = new PayBillDTO.Part();
+        part.setMethod("ofa");
+        part.setAmount((int) total);
+        part.setCustomerUid((String) c.get("uid"));
+        pay.setPayments(List.of(part));
+        assertEquals("CUSTOMER_PIN_NEEDED", billPaymentService.payBill(pay).getMessage());
+
+        assertNotNull(loyaltyService.attach(bill.getUid(), "0711000034", PIN).getData());
+        assertNotNull(billPaymentService.payBill(pay).getData());
+    }
+
+    @Test
+    void enoughBigBillsEarnAnOfferThatIsSpentAndTheCountStartsAgain() {
+        com.midland.bar.Bar.Model.LoyaltyRule rule = new com.midland.bar.Bar.Model.LoyaltyRule();
+        rule.setEnabled(true);
+        rule.setMinBill((int) Math.max(1000, total));
+        rule.setBillsNeeded(2);
+        rule.setPeriodDays(30);
+        rule.setRewardAmount((int) total);
+        assertNotNull(loyaltyService.saveRule(rule).getData());
+        if (total < 1000)
+            return; // the test item is too cheap for the minimum - nothing more to see
+        loyaltyService.register("Mzee Loyal", "0711000035", PIN);
+
+        for (int i = 0; i < 2; i++) {
+            SalesOpened b = i == 0 ? bill : newBill();
+            assertNotNull(loyaltyService.attach(b.getUid(), "0711000035", PIN).getData());
+            assertNotNull(billPaymentService.payBill(cash(b)).getData());
+        }
+        Map<String, Object> card = loyaltyService.card(loyaltyService.verify("0711000035", PIN));
+        assertEquals(total, ((Number) card.get("offerLeft")).longValue(), "two big bills earned the reward");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> progress = (Map<String, Object>) card.get("loyalty");
+        assertEquals(0, ((Number) progress.get("visits")).intValue(), "the count starts again");
+
+        SalesOpened third = newBill();
+        assertNotNull(loyaltyService.attach(third.getUid(), "0711000035", PIN).getData());
+        PayBillDTO pay = new PayBillDTO();
+        pay.setSalesOpenedUID(third.getUid());
+        PayBillDTO.Part part = new PayBillDTO.Part();
+        part.setMethod("ofa");
+        part.setAmount((int) total);
+        part.setCustomerUid((String) card.get("uid"));
+        pay.setPayments(List.of(part));
+        assertNotNull(billPaymentService.payBill(pay).getData());
+        assertEquals(0, loyaltyService.rewardLeft((String) card.get("uid")), "the reward is spent");
+    }
+
+    private SalesOpened newBill() {
+        StaffBillDTO b = new StaffBillDTO();
+        b.setStaffCode(waiter.getStaffCode());
+        SalesOpened opened = staffSellService.openBill(b).getData();
+        SaleItemsDTO sale = new SaleItemsDTO();
+        sale.setSalesOpenedUID(opened.getUid());
+        SaleItemsDTO.Item item = new SaleItemsDTO.Item();
+        item.setBarServiceUID(MSHIKAKI);
+        item.setQuantity(1);
+        sale.setItems(List.of(item));
+        assertNotNull(barService.addItemsToBill(sale).getData());
+        return opened;
+    }
+
+    private PayBillDTO cash(SalesOpened b) {
+        PayBillDTO pay = new PayBillDTO();
+        pay.setSalesOpenedUID(b.getUid());
+        PayBillDTO.Part part = new PayBillDTO.Part();
+        part.setMethod("cash");
+        part.setAmount((int) barSalesRepository.billTotal(b.getUid()));
+        pay.setPayments(List.of(part));
+        return pay;
+    }
+
+    @Test
     void aCreditBillGoesOnTheCustomersAccountAndCashClearsTheNote() {
         Map<String, Object> small = customer("0711000032", (int) total - 1, 0);
         assertThrows(BusinessException.class,
-                () -> billPaymentService.paymentNote(bill.getUid(), note("deni", small, (String) small.get("customerCode"))),
+                () -> billPaymentService.paymentNote(bill.getUid(), note("deni", small, PIN)),
                 "a bill over what is left on credit is refused");
 
         Map<String, Object> c = customer("0711000033", (int) total + 1000, 0);
-        assertNotNull(billPaymentService.paymentNote(bill.getUid(), note("deni", c, (String) c.get("customerCode"))).getData());
+        assertNotNull(billPaymentService.paymentNote(bill.getUid(), note("deni", c, PIN)).getData());
 
         PaymentNoteDTO cash = new PaymentNoteDTO();
         cash.setMethod("cash");
         assertNull(billPaymentService.paymentNote(bill.getUid(), cash).getData().getPaymentNoteMethod(), "cash is the default: no note");
 
-        assertNotNull(billPaymentService.paymentNote(bill.getUid(), note("deni", c, (String) c.get("customerCode"))).getData());
+        assertNotNull(billPaymentService.paymentNote(bill.getUid(), note("deni", c, PIN)).getData());
         receive("deni");
         assertEquals(total, debtEntryRepository.balanceOf((String) c.get("uid")));
     }

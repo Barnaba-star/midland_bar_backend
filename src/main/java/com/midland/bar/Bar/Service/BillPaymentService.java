@@ -3,6 +3,7 @@ package com.midland.bar.Bar.Service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.midland.bar.Bar.Dto.PayBillDTO;
 import com.midland.bar.Bar.Model.BillPayment;
+import com.midland.bar.Bar.Model.DebtCustomer;
 import com.midland.bar.Bar.Model.SalesOpened;
 import com.midland.bar.Bar.Projection.BarProjection;
 import com.midland.bar.Bar.Repository.BarSalesRepository;
@@ -43,6 +44,7 @@ public class BillPaymentService {
     private final com.midland.bar.Utils.Offline.OfflineOps offlineOps;
     private final com.midland.bar.Uaa.Repository.UserRepository userRepository;
     private final DebtService debtService;
+    private final LoyaltyService loyaltyService;
     private final BarService barService;
     private final com.midland.bar.Bar.Repository.OfferUseRepository offerUseRepository;
     private final com.midland.bar.Setting.Repository.SystemSettingRepository systemSettingRepository;
@@ -93,6 +95,10 @@ public class BillPaymentService {
                 return new Response<>("Unknown payment method: " + part.getMethod());
             if (offer && (part.getCustomerUid() == null || part.getCustomerUid().isBlank()))
                 return new Response<>("Choose the customer the offer is for");
+            // Ofa goes only to the customer who typed their PIN on this bill.
+            if (offer && !part.getCustomerUid().equals(bill.getPaymentNoteCustomerUid())
+                    && !part.getCustomerUid().equals(bill.getLoyaltyCustomerUid()))
+                return new Response<>("CUSTOMER_PIN_NEEDED");
             if (credit && (part.getCustomerUid() == null || part.getCustomerUid().isBlank()))
                 return new Response<>("Choose the customer the bill goes on credit to");
             int amount = part.getAmount();
@@ -153,6 +159,8 @@ public class BillPaymentService {
         }
         bill.update();
         SalesOpened saved = salesOpenedRepository.save(bill);
+        // A big enough bill of a known customer counts towards their reward.
+        loyaltyService.recordVisit(saved, due, now);
 
         try {
             notificationService.notifySaleCompleted(saved);
@@ -171,7 +179,7 @@ public class BillPaymentService {
      * so the cashier can match it at handover. It marks nothing as paid.
      * A staff member signed in with their code may note only their own bills.
      */
-    @Transactional
+    @org.springframework.transaction.annotation.Transactional(noRollbackFor = BusinessException.class)
     public Response<SalesOpened> paymentNote(String billUid, com.midland.bar.Bar.Dto.PaymentNoteDTO dto) {
         String branchUID = LoggerUser.getBranchUIDOrMain();
         SalesOpened bill = salesOpenedRepository.findById(billUid)
@@ -200,13 +208,16 @@ public class BillPaymentService {
         }
         boolean customerNote = DebtService.OFFER_METHOD.equals(method) || DebtService.METHOD.equals(method);
         if (customerNote) {
-            // Ofa / deni: a Madeni customer, proved by the code they give.
-            String name = debtService.checkForNote(method, dto.getCustomerUid(), dto.getCustomerCode(),
+            // Ofa / deni: a Madeni customer, proved by their phone + their own PIN.
+            DebtCustomer customer = debtService.checkForNote(method, dto.getPhone(), dto.getPin(),
                     barSalesRepository.billTotal(bill.getUid()));
             bill.setPaymentNoteMethod(method);
-            bill.setPaymentNotePayer(name);
+            bill.setPaymentNotePayer(customer.getName());
             bill.setPaymentNoteRef(null);
-            bill.setPaymentNoteCustomerUid(dto.getCustomerUid());
+            bill.setPaymentNoteCustomerUid(customer.getUid());
+            // Their bill counts towards their loyalty reward too.
+            bill.setLoyaltyCustomerUid(customer.getUid());
+            bill.setLoyaltyCustomerName(customer.getName());
             bill.setPaymentNoteBy(LoggerUser.getEmail());
             bill.setPaymentNoteAt(com.midland.bar.Utils.Offline.OfflineContext.now());
             return new Response<>(salesOpenedRepository.save(bill));

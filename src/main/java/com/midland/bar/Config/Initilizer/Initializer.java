@@ -155,7 +155,9 @@ public class Initializer implements ApplicationRunner {
                         // The supplier list, orders and paying suppliers.
                         "MANAGE_SUPPLIERS",
                         // Jack Point: the waiters' game - set up, and approve the winners.
-                        "MANAGE_JACK_POINT"
+                        "MANAGE_JACK_POINT",
+                        // Customer loyalty: the bill amount, how many bills, the reward.
+                        "MANAGE_LOYALTY"
                 )
         );
 
@@ -172,7 +174,7 @@ public class Initializer implements ApplicationRunner {
                         "VIEW_REPORT", "VIEW_EXPENSES", "VIEW_STOCK_AND_PURCHASE",
                         "SAVE_STORE", "VIEW_STORE", "DELETE_STORE",
                         "VIEW_DEBT", "MANAGE_DEBT", "REFUND_SALES", "MANAGE_PRICE_RULES", "DISCOUNT_ANY", "MANAGE_SUPPLIERS",
-                        "MANAGE_JACK_POINT"
+                        "MANAGE_JACK_POINT", "MANAGE_LOYALTY"
                 )
         );
 
@@ -194,7 +196,9 @@ public class Initializer implements ApplicationRunner {
                         "PAY_STAFF",
                         "VIEW_STOCK_AND_PURCHASE", "SAVE_STOCK_AND_PURCHASE",
                         // Puts a bill on credit within the customer's limit, and takes their payments.
-                        "VIEW_DEBT"
+                        "VIEW_DEBT",
+                        // Owner: the manager, cashier or boss sets the loyalty rule.
+                        "MANAGE_LOYALTY"
                 )
         );
 
