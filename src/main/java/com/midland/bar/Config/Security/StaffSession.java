@@ -55,6 +55,7 @@ public final class StaffSession {
             new Route("GET", Pattern.compile("^/bar/bills/noteCustomers$")),
             // Customer loyalty: the rule, and the customer naming themselves on a bill.
             new Route("GET", Pattern.compile("^/bar/loyalty/rule$")),
+            new Route("GET", Pattern.compile("^/bar/loyalty/bills/[^/]+/ask$")),
             new Route("POST", Pattern.compile("^/bar/loyalty/(identify|register)$")),
             new Route("POST", Pattern.compile("^/bar/loyalty/bills/[^/]+$")),
             new Route("GET", Pattern.compile("^/uploads/.+$"))

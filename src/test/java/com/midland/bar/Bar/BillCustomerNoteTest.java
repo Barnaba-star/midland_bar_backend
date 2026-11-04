@@ -162,6 +162,7 @@ class BillCustomerNoteTest {
         assertNotNull(loyaltyService.saveRule(rule).getData());
         if (total < 1000)
             return; // the test item is too cheap for the minimum - nothing more to see
+        assertEquals(Boolean.TRUE, loyaltyService.askFor(bill.getUid()).getData().get("ask"), "a bill at the amount asks for the code");
         loyaltyService.register("Mzee Loyal", "0711000035", PIN);
 
         for (int i = 0; i < 2; i++) {

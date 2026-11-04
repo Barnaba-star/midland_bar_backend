@@ -46,9 +46,37 @@ public class LoyaltyService {
 
     // ---------------------------------------------------------------- rule
 
-    /** The branch's rule; a fresh, switched-off one when none was saved. */
+    /**
+     * The branch's rule. A branch without its own follows the main office's
+     * (a ROOT/DIRECTOR login has no branch, so what they set is saved there);
+     * a fresh, switched-off one when neither was saved.
+     */
     public LoyaltyRule rule() {
-        return ruleRepository.findInBranch(LoggerUser.getBranchUIDOrMain()).orElseGet(LoyaltyRule::new);
+        String branch = LoggerUser.getBranchUIDOrMain();
+        return ruleRepository.findInBranch(branch)
+                .or(() -> "MAIN_OFFICE".equals(branch) ? Optional.empty() : ruleRepository.findInBranch("MAIN_OFFICE"))
+                .orElseGet(LoyaltyRule::new);
+    }
+
+    /**
+     * Should this bill ask "does the customer have a code?" - worked out here
+     * from the bill's lines (a screen's copy of the total can be stale).
+     */
+    public Response<Map<String, Object>> askFor(String billUid) {
+        String branchUID = LoggerUser.getBranchUIDOrMain();
+        SalesOpened bill = salesOpenedRepository.findById(billUid).filter(b -> branchUID.equals(b.getBranchUid())).orElse(null);
+        if (bill == null)
+            return new Response<>("Open Sale Not Found");
+        LoyaltyRule rule = rule();
+        long total = barSalesRepository.billTotal(bill.getUid());
+        boolean on = rule.getUid() != null && Boolean.TRUE.equals(rule.getEnabled());
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("ask", on && total >= rule.getMinBill() && bill.getLoyaltyCustomerUid() == null);
+        m.put("enabled", on);
+        m.put("minBill", rule.getMinBill());
+        m.put("total", total);
+        m.put("customerName", bill.getLoyaltyCustomerName());
+        return new Response<>(m);
     }
 
     public Response<Map<String, Object>> ruleView() {

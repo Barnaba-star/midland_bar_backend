@@ -45,6 +45,13 @@ public class LoyaltyController {
         return new Response<>(loyaltyService.card(loyaltyService.register(dto.getName(), dto.getPhone(), dto.getPin())));
     }
 
+    /** Whether this bill asks for the customer's code (total from its lines, against the rule). */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
+    @GetMapping("/bills/{billUid}/ask")
+    public Response<Map<String, Object>> ask(@PathVariable String billUid) {
+        return loyaltyService.askFor(billUid);
+    }
+
     /** The customer named themselves on this bill: it counts for them when paid. */
     @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
     @PostMapping("/bills/{billUid}")
