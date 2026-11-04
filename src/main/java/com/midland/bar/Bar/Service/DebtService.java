@@ -321,9 +321,11 @@ public class DebtService {
      * PIN, and the bill must fit in what they have left now (checked again
      * when the cashier takes it).
      */
-    public DebtCustomer checkForNote(String method, String phone, String pin, long billTotal) {
+    public DebtCustomer checkForNote(String method, String phone, String pin, String provenUid, long billTotal) {
         boolean offer = OFFER_METHOD.equals(method);
-        DebtCustomer c = loyaltyService.verify(phone, pin);
+        DebtCustomer c = provenUid != null
+                ? customerRepository.findInBranch(provenUid, LoggerUser.getBranchUIDOrMain()).orElseThrow(() -> new BusinessException("Customer not found"))
+                : loyaltyService.verify(phone, pin);
         long left = offer ? loyaltyService.offerLeft(c)
                 : (c.getCreditLimit() == null ? 0 : c.getCreditLimit()) - entryRepository.balanceOf(c.getUid());
         if (billTotal > left)

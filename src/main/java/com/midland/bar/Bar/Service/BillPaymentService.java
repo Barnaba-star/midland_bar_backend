@@ -98,7 +98,7 @@ public class BillPaymentService {
             // Ofa goes only to the customer who typed their PIN on this bill.
             if (offer && !part.getCustomerUid().equals(bill.getPaymentNoteCustomerUid())
                     && !part.getCustomerUid().equals(bill.getLoyaltyCustomerUid()))
-                return new Response<>("CUSTOMER_PIN_NEEDED");
+                return new Response<>("The customer must type their phone and PIN on this bill to use the offer");
             if (credit && (part.getCustomerUid() == null || part.getCustomerUid().isBlank()))
                 return new Response<>("Choose the customer the bill goes on credit to");
             int amount = part.getAmount();
@@ -209,8 +209,10 @@ public class BillPaymentService {
         boolean customerNote = DebtService.OFFER_METHOD.equals(method) || DebtService.METHOD.equals(method);
         if (customerNote) {
             // Ofa / deni: a Madeni customer, proved by their phone + their own PIN.
-            DebtCustomer customer = debtService.checkForNote(method, dto.getPhone(), dto.getPin(),
-                    barSalesRepository.billTotal(bill.getUid()));
+            // Or the customer who already typed their PIN on this bill (loyalty).
+            boolean onBill = (dto.getPhone() == null || dto.getPhone().isBlank()) && bill.getLoyaltyCustomerUid() != null;
+            DebtCustomer customer = debtService.checkForNote(method, onBill ? null : dto.getPhone(), dto.getPin(),
+                    onBill ? bill.getLoyaltyCustomerUid() : null, barSalesRepository.billTotal(bill.getUid()));
             bill.setPaymentNoteMethod(method);
             bill.setPaymentNotePayer(customer.getName());
             bill.setPaymentNoteRef(null);

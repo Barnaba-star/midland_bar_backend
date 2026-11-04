@@ -145,7 +145,7 @@ class BillCustomerNoteTest {
         part.setAmount((int) total);
         part.setCustomerUid((String) c.get("uid"));
         pay.setPayments(List.of(part));
-        assertEquals("CUSTOMER_PIN_NEEDED", billPaymentService.payBill(pay).getMessage());
+        assertNull(billPaymentService.payBill(pay).getData(), "no PIN on the bill, no offer");
 
         assertNotNull(loyaltyService.attach(bill.getUid(), "0711000034", PIN).getData());
         assertNotNull(billPaymentService.payBill(pay).getData());
