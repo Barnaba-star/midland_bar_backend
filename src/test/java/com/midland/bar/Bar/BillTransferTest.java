@@ -44,6 +44,7 @@ class BillTransferTest {
     @Autowired BarSalesRepository barSalesRepository;
     @Autowired StaffCommissionsRepository staffCommissionsRepository;
     @Autowired com.midland.bar.Bar.Service.WorkShiftService workShiftService;
+    @Autowired com.midland.bar.Bar.Repository.BarStaffRepository barStaffRepository;
 
     private BarStaff leaving;
     private BarStaff staying;
@@ -153,5 +154,17 @@ class BillTransferTest {
         assertNull(barService.transferBill(to(staying)).getData());
         assertTrue(staffSellService.colleagues(leaving.getUid()).getData().stream()
                 .anyMatch(c -> c.get("uid").equals(staying.getUid()) && Boolean.TRUE.equals(c.get("handoverSent"))));
+    }
+
+    @Test
+    void mainOfficeLoginsAreNotOfferedNorTakenAsColleagues() {
+        BarStaff boss = staff("Root", "Ofisini", "0700000013");
+        boss.setUserUid(userRepository.findByUsernameForAuthentication(LOGIN).getUid());
+        barStaffRepository.saveAndFlush(boss);
+
+        List<java.util.Map<String, Object>> names = staffSellService.colleagues(leaving.getUid()).getData();
+        assertTrue(names.stream().anyMatch(r -> staying.getUid().equals(r.get("uid"))), "a fellow waiter is listed");
+        assertTrue(names.stream().noneMatch(r -> boss.getUid().equals(r.get("uid"))), "the main office is not");
+        assertNull(barService.transferBill(to(boss)).getData(), "and cannot be handed a bill");
     }
 }

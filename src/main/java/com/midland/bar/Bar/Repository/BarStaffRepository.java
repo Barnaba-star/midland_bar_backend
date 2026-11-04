@@ -22,7 +22,7 @@ public interface BarStaffRepository extends JpaRepository<BarStaff, String> {
 
     @Query("""
             SELECT s.uid as uid, s.staffCode as staffCode, s.firstName as firstName, s.middleName as middleName, s.lastName as lastName, s.dateOfBirth as dateOfBirth, s.phoneNumber as phoneNumber,
-            s.description as description, s.gender as gender, s.barCategory as barCategory, s.isActive as active FROM BarStaff s  WHERE s.branchUid=:branchUID AND s.isActive=true
+            s.description as description, s.gender as gender, s.barCategory as barCategory, s.isActive as active, s.userUid as userUid FROM BarStaff s  WHERE s.branchUid=:branchUID AND s.isActive=true
             """)
     List<BarProjection> findBarStaffList(String branchUID);
 

@@ -355,8 +355,11 @@ public class StaffSellService {
         String except = com.midland.bar.Config.Security.StaffSession.active()
                 ? com.midland.bar.Config.Security.StaffSession.staffUid() : exceptStaffUid;
         List<Map<String, Object>> out = new ArrayList<>();
-        for (var s : barStaffRepository.findBarStaffList(branch)) {
-            if (s.getUid().equals(except))
+        var all = barStaffRepository.findBarStaffList(branch);
+        // Only fellow waiters: never the main office (ROOT, DIRECTOR, STAFF, ADMIN).
+        java.util.Set<String> mainOffice = barServiceProvider.getObject().mainOfficeStaffUids(all, branch);
+        for (var s : all) {
+            if (s.getUid().equals(except) || mainOffice.contains(s.getUid()))
                 continue;
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("uid", s.getUid());

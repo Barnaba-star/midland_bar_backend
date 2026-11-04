@@ -645,6 +645,21 @@ public class BarService {
      * or else the only user of the branch with the same first and last name
      * (staff typed in by hand before they were given a login are not linked).
      */
+    private static final java.util.Set<String> MAIN_OFFICE_CODES = java.util.Set.of("ROOT", "DIRECTOR", "STAFF", "ADMIN");
+
+    /**
+     * Of these staff rows, the ones that belong to main-office logins (ROOT,
+     * DIRECTOR, STAFF, ADMIN) - a row they got by selling once, not a waiter.
+     */
+    public java.util.Set<String> mainOfficeStaffUids(List<BarProjection> staff, String branchUID) {
+        LoginMatcher logins = new LoginMatcher(branchUID);
+        java.util.Set<String> out = new java.util.HashSet<>();
+        for (BarProjection s : staff)
+            if (logins.mainOffice(s.getUserUid(), s.getFirstName(), s.getLastName()))
+                out.add(s.getUid());
+        return out;
+    }
+
     private class LoginMatcher {
         private final Map<String, User> byUid = new HashMap<>();
         private final Map<String, User> byName = new HashMap<>();
@@ -661,6 +676,26 @@ public class BarService {
                 if (nameCount.get(key) == 1)
                     byName.put(key, user);
             }
+        }
+
+        /** The login is the main office's (ROOT, DIRECTOR, STAFF, ADMIN or a root account), not a branch worker's. */
+        boolean mainOffice(String userUid, String firstName, String lastName) {
+            User user = userOf(userUid, firstName, lastName);
+            if (user == null || !Boolean.TRUE.equals(user.getIsActive()))
+                return false;
+            if (Boolean.TRUE.equals(user.getIsRoot()))
+                return true;
+            return user.getRoles() != null && user.getRoles().stream().map(Role::getCode)
+                    .anyMatch(c -> c != null && MAIN_OFFICE_CODES.contains(c.toUpperCase()));
+        }
+
+        private User userOf(String userUid, String firstName, String lastName) {
+            User user = null;
+            if (userUid != null)
+                user = byUid.containsKey(userUid) ? byUid.get(userUid) : userRepository.findById(userUid).orElse(null);
+            if (user == null)
+                user = byName.get(nameKey(firstName, lastName));
+            return user;
         }
 
         List<String> rolesOf(String userUid, String firstName, String lastName) {
@@ -1208,6 +1243,9 @@ public class BarService {
         BarStaff to = barStaffRepository.findBarStaffByUID(dto.getToStaffUid(), branchUID).orElse(null);
         if (to == null)
             return new Response<>("That staff member is not in this branch");
+        // Bills go to fellow waiters only, never to a main-office login.
+        if (new LoginMatcher(branchUID).mainOffice(to.getUserUid(), to.getFirstName(), to.getLastName()))
+            return new Response<>("A bill can only be handed to a fellow waiter");
         if (salesOpenedRepository.handoverWaiting(to.getUid(), branchUID))
             return new Response<>(StaffSellService.fullName(to) + " has already sent their handover - they cannot take a bill now");
 
