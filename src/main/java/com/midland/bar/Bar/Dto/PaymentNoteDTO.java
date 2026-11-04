@@ -10,4 +10,7 @@ public class PaymentNoteDTO {
     private String method;
     private String payerName;
     private String reference;
+    /** Ofa / deni: the Madeni customer, and the code they gave the waiter. */
+    private String customerUid;
+    private String customerCode;
 }

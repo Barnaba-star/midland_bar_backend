@@ -154,6 +154,7 @@ public class StaffSellService {
             line.put("amount", amount);
             line.put("method", method);
             line.put("payer", b.getPaymentNotePayer());
+            line.put("customerUid", b.getPaymentNoteCustomerUid());
             line.put("sentAt", b.getHandoverSentAt());
             openBills.add(line);
         }
@@ -259,16 +260,21 @@ public class StaffSellService {
         if (staff.isEmpty())
             return new Response<>("No staff member has that code");
         String method = dto.getMethod().trim().toLowerCase();
-        if (!BillPaymentService.METHODS.contains(method))
+        // Ofa and deni are no money in: each bill goes to the customer it was noted for.
+        boolean customerMethod = DebtService.OFFER_METHOD.equals(method) || DebtService.METHOD.equals(method);
+        if (!BillPaymentService.METHODS.contains(method) && !customerMethod)
             return new Response<>("Unknown payment method: " + dto.getMethod());
 
         Map<String, Long> now = new LinkedHashMap<>();
+        Map<String, String> customerOf = new java.util.HashMap<>();
         List<SalesOpened> open = salesOpenedRepository.findOpenBillsByStaff(staff.get().getUid(), LoggerUser.getBranchUIDOrMain());
         Map<String, Long> totals = billTotals(open);
         for (SalesOpened b : open) {
             long amount = totals.getOrDefault(b.getUid(), 0L);
-            if (amount > 0 && method.equals(handoverMethod(b)))
+            if (amount > 0 && method.equals(handoverMethod(b))) {
                 now.put(b.getUid(), amount);
+                customerOf.put(b.getUid(), b.getPaymentNoteCustomerUid());
+            }
         }
         Map<String, Long> shown = new LinkedHashMap<>();
         dto.getBills().forEach(b -> shown.put(b.getUid(), b.getAmount()));
@@ -282,6 +288,8 @@ public class StaffSellService {
             com.midland.bar.Bar.Dto.PayBillDTO.Part part = new com.midland.bar.Bar.Dto.PayBillDTO.Part();
             part.setMethod(method);
             part.setAmount(e.getValue().intValue());
+            if (customerMethod)
+                part.setCustomerUid(customerOf.get(e.getKey()));
             pay.setPayments(List.of(part));
             Response<SalesOpened> paid = billPaymentService.payBill(pay);
             // One refused bill undoes the ones already paid here.
@@ -295,7 +303,7 @@ public class StaffSellService {
         // the difference is the staff member's shortage, in this method. Same
         // transaction - a refused shortage leaves the bills unpaid too.
         long shortage = 0;
-        if (dto.getHandedAmount() != null) {
+        if (dto.getHandedAmount() != null && !customerMethod) {
             long handed = dto.getHandedAmount();
             if (handed < 0)
                 throw new com.midland.bar.Utils.Exceptions.BusinessException("Amounts cannot be below zero");

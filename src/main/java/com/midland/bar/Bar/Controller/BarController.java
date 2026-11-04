@@ -28,6 +28,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class BarController {
     private final BarService barService;
+    private final com.midland.bar.Bar.Service.DebtService debtServiceForNotes;
     private final com.midland.bar.Bar.Service.OtherCommissionService otherCommissionService;
     private final StockService stockService;
     private final com.midland.bar.Bar.Service.InsightService insightService;
@@ -222,6 +223,13 @@ public class BarController {
             @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate from,
             @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate to){
         return billPaymentService.paymentNotes(from, to);
+    }
+
+    /** Madeni customers a bill can be noted to as ofa / deni: names and what is left, nothing more. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
+    @GetMapping("/bills/noteCustomers")
+    public com.midland.bar.Utils.Responses.ResponseList<java.util.Map<String, Object>> noteCustomers(@RequestParam String method){
+        return debtServiceForNotes.noteCustomers(method == null ? "" : method.trim().toLowerCase());
     }
 
     /** "Paid by phone, from this name" on an unpaid bill - for the cashier to check at handover. */

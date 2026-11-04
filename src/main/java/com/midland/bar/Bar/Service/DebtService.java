@@ -126,6 +126,7 @@ public class DebtService {
         DebtCustomer customer;
         if (uid == null) {
             customer = new DebtCustomer();
+            customer.setCustomerCode(freeCode(branchUID));
             customer.setRegisteredBy(LoggerUser.getEmail());
             customer.setRegisteredAt(LocalDateTime.now());
         } else {
@@ -234,6 +235,86 @@ public class DebtService {
         use.setUsedAt(at);
         log.info("{} gave {} of bill {} free as {}'s offer", LoggerUser.getEmail(), amount, bill.getSalesCode(), customerUid);
         return offerUseRepository.save(use);
+    }
+
+    private static final java.security.SecureRandom RANDOM = new java.security.SecureRandom();
+
+    /** A 4-digit customer code no customer of the branch holds (removed ones included). */
+    private String freeCode(String branchUID) {
+        for (int i = 0; i < 200; i++) {
+            String code = String.format("%04d", 1000 + RANDOM.nextInt(9000));
+            if (customerRepository.countCode(code, branchUID) == 0)
+                return code;
+        }
+        throw new BusinessException("Could not find a free customer code - try again");
+    }
+
+    /** Gives every customer registered before codes existed one. Run at start-up; idempotent. */
+    @Transactional
+    public int giveMissingCodes() {
+        List<DebtCustomer> missing = customerRepository.findWithoutCode();
+        for (DebtCustomer c : missing) {
+            c.setCustomerCode(freeCode(c.getBranchUid()));
+            customerRepository.saveAndFlush(c);
+        }
+        return missing.size();
+    }
+
+    /**
+     * Customers a bill can be noted to at Staff Sell: those with an offer left
+     * this month (ofa), or with credit still open (deni). Names and what is
+     * left only - no phone, no code: the customer says the code.
+     */
+    public ResponseList<Map<String, Object>> noteCustomers(String method) {
+        String branchUID = LoggerUser.getBranchUIDOrMain();
+        boolean offer = OFFER_METHOD.equals(method);
+        if (!offer && !METHOD.equals(method))
+            throw new BusinessException("Choose ofa or deni");
+        Map<String, Long> balances = offer ? Map.of() : balances(branchUID);
+        Map<String, Long> offered = new HashMap<>();
+        if (offer)
+            for (Object[] r : offerUseRepository.usedByCustomerSince(branchUID, monthStart()))
+                offered.put((String) r[0], ((Number) r[1]).longValue());
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (DebtCustomer c : customerRepository.findInBranch(branchUID)) {
+            long left = offer
+                    ? (c.getMonthlyOffer() == null ? 0 : c.getMonthlyOffer()) - offered.getOrDefault(c.getUid(), 0L)
+                    : (c.getCreditLimit() == null ? 0 : c.getCreditLimit()) - balances.getOrDefault(c.getUid(), 0L);
+            if (left <= 0)
+                continue;
+            Map<String, Object> r = new LinkedHashMap<>();
+            r.put("uid", c.getUid());
+            r.put("name", c.getName());
+            r.put("left", left);
+            rows.add(r);
+        }
+        return new ResponseList<>(rows);
+    }
+
+    /**
+     * A waiter notes a bill as ofa / deni for a customer: the code the
+     * customer gave must be theirs, and the bill must fit in what they have
+     * left now (it is checked again when the cashier takes it). Returns the
+     * customer's name.
+     */
+    public String checkForNote(String method, String customerUid, String code, long billTotal) {
+        String branchUID = LoggerUser.getBranchUIDOrMain();
+        boolean offer = OFFER_METHOD.equals(method);
+        if (customerUid == null || customerUid.isBlank())
+            throw new BusinessException(offer ? "Choose the customer the offer is for" : "Choose the customer the bill goes on credit to");
+        DebtCustomer c = customerRepository.findInBranch(customerUid, branchUID)
+                .orElseThrow(() -> new BusinessException("Customer not found"));
+        String given = code == null ? "" : code.trim();
+        if (c.getCustomerCode() == null || !c.getCustomerCode().equals(given))
+            throw new BusinessException("WRONG_CUSTOMER_CODE");
+        long left = offer
+                ? (c.getMonthlyOffer() == null ? 0 : c.getMonthlyOffer()) - offerUseRepository.usedSince(customerUid, monthStart())
+                : (c.getCreditLimit() == null ? 0 : c.getCreditLimit()) - entryRepository.balanceOf(customerUid);
+        if (billTotal > left)
+            throw new BusinessException(offer
+                    ? c.getName() + " has only " + tzs(Math.max(0, left)) + " of this month's offer left"
+                    : c.getName() + " can take at most " + tzs(Math.max(0, left)) + " more on credit");
+        return c.getName();
     }
 
     private static void putOffer(Map<String, Object> r, DebtCustomer c, long used) {
@@ -448,6 +529,7 @@ public class DebtService {
         r.put("uid", c.getUid());
         r.put("name", c.getName());
         r.put("phone", c.getPhone());
+        r.put("customerCode", c.getCustomerCode());
         r.put("note", c.getNote());
         r.put("creditLimit", limit);
         r.put("balance", balance);

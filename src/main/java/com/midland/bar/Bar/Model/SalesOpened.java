@@ -69,6 +69,10 @@ public class SalesOpened extends TenantEntity {
     @Column(name = "payment_note_ref")
     private String paymentNoteRef;
 
+    /** Ofa / deni note: the Madeni customer the bill is for (their name is in paymentNotePayer). */
+    @Column(name = "payment_note_customer_uid")
+    private String paymentNoteCustomerUid;
+
     @Column(name = "payment_note_by")
     private String paymentNoteBy;
 

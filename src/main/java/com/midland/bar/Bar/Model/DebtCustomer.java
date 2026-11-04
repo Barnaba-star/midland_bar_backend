@@ -39,6 +39,13 @@ public class DebtCustomer extends TenantEntity {
     @Column(name = "monthly_offer")
     private Integer monthlyOffer;
 
+    /**
+     * Short number the customer gives the waiter to prove an offer or a debt
+     * is theirs (owner, 2026-11-04). Unique in the branch, shown in Madeni.
+     */
+    @Column(name = "customer_code", length = 6)
+    private String customerCode;
+
     @Column(name = "note", length = 200)
     private String note;
 

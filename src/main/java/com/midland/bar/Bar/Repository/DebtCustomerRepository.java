@@ -27,6 +27,13 @@ public interface DebtCustomerRepository extends JpaRepository<DebtCustomer, Stri
     @Query("SELECT c FROM DebtCustomer c WHERE c.isActive = true AND c.phone = :phone AND c.branchUid = :branchUID")
     Optional<DebtCustomer> findByPhone(@Param("phone") String phone, @Param("branchUID") String branchUID);
 
+    @Query("SELECT COUNT(c) FROM DebtCustomer c WHERE c.customerCode = :code AND c.branchUid = :branchUID")
+    long countCode(@Param("code") String code, @Param("branchUID") String branchUID);
+
+    /** Customers registered before codes existed. */
+    @Query("SELECT c FROM DebtCustomer c WHERE c.isActive = true AND c.customerCode IS NULL")
+    List<DebtCustomer> findWithoutCode();
+
     /** Every customer in every branch - the weekly reminder. */
     @Query("SELECT c FROM DebtCustomer c ORDER BY c.branchUid")
     List<DebtCustomer> findAllActive();

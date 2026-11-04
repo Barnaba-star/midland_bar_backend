@@ -188,17 +188,31 @@ public class BillPaymentService {
             throw new com.midland.bar.Utils.Exceptions.BusinessException(StaffOrderService.HANDOVER_SENT);
 
         String method = dto == null || dto.getMethod() == null ? "" : dto.getMethod().trim().toLowerCase();
-        if (method.isEmpty()) {
+        // Cash is the default: choosing it (or nothing) clears the note.
+        if (method.isEmpty() || "cash".equals(method)) {
             bill.setPaymentNoteMethod(null);
             bill.setPaymentNotePayer(null);
             bill.setPaymentNoteRef(null);
+            bill.setPaymentNoteCustomerUid(null);
             bill.setPaymentNoteBy(null);
             bill.setPaymentNoteAt(null);
             return new Response<>(salesOpenedRepository.save(bill));
         }
-        // Cash is handed to the cashier, not noted.
-        if (!METHODS.contains(method) || "cash".equals(method))
-            return new Response<>("Choose how they paid (M-Pesa, Tigo Pesa, Airtel Money, HaloPesa or bank)");
+        boolean customerNote = DebtService.OFFER_METHOD.equals(method) || DebtService.METHOD.equals(method);
+        if (customerNote) {
+            // Ofa / deni: a Madeni customer, proved by the code they give.
+            String name = debtService.checkForNote(method, dto.getCustomerUid(), dto.getCustomerCode(),
+                    barSalesRepository.billTotal(bill.getUid()));
+            bill.setPaymentNoteMethod(method);
+            bill.setPaymentNotePayer(name);
+            bill.setPaymentNoteRef(null);
+            bill.setPaymentNoteCustomerUid(dto.getCustomerUid());
+            bill.setPaymentNoteBy(LoggerUser.getEmail());
+            bill.setPaymentNoteAt(com.midland.bar.Utils.Offline.OfflineContext.now());
+            return new Response<>(salesOpenedRepository.save(bill));
+        }
+        if (!METHODS.contains(method))
+            return new Response<>("Choose how they paid (cash, M-Pesa, Tigo Pesa, Airtel Money, HaloPesa, bank, offer or credit)");
         String payer = dto.getPayerName() == null ? "" : dto.getPayerName().trim().replaceAll("\\s+", " ");
         if (payer.isEmpty())
             return new Response<>("Enter the name the payment came from");
@@ -211,6 +225,7 @@ public class BillPaymentService {
         bill.setPaymentNoteMethod(method);
         bill.setPaymentNotePayer(payer.toUpperCase());
         bill.setPaymentNoteRef(ref.isEmpty() ? null : ref.toUpperCase());
+        bill.setPaymentNoteCustomerUid(null);
         bill.setPaymentNoteBy(LoggerUser.getEmail());
         bill.setPaymentNoteAt(com.midland.bar.Utils.Offline.OfflineContext.now());
         return new Response<>(salesOpenedRepository.save(bill));

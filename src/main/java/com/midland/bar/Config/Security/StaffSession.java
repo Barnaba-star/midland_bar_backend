@@ -51,6 +51,8 @@ public final class StaffSession {
             new Route("GET", Pattern.compile("^/systemSetting/logo$")),
             // "Paid by phone, from this name" on their own bill.
             new Route("POST", Pattern.compile("^/bar/bills/[^/]+/paymentNote$")),
+            // Ofa / deni customers for that note (names only).
+            new Route("GET", Pattern.compile("^/bar/bills/noteCustomers$")),
             new Route("GET", Pattern.compile("^/uploads/.+$"))
     );
 
