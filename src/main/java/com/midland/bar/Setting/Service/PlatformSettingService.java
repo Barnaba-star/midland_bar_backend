@@ -113,6 +113,8 @@ public class PlatformSettingService {
         if (setting.getErrorRetentionDays() == null) { setting.setErrorRetentionDays(defaults.getErrorRetentionDays()); changed = true; }
         if (setting.getErrorPurgeDays() == null) { setting.setErrorPurgeDays(defaults.getErrorPurgeDays()); changed = true; }
         if (setting.getAuditRetentionDays() == null) { setting.setAuditRetentionDays(defaults.getAuditRetentionDays()); changed = true; }
+        // Owner, 2026-11-05: audit entries are kept 7 days, not the old default of 365.
+        if (Integer.valueOf(365).equals(setting.getAuditRetentionDays())) { setting.setAuditRetentionDays(7); changed = true; }
 
         if (changed) {
             platformSettingRepository.save(setting);
@@ -162,8 +164,8 @@ public class PlatformSettingService {
         if (outside(s.getErrorPurgeDays(), 1, 3650)) {
             return "Error purge days must be between 1 and 3650";
         }
-        if (outside(s.getAuditRetentionDays(), 30, 3650)) {
-            return "Audit retention days must be between 30 and 3650";
+        if (outside(s.getAuditRetentionDays(), 1, 3650)) {
+            return "Audit retention days must be between 1 and 3650";
         }
         // Purging before hiding would delete rows that are still on screen.
         if (s.getErrorPurgeDays() < s.getErrorRetentionDays()) {

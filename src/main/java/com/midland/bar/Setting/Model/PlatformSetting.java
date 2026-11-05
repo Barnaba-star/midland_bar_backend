@@ -81,7 +81,7 @@ public class PlatformSetting extends BaseEntity {
     @Column(name = "error_purge_days")
     private Integer errorPurgeDays = 90;
 
-    /** Days an audit entry is kept. Longer than errors - it is a record, not a symptom. */
+    /** Days an audit entry is kept (owner, 2026-11-05: 7, so the database does not fill up). */
     @Column(name = "audit_retention_days")
-    private Integer auditRetentionDays = 365;
+    private Integer auditRetentionDays = 7;
 }
