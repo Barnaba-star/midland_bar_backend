@@ -25,6 +25,10 @@ public interface SalesOpenedRepository extends JpaRepository<SalesOpened, String
     @Query("SELECT s FROM SalesOpened s WHERE s.branchUid = :branchUID AND s.paymentStatus = 'PENDING' ORDER BY s.salesCode")
     List<SalesOpened> findOpenBills(@Param("branchUID") String branchUID);
 
+    /** A loyalty customer's unpaid bills in the branch - they count once paid. */
+    @Query("SELECT s FROM SalesOpened s WHERE s.branchUid = :branchUID AND s.loyaltyCustomerUid = :customerUid AND s.paymentStatus = 'PENDING'")
+    List<SalesOpened> findOpenBillsByLoyaltyCustomer(@Param("customerUid") String customerUid, @Param("branchUID") String branchUID);
+
     /** A staff member's unpaid bills, for Staff Sell. */
     @Query("SELECT s FROM SalesOpened s WHERE s.branchUid = :branchUID AND s.staffUid = :staffUid AND s.paymentStatus = 'PENDING' ORDER BY s.salesCode")
     List<SalesOpened> findOpenBillsByStaff(@Param("staffUid") String staffUid, @Param("branchUID") String branchUID);

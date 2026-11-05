@@ -83,6 +83,8 @@ public class LoyaltyService {
         long off = autoOffer(bill, total);
         m.put("offerNow", off);
         m.put("toPay", total - off);
+        if (bill.getLoyaltyCustomerUid() != null && on)
+            m.put("loyalty", progress(bill.getLoyaltyCustomerUid(), rule));
         return new Response<>(m);
     }
 
@@ -238,6 +240,19 @@ public class LoyaltyService {
         m.put("visits", rule.getUid() == null ? 0 : visitRepository.counting(customerUid, windowStart(rule)).size());
         m.put("needed", rule.getBillsNeeded());
         m.put("rewardLeft", rewardLeft(customerUid));
+        // Their other unpaid bills big enough to count: they count once paid,
+        // so the screen can say "2 paid, 1 waiting for payment".
+        long waiting = 0;
+        if (rule.getUid() != null) {
+            List<SalesOpened> open = salesOpenedRepository.findOpenBillsByLoyaltyCustomer(customerUid, LoggerUser.getBranchUIDOrMain());
+            if (!open.isEmpty()) {
+                Map<String, Long> totals = new java.util.HashMap<>();
+                for (Object[] r : barSalesRepository.billTotals(open.stream().map(SalesOpened::getUid).toList()))
+                    totals.put((String) r[0], ((Number) r[1]).longValue());
+                waiting = open.stream().filter(b -> totals.getOrDefault(b.getUid(), 0L) >= rule.getMinBill()).count();
+            }
+        }
+        m.put("waiting", waiting);
         return m;
     }
 
