@@ -34,7 +34,8 @@ class PermissionCatalogueTest {
             for (Path f : files.filter(p -> p.toString().endsWith(".java")).toList()) {
                 Matcher m = CHECKED.matcher(Files.readString(f));
                 while (m.find())
-                    if (!seeded.contains(m.group(1)))
+                    // hasPermissionOrRoot('ROOT') is root-only on purpose.
+                    if (!seeded.contains(m.group(1)) && !"ROOT".equals(m.group(1)))
                         missing.add(m.group(1) + " (" + f.getFileName() + ")");
             }
         }
