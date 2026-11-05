@@ -281,15 +281,17 @@ public class LoyaltyService {
         reward.setAmount(rule.getRewardAmount());
         reward.setVisits(counting.size());
         reward.setGrantedAt(at);
-        reward.setExpiresAt(at.plusDays(rule.getPeriodDays()));
+        // Earned this month, usable to the month's end (owner, 2026-11-05: calendar month).
+        reward.setExpiresAt(at.toLocalDate().withDayOfMonth(1).plusMonths(1).atStartOfDay());
         LoyaltyReward saved = rewardRepository.save(reward);
         counting.forEach(x -> x.setRewardUid(saved.getUid()));
         visitRepository.saveAll(counting);
         log.info("Customer {} earned a loyalty reward of {} after {} bill(s)", customerUid, saved.getAmount(), counting.size());
     }
 
+    /** Bills count within the calendar month: from the 1st, everyone starts again. */
     private static LocalDateTime windowStart(LoyaltyRule rule) {
-        return LocalDateTime.now().minusDays(rule.getPeriodDays() == null ? 30 : rule.getPeriodDays());
+        return java.time.LocalDate.now().withDayOfMonth(1).atStartOfDay();
     }
 
     // ---------------------------------------------------------------- ofa

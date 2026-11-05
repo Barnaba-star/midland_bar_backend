@@ -11,8 +11,9 @@ import java.time.LocalDateTime;
 /**
  * The branch's customer loyalty rule (owner, 2026-11-04): a bill of at least
  * minBill, paid by a customer who gave their phone + PIN, is one visit;
- * billsNeeded visits within periodDays earn rewardAmount as ofa, usable for
- * periodDays. Then the count starts again.
+ * billsNeeded visits within the calendar month earn rewardAmount as ofa,
+ * usable to the month's end. Then the count starts again (and on the 1st).
+ * periodDays is no longer used (2026-11-05: calendar month).
  */
 @Entity
 @Getter
