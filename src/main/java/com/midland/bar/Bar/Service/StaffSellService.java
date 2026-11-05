@@ -49,6 +49,7 @@ public class StaffSellService {
     private final BillPaymentService billPaymentService;
     /** For a shortage recorded with the handover; looked up late to keep the services' wiring simple. */
     private final org.springframework.beans.factory.ObjectProvider<BarService> barServiceProvider;
+    private final LoyaltyService loyaltyService;
 
     /** Roles whose login may take the screen back from Staff Sell to POS. */
     private static final Set<String> UNLOCK_ROLES = Set.of("ROOT", "STAFF", "DIRECTOR", "CEO", "MANAGER");
@@ -135,13 +136,17 @@ public class StaffSellService {
         LocalDateTime sentAt = null;
         List<SalesOpened> open = salesOpenedRepository.findOpenBillsByStaff(staff.get().getUid(), branchUID);
         Map<String, Long> totals = billTotals(open);
+        Map<String, Long> offers = loyaltyService.autoOffers(open, totals);
         for (SalesOpened b : open) {
             // What paying will charge - the lines, not the stored figure.
-            long amount = totals.getOrDefault(b.getUid(), 0L);
+            long total = totals.getOrDefault(b.getUid(), 0L);
             // An empty bill has nothing to hand over - left off the summary.
-            if (amount <= 0)
+            if (total <= 0)
                 continue;
-            String method = handoverMethod(b);
+            // The customer's offer comes off by itself: the staff member hands in the rest.
+            long off = offers.getOrDefault(b.getUid(), 0L);
+            long amount = total - off > 0 ? total - off : off;
+            String method = total - off > 0 ? handoverMethod(b) : "ofa";
             if (b.getHandoverSentAt() != null && (sentAt == null || b.getHandoverSentAt().isAfter(sentAt)))
                 sentAt = b.getHandoverSentAt();
             long[] m = openByMethod.computeIfAbsent(method, k -> new long[2]);
@@ -155,6 +160,10 @@ public class StaffSellService {
             line.put("method", method);
             line.put("payer", b.getPaymentNotePayer());
             line.put("customerUid", b.getPaymentNoteCustomerUid());
+            line.put("total", total);
+            line.put("offer", off);
+            if (off > 0)
+                line.put("payer", b.getLoyaltyCustomerName());
             line.put("sentAt", b.getHandoverSentAt());
             openBills.add(line);
         }
@@ -267,13 +276,26 @@ public class StaffSellService {
 
         Map<String, Long> now = new LinkedHashMap<>();
         Map<String, String> customerOf = new java.util.HashMap<>();
+        Map<String, Long> offOf = new java.util.HashMap<>();
+        Map<String, String> loyaltyOf = new java.util.HashMap<>();
         List<SalesOpened> open = salesOpenedRepository.findOpenBillsByStaff(staff.get().getUid(), LoggerUser.getBranchUIDOrMain());
         Map<String, Long> totals = billTotals(open);
+        Map<String, Long> offers = loyaltyService.autoOffers(open, totals);
         for (SalesOpened b : open) {
-            long amount = totals.getOrDefault(b.getUid(), 0L);
-            if (amount > 0 && method.equals(handoverMethod(b))) {
-                now.put(b.getUid(), amount);
-                customerOf.put(b.getUid(), b.getPaymentNoteCustomerUid());
+            long total = totals.getOrDefault(b.getUid(), 0L);
+            if (total <= 0)
+                continue;
+            // Same split as the summary: the offer off by itself, the rest in the bill's method.
+            long off = offers.getOrDefault(b.getUid(), 0L);
+            long rest = total - off;
+            String m = rest > 0 ? handoverMethod(b) : "ofa";
+            if (!method.equals(m))
+                continue;
+            now.put(b.getUid(), rest > 0 ? rest : off);
+            customerOf.put(b.getUid(), rest > 0 ? b.getPaymentNoteCustomerUid() : b.getLoyaltyCustomerUid());
+            if (rest > 0 && off > 0) {
+                offOf.put(b.getUid(), off);
+                loyaltyOf.put(b.getUid(), b.getLoyaltyCustomerUid());
             }
         }
         Map<String, Long> shown = new LinkedHashMap<>();
@@ -290,7 +312,16 @@ public class StaffSellService {
             part.setAmount(e.getValue().intValue());
             if (customerMethod)
                 part.setCustomerUid(customerOf.get(e.getKey()));
-            pay.setPayments(List.of(part));
+            List<com.midland.bar.Bar.Dto.PayBillDTO.Part> parts = new ArrayList<>(List.of(part));
+            // The customer's offer comes off the bill by itself.
+            if (offOf.containsKey(e.getKey())) {
+                com.midland.bar.Bar.Dto.PayBillDTO.Part offer = new com.midland.bar.Bar.Dto.PayBillDTO.Part();
+                offer.setMethod(DebtService.OFFER_METHOD);
+                offer.setAmount(offOf.get(e.getKey()).intValue());
+                offer.setCustomerUid(loyaltyOf.get(e.getKey()));
+                parts.add(offer);
+            }
+            pay.setPayments(parts);
             Response<SalesOpened> paid = billPaymentService.payBill(pay);
             // One refused bill undoes the ones already paid here.
             if (paid.getData() == null)

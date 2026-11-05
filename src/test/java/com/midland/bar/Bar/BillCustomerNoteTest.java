@@ -231,4 +231,45 @@ class BillCustomerNoteTest {
         receive("deni");
         assertEquals(total, debtEntryRepository.balanceOf((String) c.get("uid")));
     }
+
+    @Test
+    void theNextBillOfACustomerWithAnOfferHasItTakenOffAndTheWaiterHandsInTheRest() {
+        com.midland.bar.Bar.Model.LoyaltyRule rule = new com.midland.bar.Bar.Model.LoyaltyRule();
+        rule.setEnabled(true);
+        rule.setMinBill(1000);
+        rule.setBillsNeeded(1);
+        rule.setPeriodDays(30);
+        rule.setRewardAmount(600);
+        assertNotNull(loyaltyService.saveRule(rule).getData());
+        if (total < 1000)
+            return;
+        loyaltyService.register("Bi Ofa", "0711000036", PIN);
+
+        // First big bill: paid in cash, earns the 600 offer.
+        assertNotNull(loyaltyService.attach(bill.getUid(), "0711000036", PIN).getData());
+        assertNotNull(billPaymentService.payBill(cash(bill)).getData());
+
+        // Next bill: the waiter is told at once, and only the rest is handed in.
+        SalesOpened next = newBill();
+        Map<String, Object> card = loyaltyService.attach(next.getUid(), "0711000036", PIN).getData();
+        assertEquals(600L, ((Number) card.get("offerNow")).longValue());
+        assertEquals(total - 600, ((Number) card.get("toPay")).longValue());
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> lines = (List<Map<String, Object>>) ((Map<String, Object>) staffSellService.handover(waiter.getStaffCode()).getData().get("open")).get("bills");
+        Map<String, Object> line = lines.stream().filter(l -> next.getUid().equals(l.get("uid"))).findFirst().orElseThrow();
+        assertEquals("cash", line.get("method"));
+        assertEquals(total - 600, ((Number) line.get("amount")).longValue());
+
+        HandoverReceiveDTO dto = new HandoverReceiveDTO();
+        dto.setStaffCode(waiter.getStaffCode());
+        dto.setMethod("cash");
+        HandoverReceiveDTO.Bill b = new HandoverReceiveDTO.Bill();
+        b.setUid(next.getUid());
+        b.setAmount(total - 600);
+        dto.setBills(List.of(b));
+        assertNotNull(staffSellService.receiveHandover(dto).getData(), "the cashier takes the rest; the offer comes off by itself");
+        assertEquals("PAID", salesOpenedRepository.findById(next.getUid()).orElseThrow().getPaymentStatus());
+        assertEquals(0, loyaltyService.rewardLeft((String) card.get("uid")), "the offer is used up");
+    }
 }

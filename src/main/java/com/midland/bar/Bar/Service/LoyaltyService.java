@@ -76,6 +76,13 @@ public class LoyaltyService {
         m.put("minBill", rule.getMinBill());
         m.put("total", total);
         m.put("customerName", bill.getLoyaltyCustomerName());
+        m.put("customerUid", bill.getLoyaltyCustomerUid());
+        m.put("offerLeft", bill.getLoyaltyCustomerUid() == null ? 0
+                : customerRepository.findById(bill.getLoyaltyCustomerUid()).map(this::offerLeft).orElse(0L));
+        // The customer's offer comes off this bill by itself; they pay the rest.
+        long off = autoOffer(bill, total);
+        m.put("offerNow", off);
+        m.put("toPay", total - off);
         return new Response<>(m);
     }
 
@@ -250,7 +257,12 @@ public class LoyaltyService {
         bill.setLoyaltyCustomerUid(c.getUid());
         bill.setLoyaltyCustomerName(c.getName());
         salesOpenedRepository.save(bill);
-        return new Response<>(card(c));
+        Map<String, Object> card = card(c);
+        long total = barSalesRepository.billTotal(bill.getUid());
+        long off = autoOffer(bill, total);
+        card.put("offerNow", off);
+        card.put("toPay", total - off);
+        return new Response<>(card);
     }
 
     /** Called when a bill is paid in full: one visit when it is big enough, and a reward when enough visits are in. */
@@ -295,6 +307,38 @@ public class LoyaltyService {
     }
 
     // ---------------------------------------------------------------- ofa
+
+    /**
+     * The offer that comes off each bill by itself (owner, 2026-11-05): a bill
+     * whose customer typed their PIN and has offer left gets min(left, total)
+     * taken off; they pay the rest. Shared out bill by bill, so one customer's
+     * offer is never counted twice across their bills. Bills noted "ofa" as a
+     * whole are left out (already all offer).
+     */
+    public Map<String, Long> autoOffers(List<SalesOpened> bills, Map<String, Long> totals) {
+        Map<String, Long> out = new HashMap<>();
+        Map<String, Long> left = new HashMap<>();
+        for (SalesOpened b : bills) {
+            String c = b.getLoyaltyCustomerUid();
+            if (c == null || "ofa".equals(b.getPaymentNoteMethod()) || "deni".equals(b.getPaymentNoteMethod()))
+                continue;
+            long total = totals.getOrDefault(b.getUid(), 0L);
+            if (total <= 0)
+                continue;
+            long l = left.computeIfAbsent(c, k -> customerRepository.findById(k).map(this::offerLeft).orElse(0L));
+            long off = Math.min(l, total);
+            if (off > 0) {
+                out.put(b.getUid(), off);
+                left.put(c, l - off);
+            }
+        }
+        return out;
+    }
+
+    /** The offer that comes off one bill by itself (see autoOffers). */
+    public long autoOffer(SalesOpened bill, long total) {
+        return autoOffers(List.of(bill), Map.of(bill.getUid(), total)).getOrDefault(bill.getUid(), 0L);
+    }
 
     /** Live rewards with what is left of each, soonest to expire first. */
     public LinkedHashMap<LoyaltyReward, Long> liveRewards(String customerUid) {

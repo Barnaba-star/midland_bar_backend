@@ -159,8 +159,9 @@ public class BillPaymentService {
         }
         bill.update();
         SalesOpened saved = salesOpenedRepository.save(bill);
-        // A big enough bill of a known customer counts towards their reward.
-        loyaltyService.recordVisit(saved, due, now);
+        // A big enough bill of a known customer counts towards their reward -
+        // by what they paid, not the part the offer covered.
+        loyaltyService.recordVisit(saved, due - offered, now);
 
         try {
             notificationService.notifySaleCompleted(saved);
