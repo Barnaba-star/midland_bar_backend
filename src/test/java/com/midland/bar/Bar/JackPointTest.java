@@ -72,6 +72,7 @@ class JackPointTest {
         dto.setStartDate(thisWeek.minusWeeks(4));
         dto.setLeaveDays(leaveDays);
         dto.setBonusAmount(bonus);
+        dto.setAutoBonus(false);
         return jackPointService.save(dto).getData();
     }
 
@@ -157,6 +158,7 @@ class JackPointTest {
         dto.setWeeks(rounds);
         dto.setStartDate(start);
         dto.setBonusAmount(5_000);
+        dto.setAutoBonus(false);
         return jackPointService.save(dto).getData();
     }
 
@@ -205,5 +207,32 @@ class JackPointTest {
         assertTrue((Long) m.get("waiting") >= 1, "our win waits for approval");
         Map<String, Object> u = rows.stream().filter(r -> ((JackPoint) r.get("jackPoint")).getUid().equals(later.getUid())).findFirst().orElseThrow();
         assertEquals("UPCOMING", u.get("state"));
+    }
+
+    @Test
+    void anAutomaticBonusGoesStraightOntoTheCommissionAndIsListed() {
+        earned(3, 60_000);
+        earned(2, 60_000);
+        JackPointDTO dto = new JackPointDTO();
+        dto.setName("Bonus moja kwa moja");
+        dto.setWeeklyTarget(50_000);
+        dto.setWeeks(2);
+        dto.setStartDate(thisWeek.minusWeeks(4));
+        dto.setBonusAmount(15_000);
+        dto.setDescription("Wiki mbili za 50,000+ upate 15,000 kwenye commission");
+        JackPoint jp = jackPointService.save(dto).getData();
+        assertTrue(jp.getAutoBonus(), "new games pay the bonus straight away");
+        assertEquals("Wiki mbili za 50,000+ upate 15,000 kwenye commission", jp.getDescription());
+
+        jackPointService.evaluate(LoggerUser.getBranchUIDOrMain());
+        JackPointAward a = awardsOfStaff().stream().filter(x -> x.getJackPointUid().equals(jp.getUid())).findFirst().orElseThrow();
+        assertEquals(JackPointAward.APPROVED, a.getStatus(), "money only: nothing to approve");
+        assertNotNull(a.getBonusPaidAt());
+        StaffCommissions today = staffCommissionsRepository.findCommission(staff.getUid(), LoggerUser.getBranchUIDOrMain(), LocalDate.now()).orElseThrow();
+        assertEquals(15_000, today.getBonusAmount());
+
+        @SuppressWarnings("unchecked")
+        List<JackPointAward> bonuses = (List<JackPointAward>) jackPointService.overview().getData().get("bonuses");
+        assertTrue(bonuses.stream().anyMatch(b -> b.getUid().equals(a.getUid())), "listed among those given a bonus");
     }
 }

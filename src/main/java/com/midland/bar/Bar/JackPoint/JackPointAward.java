@@ -75,6 +75,10 @@ public class JackPointAward extends TenantEntity {
     @Column(name = "reward_note", length = 200)
     private String rewardNote;
 
+    /** When the bonus went onto the staff member's commission (null = not yet). */
+    @Column(name = "bonus_paid_at")
+    private LocalDateTime bonusPaidAt;
+
     /** The first paid day off, chosen at approval. */
     @Column(name = "leave_from")
     private LocalDate leaveFrom;

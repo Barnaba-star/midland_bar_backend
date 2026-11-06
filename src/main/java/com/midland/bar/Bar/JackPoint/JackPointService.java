@@ -81,6 +81,9 @@ public class JackPointService {
         jp.setBonusAmount(bonus);
         jp.setRewardNote(note.isEmpty() ? null : (note.length() > 200 ? note.substring(0, 200) : note));
         jp.setEnabled(dto.getEnabled() == null || dto.getEnabled());
+        jp.setAutoBonus(dto.getAutoBonus() == null || dto.getAutoBonus());
+        String desc = dto.getDescription() == null ? "" : dto.getDescription().trim();
+        jp.setDescription(desc.isEmpty() ? null : (desc.length() > 500 ? desc.substring(0, 500) : desc));
         return new Response<>(jackPointRepository.save(jp));
     }
 
@@ -142,6 +145,11 @@ public class JackPointService {
             counts.put(st, rows.stream().filter(r -> st.equals(r.get("state"))).count());
         counts.put("ALL", (long) rows.size());
         out.put("counts", counts);
+        // Who had a bonus put onto their commission, newest first.
+        List<JackPointAward> bonuses = awards.stream().filter(a -> a.getBonusPaidAt() != null)
+                .sorted(Comparator.comparing(JackPointAward::getBonusPaidAt).reversed()).toList();
+        out.put("bonuses", bonuses);
+        out.put("bonusTotal", bonuses.stream().mapToLong(a -> a.getBonusAmount() == null ? 0 : a.getBonusAmount()).sum());
         out.put("awards", awards);
         return new Response<>(out);
     }
@@ -168,6 +176,7 @@ public class JackPointService {
             p.put("leaveDays", jp.getLeaveDays());
             p.put("bonusAmount", jp.getBonusAmount());
             p.put("rewardNote", jp.getRewardNote());
+            p.put("description", jp.getDescription());
             rows.add(p);
         }
         Map<String, Object> out = new LinkedHashMap<>();
@@ -190,8 +199,10 @@ public class JackPointService {
                     return new Response<>("Choose the first paid day off");
                 a.setLeaveFrom(dto.getLeaveFrom());
             }
-            if (a.getBonusAmount() != null && a.getBonusAmount() > 0)
+            if (a.getBonusAmount() != null && a.getBonusAmount() > 0 && a.getBonusPaidAt() == null) {
                 barService.addJackPointBonus(a.getStaffUid(), a.getBranchUid(), LocalDate.now(), a.getBonusAmount());
+                a.setBonusPaidAt(LocalDateTime.now());
+            }
             a.setStatus(JackPointAward.APPROVED);
         } else {
             if (note.isEmpty())
@@ -258,6 +269,16 @@ public class JackPointService {
                         a.setBonusAmount(jp.getBonusAmount());
                         a.setRewardNote(jp.getRewardNote());
                         a.setQualifiedAt(LocalDateTime.now());
+                        // Straight onto the commission: no one has to approve the money.
+                        if (Boolean.TRUE.equals(jp.getAutoBonus()) && a.getBonusAmount() != null && a.getBonusAmount() > 0) {
+                            barService.addJackPointBonus(s.getUid(), branch, LocalDate.now(), a.getBonusAmount());
+                            a.setBonusPaidAt(LocalDateTime.now());
+                            if (a.getLeaveDays() == null || a.getLeaveDays() == 0) {
+                                a.setStatus(JackPointAward.APPROVED);
+                                a.setDecidedByName("Mfumo (moja kwa moja)");
+                                a.setDecidedAt(LocalDateTime.now());
+                            }
+                        }
                         awardRepository.save(a);
                         ownerAlertService.jackPointWon(branch, a.getStaffName(), jp.getName());
                         found++;

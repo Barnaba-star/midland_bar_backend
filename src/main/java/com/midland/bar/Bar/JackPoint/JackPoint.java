@@ -51,6 +51,17 @@ public class JackPoint extends TenantEntity {
     @Column(name = "bonus_amount")
     private Integer bonusAmount = 0;
 
+    /**
+     * The bonus goes straight onto the staff member's commission the moment
+     * they qualify (no approval needed for the money; paid days off still wait).
+     */
+    @Column(name = "auto_bonus")
+    private Boolean autoBonus = false;
+
+    /** How the game works, in the boss's words - shown to everyone, staff too. */
+    @Column(name = "description", length = 500)
+    private String description;
+
     /** Any other reward, in words. */
     @Column(name = "reward_note", length = 200)
     private String rewardNote;

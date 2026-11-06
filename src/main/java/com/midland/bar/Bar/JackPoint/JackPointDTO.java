@@ -27,4 +27,7 @@ public class JackPointDTO {
     private Integer bonusAmount;
     private String rewardNote;
     private Boolean enabled;
+    /** Bonus onto the commission as soon as they qualify; null = yes. */
+    private Boolean autoBonus;
+    private String description;
 }
