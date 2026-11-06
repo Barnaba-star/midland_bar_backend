@@ -425,4 +425,89 @@ public class LoyaltyService {
         out.put("totalLeft", rows.stream().mapToLong(m -> (Long) m.get("left")).sum());
         return new Response<>(out);
     }
+
+    /**
+     * Reports > Ofa za wateja: in a period, the big bills each customer paid,
+     * the offers they earned and spent, and what they hold now.
+     */
+    public Response<Map<String, Object>> report(String filter) {
+        String branchUID = LoggerUser.getBranchUIDOrMain();
+        LocalDateTime[] range = ReportRange.of(filter);
+        List<LoyaltyVisit> visits = visitRepository.between(branchUID, range[0], range[1]);
+        List<LoyaltyReward> rewards = rewardRepository.grantedBetween(branchUID, range[0], range[1]);
+        List<OfferUse> uses = offerUseRepository.between(branchUID, range[0], range[1]).stream()
+                .filter(u -> u.getRewardUid() != null).toList();
+
+        Map<String, Map<String, Object>> rows = new LinkedHashMap<>();
+        java.util.function.BiFunction<String, String, Map<String, Object>> row = (uid, name) -> rows.computeIfAbsent(uid, k -> {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("customerUid", k);
+            m.put("name", name);
+            m.put("bills", 0L);
+            m.put("billsAmount", 0L);
+            m.put("rewards", 0L);
+            m.put("earned", 0L);
+            m.put("used", 0L);
+            return m;
+        });
+        for (LoyaltyVisit v : visits) {
+            Map<String, Object> m = row.apply(v.getCustomerUid(), null);
+            m.put("bills", (Long) m.get("bills") + 1);
+            m.put("billsAmount", (Long) m.get("billsAmount") + (v.getAmount() == null ? 0 : v.getAmount()));
+        }
+        for (LoyaltyReward r : rewards) {
+            Map<String, Object> m = row.apply(r.getCustomerUid(), r.getCustomerName());
+            m.put("rewards", (Long) m.get("rewards") + 1);
+            m.put("earned", (Long) m.get("earned") + r.getAmount());
+            if (m.get("name") == null)
+                m.put("name", r.getCustomerName());
+        }
+        for (OfferUse u : uses) {
+            Map<String, Object> m = row.apply(u.getCustomerUid(), u.getCustomerName());
+            m.put("used", (Long) m.get("used") + u.getAmount());
+            if (m.get("name") == null)
+                m.put("name", u.getCustomerName());
+        }
+        long leftNow = 0;
+        for (Map<String, Object> m : rows.values()) {
+            long left = rewardLeft((String) m.get("customerUid"));
+            m.put("leftNow", left);
+            leftNow += left;
+            customerRepository.findById((String) m.get("customerUid")).ifPresent(c -> {
+                m.put("phone", c.getPhone());
+                if (m.get("name") == null)
+                    m.put("name", c.getName());
+            });
+        }
+        List<Map<String, Object>> list = new ArrayList<>(rows.values());
+        list.sort(Comparator.comparing((Map<String, Object> m) -> (Long) m.get("earned"))
+                .thenComparing(m -> (Long) m.get("bills")).reversed());
+
+        List<Map<String, Object>> spent = new ArrayList<>();
+        for (OfferUse u : uses) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("usedAt", u.getUsedAt());
+            m.put("customerName", u.getCustomerName());
+            m.put("billCode", u.getBillCode());
+            m.put("usedBy", u.getUsedByName() != null ? u.getUsedByName() : u.getUsedBy());
+            m.put("amount", u.getAmount());
+            spent.add(m);
+        }
+
+        Map<String, Object> totals = new LinkedHashMap<>();
+        totals.put("customers", list.size());
+        totals.put("qualified", rewards.stream().map(LoyaltyReward::getCustomerUid).distinct().count());
+        totals.put("bills", visits.size());
+        totals.put("billsAmount", visits.stream().mapToLong(v -> v.getAmount() == null ? 0 : v.getAmount()).sum());
+        totals.put("earned", rewards.stream().mapToLong(LoyaltyReward::getAmount).sum());
+        totals.put("used", uses.stream().mapToLong(OfferUse::getAmount).sum());
+        totals.put("leftNow", leftNow);
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("rule", ruleMap(rule()));
+        out.put("totals", totals);
+        out.put("customers", list);
+        out.put("spent", spent);
+        return new Response<>(out);
+    }
 }

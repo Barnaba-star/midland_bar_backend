@@ -59,6 +59,13 @@ public class LoyaltyController {
         return loyaltyService.attach(billUid, dto.getPhone(), dto.getPin());
     }
 
+    /** Reports > Ofa za wateja: big bills, offers earned and spent in a period. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_REPORT')")
+    @GetMapping("/report/{filter}")
+    public Response<Map<String, Object>> report(@PathVariable String filter) {
+        return loyaltyService.report(filter);
+    }
+
     /** Customers holding an earned offer, with what is left of it. */
     @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_DEBT')")
     @GetMapping("/winners")

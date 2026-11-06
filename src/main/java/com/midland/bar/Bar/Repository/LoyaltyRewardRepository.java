@@ -18,4 +18,7 @@ public interface LoyaltyRewardRepository extends JpaRepository<LoyaltyReward, St
 
     @Query("SELECT r FROM LoyaltyReward r WHERE r.isActive = true AND r.branchUid = :b AND r.expiresAt > :now")
     List<LoyaltyReward> liveInBranch(@Param("b") String branchUID, @Param("now") LocalDateTime now);
+
+    @Query("SELECT r FROM LoyaltyReward r WHERE r.isActive = true AND r.branchUid = :b AND r.grantedAt >= :from AND r.grantedAt < :to ORDER BY r.grantedAt DESC")
+    List<LoyaltyReward> grantedBetween(@Param("b") String branchUID, @Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 }

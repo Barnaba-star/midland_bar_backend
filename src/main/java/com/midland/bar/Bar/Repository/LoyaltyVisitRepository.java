@@ -22,4 +22,8 @@ public interface LoyaltyVisitRepository extends JpaRepository<LoyaltyVisit, Stri
     /** [customerUid, visits still counting] for a branch since a time. */
     @Query("SELECT v.customerUid, COUNT(v) FROM LoyaltyVisit v WHERE v.isActive = true AND v.branchUid = :b AND v.rewardUid IS NULL AND v.visitAt >= :since GROUP BY v.customerUid")
     List<Object[]> countingByCustomer(@Param("b") String branchUID, @Param("since") LocalDateTime since);
+
+    /** Big bills paid in a period (counted or already turned into a reward). */
+    @Query("SELECT v FROM LoyaltyVisit v WHERE v.isActive = true AND v.branchUid = :b AND v.visitAt >= :from AND v.visitAt < :to ORDER BY v.visitAt DESC")
+    List<LoyaltyVisit> between(@Param("b") String branchUID, @Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 }

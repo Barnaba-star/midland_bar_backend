@@ -283,5 +283,13 @@ class BillCustomerNoteTest {
         assertEquals("PAID", salesOpenedRepository.findById(next.getUid()).orElseThrow().getPaymentStatus());
         assertEquals(0, loyaltyService.rewardLeft((String) card.get("uid")), "the offer is used up");
         assertEquals(0L, ((Number) loyaltyService.winners().getData().get("withOffer")).longValue(), "spent: no longer counted as holding an offer");
+
+        // Reports > Ofa za wateja: earned and spent today, nothing left.
+        @SuppressWarnings("unchecked")
+        Map<String, Object> totals = (Map<String, Object>) loyaltyService.report("DAY").getData().get("totals");
+        assertEquals(1L, ((Number) totals.get("qualified")).longValue());
+        assertEquals(600L, ((Number) totals.get("earned")).longValue());
+        assertEquals(600L, ((Number) totals.get("used")).longValue());
+        assertEquals(0L, ((Number) totals.get("leftNow")).longValue());
     }
 }
