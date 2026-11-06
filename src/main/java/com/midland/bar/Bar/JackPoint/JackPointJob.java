@@ -12,7 +12,7 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 /**
- * Monday morning, once last week is over: every branch with a Jack Point
+ * Every morning, once yesterday (and last week / last month) is over: every branch with a Jack Point
  * running is checked for new winners, so the owner hears without opening
  * the page. Each branch is checked as a stand-in login of that branch,
  * because new rows take their branch from the login (TenantEntity).
@@ -25,7 +25,7 @@ public class JackPointJob {
     private final JackPointRepository jackPointRepository;
     private final JackPointService jackPointService;
 
-    @Scheduled(cron = "0 30 6 * * MON")
+    @Scheduled(cron = "0 30 6 * * *")
     public void weekly() {
         for (String branchUid : jackPointRepository.branchesWithGames()) {
             try {

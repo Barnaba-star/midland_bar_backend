@@ -42,12 +42,21 @@ public class JackPointAward extends TenantEntity {
     @Column(name = "staff_name")
     private String staffName;
 
-    /** Monday of the first week and of the last week of the run. */
+    /** First day of the run's first round and of its last round (a Monday for weekly games). */
     @Column(name = "week_from", nullable = false)
     private LocalDate weekFrom;
 
     @Column(name = "week_to", nullable = false)
     private LocalDate weekTo;
+
+    /** The game's round when won: DAY, WEEK or MONTH (null = WEEK). */
+    @Column(name = "period", length = 10)
+    private String period;
+
+    /** Last day of the run (for the screens). */
+    public LocalDate getRunEnd() {
+        return weekTo == null ? null : JackPeriod.end(weekTo, period);
+    }
 
     /** Commission earned over the run's weeks. */
     @Column(name = "commission_total")

@@ -139,4 +139,71 @@ class JackPointTest {
         dto.setWeeks(2);
         assertNull(jackPointService.save(dto).getData());
     }
+
+    private void earnedOn(LocalDate day, int amount) {
+        StaffCommissions c = new StaffCommissions();
+        c.setBarStaff(staff);
+        c.setCreatedAt(day);
+        c.setTotalAmount(amount);
+        c.setRemainingAmount(amount);
+        staffCommissionsRepository.save(c);
+    }
+
+    private JackPoint game(String period, int rounds, LocalDate start) {
+        JackPointDTO dto = new JackPointDTO();
+        dto.setName("Jack " + period);
+        dto.setPeriod(period);
+        dto.setWeeklyTarget(10_000);
+        dto.setWeeks(rounds);
+        dto.setStartDate(start);
+        dto.setBonusAmount(5_000);
+        return jackPointService.save(dto).getData();
+    }
+
+    @Test
+    void aDailyGameCountsDaysInARowAndTodayNeverCountsYet() {
+        LocalDate today = LocalDate.now();
+        earnedOn(today.minusDays(4), 5_000);   // under
+        earnedOn(today.minusDays(3), 12_000);
+        earnedOn(today.minusDays(2), 15_000);
+        earnedOn(today.minusDays(1), 11_000);  // 3 days in a row: won
+        earnedOn(today, 50_000);               // today is not over
+        JackPoint jp = game("DAY", 3, today.minusDays(5));
+        assertEquals("DAY", jp.getPeriod());
+        assertEquals(today.minusDays(5), jp.getStartDate(), "a daily game starts on the day chosen");
+
+        jackPointService.evaluate(LoggerUser.getBranchUIDOrMain());
+        assertEquals(1, awardsOfStaff().stream().filter(x -> x.getJackPointUid().equals(jp.getUid())).count(), "one win for this staff member");
+        JackPointAward a = awardsOfStaff().stream().filter(x -> x.getJackPointUid().equals(jp.getUid())).findFirst().orElseThrow();
+        assertEquals(today.minusDays(3), a.getWeekFrom());
+        assertEquals(today.minusDays(1), a.getWeekTo());
+        assertEquals(today.minusDays(1), a.getRunEnd());
+        assertEquals(38_000, a.getCommissionTotal());
+        assertEquals("DAY", a.getPeriod());
+    }
+
+    @Test
+    void aMonthlyGameCountsCalendarMonthsAndTheListSaysWhatIsRunning() {
+        LocalDate month = LocalDate.now().withDayOfMonth(1);
+        earnedOn(month.minusMonths(2).plusDays(3), 20_000);
+        earnedOn(month.minusMonths(1).plusDays(10), 30_000); // 2 months in a row: won
+        JackPoint jp = game("MONTH", 2, month.minusMonths(2).plusDays(15));
+        assertEquals(month.minusMonths(2), jp.getStartDate(), "a monthly game starts on the 1st");
+        JackPoint later = game("WEEK", 2, LocalDate.now().plusWeeks(2));
+
+        jackPointService.evaluate(LoggerUser.getBranchUIDOrMain());
+        assertEquals(1, awardsOfStaff().stream().filter(x -> x.getJackPointUid().equals(jp.getUid())).count(), "one win for this staff member");
+        JackPointAward a = awardsOfStaff().stream().filter(x -> x.getJackPointUid().equals(jp.getUid())).findFirst().orElseThrow();
+        assertEquals(month.minusMonths(2), a.getWeekFrom());
+        assertEquals(month.minusDays(1), a.getRunEnd(), "the run ends on the last day of last month");
+
+        Map<String, Object> data = jackPointService.overview().getData();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("jackPoints");
+        Map<String, Object> m = rows.stream().filter(r -> ((JackPoint) r.get("jackPoint")).getUid().equals(jp.getUid())).findFirst().orElseThrow();
+        assertEquals("RUNNING", m.get("state"));
+        assertTrue((Long) m.get("waiting") >= 1, "our win waits for approval");
+        Map<String, Object> u = rows.stream().filter(r -> ((JackPoint) r.get("jackPoint")).getUid().equals(later.getUid())).findFirst().orElseThrow();
+        assertEquals("UPCOMING", u.get("state"));
+    }
 }

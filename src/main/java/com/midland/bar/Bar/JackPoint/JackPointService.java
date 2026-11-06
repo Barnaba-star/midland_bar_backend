@@ -62,8 +62,9 @@ public class JackPointService {
             jp = new JackPoint();
             jp.setCreatedBy(LoggerUser.getEmail());
         }
-        if (dto.getWeeks() > 52)
-            return new Response<>("At most 52 weeks in a row");
+        String period = JackPeriod.of(dto.getPeriod());
+        if (dto.getWeeks() > JackPeriod.maxRounds(period))
+            return new Response<>("At most " + JackPeriod.maxRounds(period) + " in a row");
         int leave = dto.getLeaveDays() == null ? 0 : Math.max(0, dto.getLeaveDays());
         int bonus = dto.getBonusAmount() == null ? 0 : Math.max(0, dto.getBonusAmount());
         String note = dto.getRewardNote() == null ? "" : dto.getRewardNote().trim();
@@ -74,7 +75,8 @@ public class JackPointService {
         jp.setName(dto.getName().trim());
         jp.setWeeklyTarget(dto.getWeeklyTarget());
         jp.setWeeks(dto.getWeeks());
-        jp.setStartDate(monday(dto.getStartDate() == null ? LocalDate.now() : dto.getStartDate()));
+        jp.setPeriod(period);
+        jp.setStartDate(JackPeriod.start(dto.getStartDate() == null ? LocalDate.now() : dto.getStartDate(), period));
         jp.setLeaveDays(leave);
         jp.setBonusAmount(bonus);
         jp.setRewardNote(note.isEmpty() ? null : (note.length() > 200 ? note.substring(0, 200) : note));
@@ -101,7 +103,7 @@ public class JackPointService {
         evaluate(branch);
         List<JackPoint> points = jackPointRepository.findOfBranch(branch);
         List<BarProjection> staff = barStaffRepository.findBarStaffList(branch);
-        Map<String, NavigableMap<LocalDate, Integer>> weeks = weeklyEarned(branch, points);
+        Map<String, Map<String, NavigableMap<LocalDate, Integer>>> earnedBy = earnedByPeriod(branch, points);
         Map<String, List<JackPointAward>> awardsByPoint = new HashMap<>();
         List<JackPointAward> awards = awardRepository.findOfBranch(branch);
         for (JackPointAward a : awards)
@@ -109,6 +111,7 @@ public class JackPointService {
 
         List<Map<String, Object>> rows = new ArrayList<>();
         for (JackPoint jp : points) {
+            Map<String, NavigableMap<LocalDate, Integer>> weeks = earnedBy.getOrDefault(JackPeriod.of(jp.getPeriod()), Map.of());
             List<Map<String, Object>> progress = new ArrayList<>();
             if (Boolean.TRUE.equals(jp.getEnabled())) {
                 for (BarProjection s : staff) {
@@ -121,13 +124,24 @@ public class JackPointService {
                 progress.sort(Comparator.comparing((Map<String, Object> p) -> -((Integer) p.get("streak")))
                         .thenComparing(p -> -((Integer) p.get("thisWeek"))));
             }
+            List<JackPointAward> won = awardsByPoint.getOrDefault(jp.getUid(), List.of());
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("jackPoint", jp);
             row.put("progress", progress);
+            row.put("state", stateOf(jp));
+            row.put("winners", won.stream().filter(a -> !JackPointAward.REJECTED.equals(a.getStatus())).count());
+            row.put("waiting", won.stream().filter(a -> JackPointAward.QUALIFIED.equals(a.getStatus())).count());
+            row.put("currentFrom", JackPeriod.start(LocalDate.now(), jp.getPeriod()));
+            row.put("currentTo", JackPeriod.end(JackPeriod.start(LocalDate.now(), jp.getPeriod()), jp.getPeriod()));
             rows.add(row);
         }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("jackPoints", rows);
+        Map<String, Long> counts = new LinkedHashMap<>();
+        for (String st : List.of("RUNNING", "UPCOMING", "OFF"))
+            counts.put(st, rows.stream().filter(r -> st.equals(r.get("state"))).count());
+        counts.put("ALL", (long) rows.size());
+        out.put("counts", counts);
         out.put("awards", awards);
         return new Response<>(out);
     }
@@ -143,10 +157,11 @@ public class JackPointService {
         evaluate(branch);
         List<JackPoint> points = jackPointRepository.findOfBranch(branch).stream()
                 .filter(j -> Boolean.TRUE.equals(j.getEnabled())).toList();
-        Map<String, NavigableMap<LocalDate, Integer>> weeks = weeklyEarned(branch, points);
+        Map<String, Map<String, NavigableMap<LocalDate, Integer>>> earnedBy = earnedByPeriod(branch, points);
         List<JackPointAward> awards = awardRepository.findOfStaff(staff.getUid(), branch);
         List<Map<String, Object>> rows = new ArrayList<>();
         for (JackPoint jp : points) {
+            Map<String, NavigableMap<LocalDate, Integer>> weeks = earnedBy.getOrDefault(JackPeriod.of(jp.getPeriod()), Map.of());
             Map<String, Object> p = progressOf(jp, staff.getUid(), weeks.getOrDefault(staff.getUid(), new TreeMap<>()),
                     awards.stream().filter(a -> a.getJackPointUid().equals(jp.getUid())).toList());
             p.put("name", jp.getName());
@@ -206,18 +221,21 @@ public class JackPointService {
                 .filter(j -> Boolean.TRUE.equals(j.getEnabled())).toList();
         if (points.isEmpty())
             return 0;
-        LocalDate lastFinished = monday(LocalDate.now()).minusWeeks(1);
-        Map<String, NavigableMap<LocalDate, Integer>> weeks = weeklyEarned(branch, points);
+        Map<String, Map<String, NavigableMap<LocalDate, Integer>>> earnedBy = earnedByPeriod(branch, points);
         List<BarProjection> staff = barStaffRepository.findBarStaffList(branch);
         int found = 0;
         for (JackPoint jp : points) {
+            String period = JackPeriod.of(jp.getPeriod());
+            // Only rounds that are over count: yesterday, last week, last month.
+            LocalDate lastFinished = JackPeriod.plus(JackPeriod.start(LocalDate.now(), period), period, -1);
+            Map<String, NavigableMap<LocalDate, Integer>> weeks = earnedBy.getOrDefault(period, Map.of());
             List<JackPointAward> past = awardRepository.findOfJackPoint(jp.getUid());
             for (BarProjection s : staff) {
                 NavigableMap<LocalDate, Integer> earned = weeks.getOrDefault(s.getUid(), new TreeMap<>());
                 LocalDate week = firstCountedWeek(jp, s.getUid(), past);
                 int streak = 0;
                 int total = 0;
-                for (; !week.isAfter(lastFinished); week = week.plusWeeks(1)) {
+                for (; !week.isAfter(lastFinished); week = JackPeriod.plus(week, period, 1)) {
                     int got = earned.getOrDefault(week, 0);
                     if (got >= jp.getWeeklyTarget()) {
                         streak++;
@@ -232,8 +250,9 @@ public class JackPointService {
                         a.setJackPointName(jp.getName());
                         a.setStaffUid(s.getUid());
                         a.setStaffName(name(s.getFirstName(), s.getLastName()));
-                        a.setWeekFrom(week.minusWeeks(jp.getWeeks() - 1L));
+                        a.setWeekFrom(JackPeriod.plus(week, period, 1L - jp.getWeeks()));
                         a.setWeekTo(week);
+                        a.setPeriod(period);
                         a.setCommissionTotal(total);
                         a.setLeaveDays(jp.getLeaveDays());
                         a.setBonusAmount(jp.getBonusAmount());
@@ -258,35 +277,54 @@ public class JackPointService {
         LocalDate from = jp.getStartDate();
         for (JackPointAward a : past)
             if (a.getStaffUid().equals(staffUid) && !a.getWeekTo().isBefore(from))
-                from = a.getWeekTo().plusWeeks(1);
+                from = JackPeriod.plus(a.getWeekTo(), jp.getPeriod(), 1);
         return from;
     }
 
     /** Where a staff member stands: weeks in a row so far (finished weeks), this week's commission, and the target. */
     private static Map<String, Object> progressOf(JackPoint jp, String staffUid, NavigableMap<LocalDate, Integer> earned, List<JackPointAward> past) {
-        LocalDate thisWeek = monday(LocalDate.now());
+        String period = JackPeriod.of(jp.getPeriod());
+        LocalDate thisWeek = JackPeriod.start(LocalDate.now(), period);
         int streak = 0;
-        for (LocalDate w = firstCountedWeek(jp, staffUid, past); w.isBefore(thisWeek); w = w.plusWeeks(1))
+        for (LocalDate w = firstCountedWeek(jp, staffUid, past); w.isBefore(thisWeek); w = JackPeriod.plus(w, period, 1))
             streak = earned.getOrDefault(w, 0) >= jp.getWeeklyTarget() ? streak + 1 : 0;
         Map<String, Object> p = new LinkedHashMap<>();
         p.put("jackPointUid", jp.getUid());
         p.put("streak", streak);
         p.put("weeks", jp.getWeeks());
         p.put("weeklyTarget", jp.getWeeklyTarget());
+        p.put("period", period);
         p.put("thisWeek", jp.getStartDate().isAfter(thisWeek) ? 0 : earned.getOrDefault(thisWeek, 0));
         p.put("started", !jp.getStartDate().isAfter(thisWeek));
         return p;
     }
 
-    /** Commission earned on sales per staff member per week (Monday), from the earliest game start up to today. */
-    private Map<String, NavigableMap<LocalDate, Integer>> weeklyEarned(String branch, List<JackPoint> points) {
+    /** RUNNING (on and started), UPCOMING (on, starts later) or OFF. */
+    static String stateOf(JackPoint jp) {
+        if (!Boolean.TRUE.equals(jp.getEnabled()))
+            return "OFF";
+        return jp.getStartDate().isAfter(LocalDate.now()) ? "UPCOMING" : "RUNNING";
+    }
+
+    /**
+     * Commission earned on sales per staff member per round, for each kind of
+     * round the games use: {period: {staffUid: {round start: amount}}}. Read
+     * once by day, from the earliest game start up to today.
+     */
+    private Map<String, Map<String, NavigableMap<LocalDate, Integer>>> earnedByPeriod(String branch, List<JackPoint> points) {
         LocalDate from = points.stream().map(JackPoint::getStartDate).min(Comparator.naturalOrder()).orElse(LocalDate.now());
-        Map<String, NavigableMap<LocalDate, Integer>> out = new HashMap<>();
+        Set<String> periods = new HashSet<>();
+        for (JackPoint jp : points)
+            periods.add(JackPeriod.of(jp.getPeriod()));
+        Map<String, Map<String, NavigableMap<LocalDate, Integer>>> out = new HashMap<>();
         for (Object[] row : staffCommissionsRepository.earnedByDay(branch, from, LocalDate.now())) {
             if (row[0] == null || row[1] == null)
                 continue;
             int amount = row[2] instanceof Number n ? n.intValue() : 0;
-            out.computeIfAbsent((String) row[0], k -> new TreeMap<>()).merge(monday((LocalDate) row[1]), amount, Integer::sum);
+            for (String period : periods)
+                out.computeIfAbsent(period, k -> new HashMap<>())
+                        .computeIfAbsent((String) row[0], k -> new TreeMap<>())
+                        .merge(JackPeriod.start((LocalDate) row[1], period), amount, Integer::sum);
         }
         return out;
     }

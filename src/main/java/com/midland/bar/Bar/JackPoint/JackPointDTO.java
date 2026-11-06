@@ -13,14 +13,16 @@ public class JackPointDTO {
     private String uid;
     @NotBlank(message = "Give the Jack Point a name")
     private String name;
-    @NotNull(message = "Enter the commission for each week")
-    @Min(value = 1, message = "Enter the commission for each week")
+    @NotNull(message = "Enter the commission for each round")
+    @Min(value = 1, message = "Enter the commission for each round")
     private Integer weeklyTarget;
-    @NotNull(message = "Enter how many weeks in a row")
-    @Min(value = 1, message = "Enter how many weeks in a row")
+    @NotNull(message = "Enter how many in a row")
+    @Min(value = 1, message = "Enter how many in a row")
     private Integer weeks;
     /** Any day of the first week; null = this week. */
     private LocalDate startDate;
+    /** DAY, WEEK or MONTH; null = WEEK. */
+    private String period;
     private Integer leaveDays;
     private Integer bonusAmount;
     private String rewardNote;

@@ -8,8 +8,8 @@ import java.time.LocalDate;
 
 /**
  * A Jack Point: a game for the waiters set by the CEO, manager or accountant.
- * A staff member whose commission reaches [weeklyTarget] every week for
- * [weeks] weeks running wins the reward - paid days off, a cash bonus and/or
+ * A staff member whose commission reaches [weeklyTarget] every round (a day,
+ * a week or a month - [period]) for [weeks] rounds running wins the reward - paid days off, a cash bonus and/or
  * something written (a crate of soda). Weeks are Monday to Sunday and only
  * count once they are over; they are counted from [startDate].
  */
@@ -38,6 +38,10 @@ public class JackPoint extends TenantEntity {
     /** The Monday the first counted week starts. */
     @Column(name = "start_date", nullable = false)
     private LocalDate startDate;
+
+    /** DAY, WEEK or MONTH: how long one round is (null = WEEK, the games from before). */
+    @Column(name = "period", length = 10)
+    private String period = JackPeriod.WEEK;
 
     /** Paid days off won (0 = none). */
     @Column(name = "leave_days")
