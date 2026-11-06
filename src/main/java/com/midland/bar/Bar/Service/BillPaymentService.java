@@ -333,7 +333,8 @@ public class BillPaymentService {
         receipt.put("code", bill.getSalesCode());
         receipt.put("branchName", branchName);
         receipt.put("status", bill.getPaymentStatus());
-        receipt.put("total", barSalesRepository.billTotal(bill.getUid()));
+        long total = barSalesRepository.billTotal(bill.getUid());
+        receipt.put("total", total);
         // Stored as the cashier's sign-in name; the slip prints their name.
         receipt.put("paidBy", displayName(bill.getPaidBy()));
         // A Staff Sell bill was served by its staff member, not by whoever took the money.
@@ -348,8 +349,16 @@ public class BillPaymentService {
         receipt.put("discountTotal", lines.stream().mapToInt(x -> x.get("discount") == null ? 0 : ((Number) x.get("discount")).intValue()).sum());
         // Given free as a customer's offer: one line under the items, with whose.
         List<com.midland.bar.Bar.Model.OfferUse> offers = offerUseRepository.ofBill(bill.getUid());
-        receipt.put("offerTotal", offers.stream().mapToInt(com.midland.bar.Bar.Model.OfferUse::getAmount).sum());
-        receipt.put("offerCustomer", offers.isEmpty() ? null : offers.get(0).getCustomerName());
+        long offerTotal = offers.stream().mapToInt(com.midland.bar.Bar.Model.OfferUse::getAmount).sum();
+        String offerCustomer = offers.isEmpty() ? null : offers.get(0).getCustomerName();
+        // Not paid yet: the loyalty offer that will come off it, so the printed bill shows what is left to pay.
+        if (offers.isEmpty() && "PENDING".equals(bill.getPaymentStatus()) && bill.getLoyaltyCustomerUid() != null) {
+            offerTotal = loyaltyService.autoOffer(bill, total);
+            offerCustomer = offerTotal > 0 ? bill.getLoyaltyCustomerName() : null;
+        }
+        receipt.put("offerTotal", offerTotal);
+        receipt.put("offerCustomer", offerCustomer);
+        receipt.put("toPay", Math.max(0, total - offerTotal));
         receipt.put("traReceiptNo", bill.getTraReceiptNo());
         receipt.put("traVerifyCode", bill.getTraVerifyCode());
         receipt.put("lines", lines);

@@ -382,4 +382,47 @@ public class LoyaltyService {
                 java.time.LocalDate.now().withDayOfMonth(1).atStartOfDay()));
         return monthlyLeft + rewardLeft(c.getUid());
     }
+
+    /**
+     * Customers who earned an offer this round and still hold it: name, what
+     * they earned, what is left to spend and when it expires - Madeni > Ofa.
+     */
+    public Response<Map<String, Object>> winners() {
+        String branchUID = LoggerUser.getBranchUIDOrMain();
+        List<LoyaltyReward> live = rewardRepository.liveInBranch(branchUID, LocalDateTime.now());
+        Map<String, Long> used = new HashMap<>();
+        if (!live.isEmpty())
+            for (Object[] r : offerUseRepository.usedOfRewards(live.stream().map(LoyaltyReward::getUid).toList()))
+                used.put((String) r[0], ((Number) r[1]).longValue());
+        Map<String, Map<String, Object>> byCustomer = new LinkedHashMap<>();
+        for (LoyaltyReward r : live) {
+            Map<String, Object> m = byCustomer.computeIfAbsent(r.getCustomerUid(), k -> {
+                Map<String, Object> x = new LinkedHashMap<>();
+                x.put("customerUid", k);
+                x.put("name", r.getCustomerName());
+                x.put("earned", 0L);
+                x.put("used", 0L);
+                x.put("grantedAt", r.getGrantedAt());
+                x.put("expiresAt", r.getExpiresAt());
+                return x;
+            });
+            long u = Math.min(r.getAmount(), used.getOrDefault(r.getUid(), 0L));
+            m.put("earned", (Long) m.get("earned") + r.getAmount());
+            m.put("used", (Long) m.get("used") + u);
+            if (r.getGrantedAt() != null && (m.get("grantedAt") == null || r.getGrantedAt().isAfter((LocalDateTime) m.get("grantedAt"))))
+                m.put("grantedAt", r.getGrantedAt());
+        }
+        List<Map<String, Object>> rows = new ArrayList<>(byCustomer.values());
+        for (Map<String, Object> m : rows) {
+            m.put("left", Math.max(0, (Long) m.get("earned") - (Long) m.get("used")));
+            customerRepository.findById((String) m.get("customerUid")).ifPresent(c -> m.put("phone", c.getPhone()));
+        }
+        // Still to spend first, biggest first; spent ones after.
+        rows.sort(Comparator.comparing((Map<String, Object> m) -> (Long) m.get("left")).reversed());
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("customers", rows);
+        out.put("withOffer", rows.stream().filter(m -> (Long) m.get("left") > 0).count());
+        out.put("totalLeft", rows.stream().mapToLong(m -> (Long) m.get("left")).sum());
+        return new Response<>(out);
+    }
 }

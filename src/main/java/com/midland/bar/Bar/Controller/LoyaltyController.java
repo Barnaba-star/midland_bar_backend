@@ -59,6 +59,13 @@ public class LoyaltyController {
         return loyaltyService.attach(billUid, dto.getPhone(), dto.getPin());
     }
 
+    /** Customers holding an earned offer, with what is left of it. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_DEBT')")
+    @GetMapping("/winners")
+    public Response<Map<String, Object>> winners() {
+        return loyaltyService.winners();
+    }
+
     @PreAuthorize("@authChecker.hasPermissionOrRoot('MANAGE_DEBT')")
     @PostMapping("/customers/{uid}/resetPin")
     public Response<Map<String, Object>> resetPin(@PathVariable String uid) {

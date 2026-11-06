@@ -255,6 +255,17 @@ class BillCustomerNoteTest {
         assertEquals(600L, ((Number) card.get("offerNow")).longValue());
         assertEquals(total - 600, ((Number) card.get("toPay")).longValue());
 
+        // The printed bill shows the offer and what is left; Madeni > Ofa lists the customer.
+        Map<String, Object> slip = billPaymentService.receipt(next.getUid()).getData();
+        assertEquals(600L, ((Number) slip.get("offerTotal")).longValue());
+        assertEquals(total - 600, ((Number) slip.get("toPay")).longValue());
+        Map<String, Object> winners = loyaltyService.winners().getData();
+        assertEquals(1L, ((Number) winners.get("withOffer")).longValue());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> w = ((List<Map<String, Object>>) winners.get("customers")).get(0);
+        assertEquals("BI OFA", w.get("name"));
+        assertEquals(600L, ((Number) w.get("left")).longValue());
+
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> lines = (List<Map<String, Object>>) ((Map<String, Object>) staffSellService.handover(waiter.getStaffCode()).getData().get("open")).get("bills");
         Map<String, Object> line = lines.stream().filter(l -> next.getUid().equals(l.get("uid"))).findFirst().orElseThrow();
@@ -271,5 +282,6 @@ class BillCustomerNoteTest {
         assertNotNull(staffSellService.receiveHandover(dto).getData(), "the cashier takes the rest; the offer comes off by itself");
         assertEquals("PAID", salesOpenedRepository.findById(next.getUid()).orElseThrow().getPaymentStatus());
         assertEquals(0, loyaltyService.rewardLeft((String) card.get("uid")), "the offer is used up");
+        assertEquals(0L, ((Number) loyaltyService.winners().getData().get("withOffer")).longValue(), "spent: no longer counted as holding an offer");
     }
 }
