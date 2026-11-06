@@ -43,6 +43,7 @@ public interface StaffCommissionsRepository extends JpaRepository<StaffCommissio
         s.payedAmount AS paidAmount,
         s.remainingAmount AS remainingAmount,
         COALESCE(s.lossAmount, 0) AS lossAmount,
+        COALESCE(s.bonusAmount, 0) AS bonusAmount,
         s.createdAt AS date,
         s.barStaff.firstName AS firstName,
         s.barStaff.middleName AS middleName,
@@ -87,6 +88,7 @@ public interface StaffCommissionsRepository extends JpaRepository<StaffCommissio
         COUNT(DISTINCT s.createdAt) AS days,
         SUM(COALESCE(s.totalAmount, 0)) AS totalAmount,
         SUM(COALESCE(s.lossAmount, 0)) AS lossAmount,
+        SUM(COALESCE(s.bonusAmount, 0)) AS bonusAmount,
         SUM(COALESCE(s.payedAmount, 0)) AS paidAmount,
         SUM(COALESCE(s.remainingAmount, 0)) AS remainingAmount
     FROM StaffCommissions s

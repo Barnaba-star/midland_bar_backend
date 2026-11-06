@@ -124,6 +124,9 @@ public interface BarProjection {
     BigDecimal getRemainingAmount();
     /** Handover shortages charged to a staff commission row. */
     Integer getLossAmount();
+
+    /** Jack Point bonus inside a staff commission day's total (staff report). */
+    Integer getBonusAmount();
     LocalDate getBookingDate();
     String getServiceUID();
 

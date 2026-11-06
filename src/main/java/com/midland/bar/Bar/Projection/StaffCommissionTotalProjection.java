@@ -11,6 +11,8 @@ public interface StaffCommissionTotalProjection {
     Long getDays();
     Long getTotalAmount();
     Long getLossAmount();
+    /** Jack Point bonuses inside totalAmount (the rest is commission from sales). */
+    Long getBonusAmount();
     Long getPaidAmount();
     /** Net of all the days - below zero means they owe. */
     Long getRemainingAmount();

@@ -234,5 +234,11 @@ class JackPointTest {
         @SuppressWarnings("unchecked")
         List<JackPointAward> bonuses = (List<JackPointAward>) jackPointService.overview().getData().get("bonuses");
         assertTrue(bonuses.stream().anyMatch(b -> b.getUid().equals(a.getUid())), "listed among those given a bonus");
+
+        // Staff report: the Jack Point bonus is shown apart from the commission inside the total.
+        com.midland.bar.Bar.Projection.StaffCommissionTotalProjection row = barService.findStaffCommissionTotals("TODAY").getData().stream()
+                .filter(r -> staff.getUid().equals(r.getStaffUid())).findFirst().orElseThrow();
+        assertEquals(15_000L, row.getBonusAmount());
+        assertEquals(15_000L, row.getTotalAmount());
     }
 }
