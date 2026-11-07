@@ -44,9 +44,35 @@ public class UserController {
     private final PlatformSettingService platformSettingService;
     private final SettingService settingService;
     private final com.midland.bar.Config.Security.LoginThrottle loginThrottle;
+    private final com.midland.bar.Uaa.Service.PasswordResetService passwordResetService;
 
 
 
+
+    /**
+     * "Umesahau password?": a new password for an account, approved on the
+     * spot by a senior login (see PasswordResetService for who may approve).
+     */
+    @PostMapping("/forgotPassword")
+    public ResponseEntity<Map<String, Object>> forgotPassword(@RequestBody com.midland.bar.Uaa.Dto.ForgotPasswordDTO dto,
+                                                              jakarta.servlet.http.HttpServletRequest request) {
+        String problem = passwordResetService.reset(dto, request);
+        Map<String, Object> body = new LinkedHashMap<>();
+        if (problem == null) {
+            body.put("status", 200);
+            body.put("code", "PASSWORD_RESET");
+            return ResponseEntity.ok(body);
+        }
+        if (problem.startsWith("LOCKED:")) {
+            body.put("status", 429);
+            body.put("code", "TOO_MANY_ATTEMPTS");
+            body.put("minutes", Long.parseLong(problem.substring(7)));
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(body);
+        }
+        body.put("status", 400);
+        body.put("code", problem);
+        return ResponseEntity.badRequest().body(body);
+    }
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody LoginDTO loginDTO, HttpServletResponse response,
