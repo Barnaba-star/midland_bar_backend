@@ -86,4 +86,17 @@ class StaffPinResetTest {
         assertNull(staffSellService.resetPin(unknown).getData());
         assertEquals(before, barStaffRepository.findById(staff.getUid()).orElseThrow().getPinHash());
     }
+
+    @Test
+    void newCodeFromManageStaffReplacesTheOldPairWithAOneTimeOne() {
+        String oldCode = staff.getStaffCode();
+        BarStaff issued = barService.resetStaffAccess(staff.getUid()).getData();
+        assertNotNull(issued);
+        assertNotEquals(oldCode, issued.getStaffCode());
+        assertNotNull(issued.getIssuedPin());
+        BarStaff after = barStaffRepository.findById(staff.getUid()).orElseThrow();
+        assertTrue(after.getMustSetCode(), "they set their own code + PIN at the next sign-in");
+        assertTrue(passwordEncoder.matches(issued.getIssuedPin(), after.getPinHash()));
+        assertNull(after.getPinLockedUntil());
+    }
 }

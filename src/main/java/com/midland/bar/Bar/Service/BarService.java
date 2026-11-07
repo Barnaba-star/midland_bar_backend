@@ -617,6 +617,29 @@ public class BarService {
         }
 
     }
+    /**
+     * A staff member who forgot their code or PIN: the old pair stops working
+     * and they get a new one-time code + PIN, shown once to the manager. At
+     * the next sign-in they set their own (SET_CODE, like a new staff member).
+     */
+    @org.springframework.transaction.annotation.Transactional
+    public Response<BarStaff> resetStaffAccess(String staffUid) {
+        Optional<BarStaff> found = barStaffRepository.findBarStaffByUID(staffUid, LoggerUser.getBranchUID());
+        if (found.isEmpty())
+            return new Response<>("Staff Not Found");
+        BarStaff staff = found.get();
+        String pin = StaffCodeService.randomPin();
+        staff.setStaffCode(staffCodeService.nextCode(staff.getBranchUid()));
+        staff.setPinHash(passwordEncoder.encode(pin));
+        staff.setMustSetCode(true);
+        staff.setPinFailedAttempts(0);
+        staff.setPinLockedUntil(null);
+        BarStaff saved = barStaffRepository.save(staff);
+        saved.setIssuedPin(pin);
+        log.info(LoggerUser.getEmail() + " gave staff " + staffUid + " a new one-time code and PIN");
+        return new Response<>(saved);
+    }
+
     public Response<BarStaff> findBarStaffByUID(String barStaffUID){
         log.info(LoggerUser.getEmail() + "is accessing Staff");
         Optional<BarStaff> optionalBarStaff = barStaffRepository.findBarStaffByUID(barStaffUID, LoggerUser.getBranchUID());

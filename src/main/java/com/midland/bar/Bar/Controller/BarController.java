@@ -381,6 +381,13 @@ public class BarController {
         return staffOrderService.reject(orderUid, dto);
     }
 
+    /** Manage Staff: a new one-time code and PIN for a staff member who forgot theirs (shown once). */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_STAFF')")
+    @PostMapping("/resetStaffAccess/{staffUid}")
+    public Response<BarStaff> resetStaffAccess(@PathVariable String staffUid){
+        return barService.resetStaffAccess(staffUid);
+    }
+
     /** Staff Sell: a manager's login to leave for POS. */
     @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_SALES')")
     @PostMapping("/staffSell/unlock")
