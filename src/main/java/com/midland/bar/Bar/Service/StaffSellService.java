@@ -437,34 +437,73 @@ public class StaffSellService {
      * not only whoever signed in. Five wrong tries lock it for a minute.
      */
     public Response<Boolean> unlock(StaffSellUnlockDTO dto) {
-        String branchUID = LoggerUser.getBranchUIDOrMain();
-        String key = branchUID;
+        Object ok = manager(dto.getUsername(), dto.getPassword(), "Wrong username or password, or this login cannot open POS");
+        if (!(ok instanceof User user))
+            return new Response<>((String) ok);
+        log.info("{} unlocked Staff Sell back to POS", user.getUsername());
+        return new Response<>(Boolean.TRUE);
+    }
+
+    /**
+     * A staff member who forgot their PIN sets a new one at the till, with a
+     * manager's login as approval (same check and lock as leaving Staff Sell).
+     * Clears the wrong-PIN lock too. Unknown code and bad approval answer alike,
+     * so it cannot be used to find out which codes exist.
+     */
+    @org.springframework.transaction.annotation.Transactional
+    public Response<Boolean> resetPin(com.midland.bar.Bar.Dto.StaffPinResetDTO dto) {
+        String newPin = dto.getNewPin() == null ? "" : dto.getNewPin().trim();
+        String problem = StaffPinRules.problem(newPin);
+        if (problem != null)
+            return new Response<>(problem);
+        Object ok = manager(dto.getUsername(), dto.getPassword(), "Code ya mhudumu, username au neno la siri la meneja si sahihi");
+        if (!(ok instanceof User user))
+            return new Response<>((String) ok);
+        Optional<BarStaff> found = byCode(dto.getStaffCode());
+        if (found.isEmpty())
+            return new Response<>("Code ya mhudumu, username au neno la siri la meneja si sahihi");
+        BarStaff staff = found.get();
+        if (passwordEncoder.matches(newPin, staff.getPinHash()))
+            return new Response<>("Hii ndiyo PIN yako ya zamani - chagua nyingine");
+        staff.setPinHash(passwordEncoder.encode(newPin));
+        staff.setPinFailedAttempts(0);
+        staff.setPinLockedUntil(null);
+        barStaffRepository.save(staff);
+        log.info("{} approved a new PIN for staff {} in branch {}", user.getUsername(), staff.getUid(), staff.getBranchUid());
+        return new Response<>(Boolean.TRUE);
+    }
+
+    /**
+     * The User when this is an active managing login of this branch (or root),
+     * otherwise the message to show. Five wrong tries lock it for a minute.
+     */
+    private Object manager(String username, String password, String wrong) {
+        String key = LoggerUser.getBranchUIDOrMain();
         long now = java.time.Instant.now().getEpochSecond();
         long[] fails = unlockFails.get(key);
         if (fails != null && fails[1] > now)
-            return new Response<>("Too many wrong tries - wait " + (fails[1] - now) + " seconds");
+            return "Too many wrong tries - wait " + (fails[1] - now) + " seconds";
 
-        User user = userRepository.findByUsernameForAuthentication(dto.getUsername().trim());
-        boolean ok = user != null
-                && passwordEncoder.matches(dto.getPassword(), user.getPassword())
+        User user = username == null ? null : userRepository.findByUsernameForAuthentication(username.trim());
+        boolean ok = user != null && password != null
+                && passwordEncoder.matches(password, user.getPassword())
                 && !Boolean.TRUE.equals(user.getIsBlocked())
                 && Boolean.TRUE.equals(user.getIsActive())
                 && (Boolean.TRUE.equals(user.getIsRoot())
-                    || (user.getBranch() != null && user.getBranch().getUid().equals(branchUID)
+                    || (user.getBranch() != null && user.getBranch().getUid().equals(key)
                         && user.getRoles() != null
                         && user.getRoles().stream().anyMatch(r -> UNLOCK_ROLES.contains(r.getCode()))));
         if (!ok) {
             long[] f = unlockFails.merge(key, new long[]{1, 0}, (a, b) -> new long[]{a[0] + 1, a[1]});
             if (f[0] >= MAX_TRIES) {
                 unlockFails.put(key, new long[]{0, now + LOCK_SECONDS});
-                log.warn("Staff Sell unlock locked for a minute after {} wrong tries (branch {})", MAX_TRIES, key);
+                log.warn("Staff Sell manager check locked for a minute after {} wrong tries (branch {})", MAX_TRIES, key);
             }
             // One message for every failure, so it cannot be used to find out who is a manager.
-            return new Response<>("Wrong username or password, or this login cannot open POS");
+            return wrong;
         }
         unlockFails.remove(key);
-        log.info("{} unlocked Staff Sell back to POS", user.getUsername());
-        return new Response<>(Boolean.TRUE);
+        return user;
     }
 
     /**

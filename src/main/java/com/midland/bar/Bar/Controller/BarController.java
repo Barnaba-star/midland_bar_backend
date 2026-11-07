@@ -388,6 +388,13 @@ public class BarController {
         return staffSellService.unlock(dto);
     }
 
+    /** Staff Sell: a staff member who forgot their PIN sets a new one, approved by a manager's login. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_SALES')")
+    @PostMapping("/staffSell/resetPin")
+    public Response<Boolean> resetStaffPin(@Valid @RequestBody com.midland.bar.Bar.Dto.StaffPinResetDTO dto){
+        return staffSellService.resetPin(dto);
+    }
+
     /** Sales page: each staff member's takings for a day by payment method, and their unpaid bills. */
     @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_SALES')")
     @GetMapping("/staffSell/summary/{date}")
