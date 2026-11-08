@@ -37,6 +37,9 @@ import java.util.Optional;
 @RequiredArgsConstructor
 @Slf4j
 public class StaffOrderService {
+
+    /** Marks a plain return (Rudisha) in an exchange note. */
+    public static final String RETURN_NOTE = "RUDISHA";
     private final com.midland.bar.Utils.MoneyLock moneyLock;
 
     /** Selling and paying out need the login's shift open. */
@@ -150,6 +153,29 @@ public class StaffOrderService {
         if (back < 1 || back > lineQty)
             return new Response<>("You can send back between 1 and " + lineQty);
 
+        String oldStation = stationFor(oldService, branchUID);
+        LocalDateTime now = LocalDateTime.now();
+        StaffOrderLine returned = new StaffOrderLine();
+        returned.setBarServiceUid(oldService.getUid());
+        returned.setServiceName(oldService.getServiceName());
+        returned.setQuantity(back);
+        returned.setUnitPrice(sold.getUnitPrice() != null ? sold.getUnitPrice()
+                : (sold.getLineTotal() != null ? sold.getLineTotal() / lineQty : oldService.getPrice()));
+        returned.setReturnOfSalesUid(sold.getUid());
+
+        // Rudisha: the customer can't finish them (3 beers ordered, 1 drunk) - the rest go back, nothing comes instead.
+        // The station receives them back; then they come off the bill (store, commission and all) like a change.
+        if (dto.getBarServiceUID() == null || dto.getBarServiceUID().isBlank()) {
+            String note = oldService.getServiceName() + " x" + back + " -> " + RETURN_NOTE;
+            StaffOrder order = exchangeOrder(bill, oldStation, note, now);
+            returned.setOrder(order);
+            order.getLines().add(returned);
+            log.info("{} return on {}: {}", bill.getStaffName(), bill.getSalesCode(), note);
+            return new Response<>(List.of(staffOrderRepository.save(order)));
+        }
+
+        if (dto.getQuantity() == null)
+            return new Response<>("Enter how many");
         BarServiceEntity service = barServiceRepository.findBarServiceByUID(dto.getBarServiceUID(), LoggerUser.getBranchUIDOrMain()).orElse(null);
         if (service == null)
             return new Response<>("Service Not Found");
@@ -159,17 +185,7 @@ public class StaffOrderService {
             return new Response<>("No selling price set for " + service.getServiceName());
 
         String note = oldService.getServiceName() + " x" + back + " -> " + service.getServiceName() + " x" + dto.getQuantity();
-        LocalDateTime now = LocalDateTime.now();
-        String oldStation = stationFor(oldService, branchUID);
         String newStation = stationFor(service, branchUID);
-
-        StaffOrderLine returned = new StaffOrderLine();
-        returned.setBarServiceUid(oldService.getUid());
-        returned.setServiceName(oldService.getServiceName());
-        returned.setQuantity(back);
-        returned.setUnitPrice(sold.getUnitPrice() != null ? sold.getUnitPrice()
-                : (sold.getLineTotal() != null ? sold.getLineTotal() / lineQty : oldService.getPrice()));
-        returned.setReturnOfSalesUid(sold.getUid());
 
         StaffOrderLine wanted = new StaffOrderLine();
         wanted.setBarServiceUid(service.getUid());
@@ -314,7 +330,8 @@ public class StaffOrderService {
             if (line.getReturnOfSalesUid() == null)
                 continue;
             Response<SalesOpened> off = barService.takeOffForExchange(line.getReturnOfSalesUid(), line.getQuantity(),
-                    "Badilisho: " + (order.getExchangeNote() == null ? line.getServiceName() : order.getExchangeNote()));
+                    (order.getLines().stream().allMatch(l -> l.getReturnOfSalesUid() != null) ? "Rudisha: " : "Badilisho: ")
+                            + (order.getExchangeNote() == null ? line.getServiceName() : order.getExchangeNote()));
             if (off.getData() == null)
                 throw new BusinessException(off.getMessage());
         }

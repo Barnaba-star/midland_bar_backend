@@ -215,6 +215,37 @@ class StaffOrderFlowTest {
     }
 
     @Test
+    void aPlainReturnSendsTheRestBackAndTakesThemOffTheBill() {
+        int beef = beefOnHand();
+        write(3);
+        StaffOrder first = sendAndGetPending();
+        assertNotNull(staffOrderService.receive(first.getUid()).getData());
+        int unit = first.getLines().get(0).getUnitPrice();
+        int afterSale = beefOnHand();
+        assertTrue(afterSale < beef);
+        BarSales sold = barSalesRepository.findAll().stream()
+                .filter(l -> l.getSalesOpened() != null && bill.getUid().equals(l.getSalesOpened().getUid()))
+                .findFirst().orElseThrow();
+
+        // 3 ordered, 1 eaten: the other 2 go back, nothing instead.
+        StaffExchangeDTO back = new StaffExchangeDTO();
+        back.setBarSalesUID(sold.getUid());
+        back.setReturnQuantity(2);
+        var res = staffOrderService.exchange(back);
+        assertNotNull(res.getData(), res.getMessage());
+        assertEquals(1, res.getData().size());
+        StaffOrder order = res.getData().get(0);
+        assertEquals(1, order.getLines().size(), "only the return");
+        assertNotNull(order.getLines().get(0).getReturnOfSalesUid());
+        assertEquals(3 * unit, billTotal(), "nothing changes until the station has them back");
+
+        assertNotNull(staffOrderService.receive(order.getUid()).getData());
+        assertEquals(unit, billTotal(), "3 - 2 = 1");
+        assertTrue(beefOnHand() > afterSale, "the 2 go back to the store");
+        assertEquals(1, barSalesRepository.findById(sold.getUid()).orElseThrow().getQuantity());
+    }
+
+    @Test
     void rejectingLeavesTheBillAloneAndTellsTheStaffMemberWhy() {
         write(1);
         StaffOrder pending = sendAndGetPending();

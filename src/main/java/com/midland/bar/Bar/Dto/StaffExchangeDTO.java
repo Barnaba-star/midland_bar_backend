@@ -2,7 +2,6 @@ package com.midland.bar.Bar.Dto;
 
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 /**
@@ -19,10 +18,10 @@ public class StaffExchangeDTO {
     /** How many of it go back; empty = the whole line. */
     private Integer returnQuantity;
 
-    @NotBlank(message = "Choose what the customer wants instead")
+    /** What the customer wants instead; empty = a plain return (Rudisha) - nothing comes in its place. */
     private String barServiceUID;
 
-    @NotNull(message = "Enter how many")
+    /** How many of the new item; ignored for a plain return. */
     @Min(value = 1, message = "Quantity must be at least 1")
     private Integer quantity;
 
