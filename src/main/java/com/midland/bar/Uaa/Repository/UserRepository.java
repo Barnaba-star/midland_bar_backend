@@ -28,11 +28,38 @@ public interface UserRepository extends JpaRepository<User, String> {
      * username that is still taken in the table, and the unique constraint
      * would then reject the insert.
      */
-    @Query(value = "SELECT COUNT(*) FROM users WHERE username = :username", nativeQuery = true)
+    // Case-blind (owner, 2026-11-08): sign-in ignores capitals, so "James"
+    // must never be handed out while "james" exists.
+    @Query(value = "SELECT COUNT(*) FROM users WHERE LOWER(username) = LOWER(:username)", nativeQuery = true)
     long countUsername(@Param("username") String username);
 
     @Query("SELECT u FROM User u WHERE u.username=:username")
-    User findByUsername(@Param("username") String username);
+    User findByUsernameExact(@Param("username") String username);
+
+    /** Active accounts whose username matches ignoring capitals. */
+    @Query("SELECT u.username FROM User u WHERE LOWER(u.username) = LOWER(:username)")
+    List<String> findUsernamesIgnoringCase(@Param("username") String username);
+
+    /**
+     * The username as stored for what someone typed (owner, 2026-11-08: the
+     * system shows everything in capitals, so people type JAMES for james).
+     * The exact spelling wins; otherwise a case-blind match, only when it is
+     * the one account - two that differ only by capitals stay exact-only.
+     */
+    default String canonicalUsername(String typed) {
+        if (typed == null)
+            return null;
+        String t = typed.trim();
+        List<String> found = findUsernamesIgnoringCase(t);
+        if (found.contains(t) || found.size() != 1)
+            return t;
+        return found.get(0);
+    }
+
+    default User findByUsername(String username) {
+        User exact = findByUsernameExact(username);
+        return exact != null ? exact : findByUsernameExact(canonicalUsername(username));
+    }
 
     /**
      * "First Middle Last" for a sign-in name or email, for printing who did
@@ -61,7 +88,13 @@ public interface UserRepository extends JpaRepository<User, String> {
     LEFT JOIN FETCH u.roles
     WHERE u.username = :username
 """)
-    User findByUsernameForAuthentication(@Param("username") String username);
+    User findByUsernameForAuthenticationExact(@Param("username") String username);
+
+    /** Sign-in and approvals: capitals don't matter (see canonicalUsername). */
+    default User findByUsernameForAuthentication(String username) {
+        User exact = findByUsernameForAuthenticationExact(username);
+        return exact != null ? exact : findByUsernameForAuthenticationExact(canonicalUsername(username));
+    }
 
 
     @Query("SELECT u FROM User u WHERE  u.isActive=true ")
