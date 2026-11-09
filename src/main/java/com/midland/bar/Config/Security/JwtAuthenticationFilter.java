@@ -29,6 +29,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final com.midland.bar.Setting.Repository.BranchRepository branchRepository;
     private final com.midland.bar.Bar.Repository.BarStaffRepository barStaffRepository;
 
+    /**
+     * The customers' window (/public/**, a table's QR card) is open to all and
+     * never reads a token: a phone holding an old or half-valid BaronixTZ login
+     * must not be turned to the sign-in page when it scans a table (owner, 2026-11-09).
+     */
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        String path = request.getRequestURI();
+        return path != null && path.startsWith("/public/");
+    }
+
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
         String token = null;

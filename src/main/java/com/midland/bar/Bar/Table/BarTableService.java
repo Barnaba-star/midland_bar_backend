@@ -29,6 +29,14 @@ public class BarTableService {
     private final BarServiceRepository barServiceRepository;
     private final BranchRepository branchRepository;
 
+    /**
+     * The customers' window, kept 60 s per token: a whole table scanning at
+     * once, or a customer scrolling back, is answered without the database.
+     * Any change to the tables clears it; a price change shows within a minute.
+     */
+    private static final long VIEW_TTL_MS = 60_000;
+    private final java.util.concurrent.ConcurrentHashMap<String, Map.Entry<Long, Map<String, Object>>> viewCache = new java.util.concurrent.ConcurrentHashMap<>();
+
     public ResponseList<BarTable> list() {
         return new ResponseList<>(tableRepository.findAllInBranch(LoggerUser.getBranchUIDOrMain()));
     }
@@ -57,6 +65,7 @@ public class BarTableService {
             last.delete();
             tableRepository.save(last);
         }
+        viewCache.clear();
         log.info("{} set {} tables in branch {}", LoggerUser.getEmail(), count, branch);
         return new ResponseList<>(tables);
     }
@@ -70,6 +79,7 @@ public class BarTableService {
         if (t == null)
             return new Response<>("Table Not Found");
         t.setName(n);
+        viewCache.clear();
         return new Response<>(tableRepository.save(t));
     }
 
@@ -80,6 +90,7 @@ public class BarTableService {
         if (t == null)
             return new Response<>("Table Not Found");
         t.setToken(newToken());
+        viewCache.clear();
         log.info("{} gave {} a new QR card", LoggerUser.getEmail(), t.getName());
         return new Response<>(tableRepository.save(t));
     }
@@ -93,6 +104,9 @@ public class BarTableService {
         String key = token == null ? "" : token.trim().toUpperCase();
         if (key.length() != TOKEN_LENGTH)
             return new Response<>("TABLE_NOT_FOUND");
+        Map.Entry<Long, Map<String, Object>> cached = viewCache.get(key);
+        if (cached != null && cached.getKey() > System.currentTimeMillis())
+            return new Response<>(cached.getValue());
         BarTable t = tableRepository.findByToken(key).orElse(null);
         if (t == null)
             return new Response<>("TABLE_NOT_FOUND");
@@ -114,6 +128,9 @@ public class BarTableService {
             menu.add(item);
         });
         view.put("menu", menu);
+        if (viewCache.size() > 2000)
+            viewCache.clear();
+        viewCache.put(key, Map.entry(System.currentTimeMillis() + VIEW_TTL_MS, view));
         return new Response<>(view);
     }
 

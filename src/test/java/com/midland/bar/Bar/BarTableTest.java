@@ -83,5 +83,8 @@ class BarTableTest {
         SecurityContextHolder.clearContext();
         mvc.perform(get("/public/table/" + token)).andExpect(status().isOk()).andExpect(jsonPath("$.data.tableName").value("Meza 1"));
         mvc.perform(get("/bar/tables")).andExpect(status().is4xxClientError());
+        // A phone holding an old or broken login still opens the window, never the sign-in.
+        mvc.perform(get("/public/table/" + token).header("Authorization", "Bearer not.a.real.token"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.tableName").value("Meza 1"));
     }
 }
