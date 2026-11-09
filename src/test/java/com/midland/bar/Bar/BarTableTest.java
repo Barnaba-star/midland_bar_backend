@@ -33,6 +33,10 @@ class BarTableTest {
 
     @Autowired BarTableService tableService;
     @Autowired com.midland.bar.Bar.Table.TableActionsService actions;
+    @Autowired com.midland.bar.Bar.Service.BarService barService;
+    @Autowired com.midland.bar.Bar.Service.WorkShiftService workShiftService;
+    @Autowired com.midland.bar.Bar.Repository.SalesOpenedRepository salesOpenedRepository;
+    @Autowired com.midland.bar.Bar.Repository.StaffOrderRepository staffOrderRepository;
     @Autowired UserRepository userRepository;
     @Autowired MockMvc mvc;
 
@@ -130,5 +134,73 @@ class BarTableTest {
         java.util.List<?> menu = (java.util.List<?>) tableService.customerView(t.getToken()).getData().get("menu");
         menu.forEach(m -> assertNotNull(((java.util.Map<?, ?>) m).get("available")));
         assertEquals("WRONG_PHONE_OR_PIN", actions.card(t.getToken(), java.util.Map.of("phone", "0700000001", "pin", "0000")).getMessage());
+    }
+
+    private com.midland.bar.Bar.Model.BarStaff waiter() {
+        var dto = new com.midland.bar.Bar.Dto.BarStaffDTO();
+        dto.setFirstName("Juma");
+        dto.setLastName("Meza");
+        dto.setPhoneNumber("0711000000");
+        dto.setBarCategory(com.midland.bar.Bar.Model.StaffCategory.values()[0].name());
+        dto.setStaffCode("");
+        var saved = barService.saveBarStaff(dto);
+        assertNotNull(saved.getData(), saved.getMessage());
+        return saved.getData();
+    }
+
+    @Test
+    void aTableOrderGoesOnTheWaitersTableBillAndToTheStations() {
+        workShiftService.open();
+        tableService.setCount(0);
+        BarTable t = tableService.setCount(1).getData().get(0);
+        java.util.List<?> menu = (java.util.List<?>) tableService.customerView(t.getToken()).getData().get("menu");
+        String uid = (String) ((java.util.Map<?, ?>) menu.get(0)).get("uid");
+        assertNotNull(uid, "menu items carry their uid for ordering");
+
+        var placed = actions.placeOrder(t.getToken(), java.util.Map.of("items", java.util.List.of(java.util.Map.of("uid", uid, "qty", 2))));
+        assertNotNull(placed.getData(), placed.getMessage());
+        var pending = actions.pendingOrders().getData();
+        var mine = pending.stream().filter(o -> t.getName().equals(o.get("tableName"))).toList();
+        assertEquals(1, mine.size());
+        String orderUid = (String) mine.get(0).get("uid");
+
+        var w = waiter();
+        var accepted = actions.acceptOrder(orderUid, w.getUid());
+        assertNotNull(accepted.getData(), accepted.getMessage());
+        var bill = salesOpenedRepository.findById(accepted.getData().getBillUid()).orElseThrow();
+        assertEquals(t.getUid(), bill.getTableUid());
+        assertEquals(w.getUid(), bill.getStaffUid());
+        assertEquals("SENT", staffOrderRepository.findAll().stream().filter(o -> bill.getUid().equals(o.getSalesOpenedUid()))
+                .findFirst().orElseThrow().getStatus(), "straight to the station");
+        assertNull(actions.acceptOrder(orderUid, w.getUid()).getData(), "taken once");
+
+        // A second order from the table lands on the same bill.
+        actions.placeOrder(t.getToken(), java.util.Map.of("items", java.util.List.of(java.util.Map.of("uid", uid, "qty", 1))));
+        String second = (String) actions.pendingOrders().getData().stream().filter(o -> t.getName().equals(o.get("tableName"))).findFirst().orElseThrow().get("uid");
+        assertEquals(bill.getUid(), actions.acceptOrder(second, w.getUid()).getData().getBillUid());
+
+        var status = actions.tableOrders(t.getToken()).getData();
+        assertEquals("Juma Meza", status.get("waiter"));
+    }
+
+    @Test
+    void aRejectedOrderTellsWhyAndPaidAndInfoReachTheBar() {
+        tableService.setCount(0);
+        BarTable t = tableService.setCount(1).getData().get(0);
+        java.util.List<?> menu = (java.util.List<?>) tableService.customerView(t.getToken()).getData().get("menu");
+        String uid = (String) ((java.util.Map<?, ?>) menu.get(0)).get("uid");
+        actions.placeOrder(t.getToken(), java.util.Map.of("items", java.util.List.of(java.util.Map.of("uid", uid, "qty", 1))));
+        String o = (String) actions.pendingOrders().getData().stream().filter(x -> t.getName().equals(x.get("tableName"))).findFirst().orElseThrow().get("uid");
+        assertNull(actions.rejectOrder(o, " ").getData(), "a reason is required");
+        assertEquals("REJECTED", actions.rejectOrder(o, "Kimeisha").getData().getStatus());
+        assertNull(actions.placeOrder(t.getToken(), java.util.Map.of("items", java.util.List.of(java.util.Map.of("uid", uid, "qty", 50)))).getData());
+
+        assertNotNull(actions.paid(t.getToken(), java.util.Map.of("method", "M-Pesa", "name", "Asha", "ref", "QX1")).getData());
+        assertTrue(actions.openCalls().getData().stream().anyMatch(c -> "PAID".equals(c.getKind()) && c.getNote().contains("Asha")));
+
+        actions.saveInfo(java.util.Map.of("wifiName", "Baronix", "wifiPassword", "bia2026", "payMpesa", "123456"));
+        var info = (java.util.Map<?, ?>) tableService.customerView(t.getToken()).getData().get("info");
+        assertEquals("bia2026", info.get("wifiPassword"));
+        assertEquals("123456", info.get("payMpesa"));
     }
 }

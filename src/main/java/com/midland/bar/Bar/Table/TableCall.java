@@ -24,6 +24,8 @@ public class TableCall extends TenantEntity {
 
     public static final String WAITER = "WAITER";
     public static final String BILL = "BILL";
+    /** "Nimelipa": the customer says they paid the bar's number - the note says how, for the cashier to check. */
+    public static final String PAID = "PAID";
 
     @Column(name = "table_uid", length = 64, nullable = false)
     private String tableUid;
@@ -33,6 +35,10 @@ public class TableCall extends TenantEntity {
 
     @Column(name = "kind", length = 10, nullable = false)
     private String kind;
+
+    /** For PAID: method, name, reference and amount as the customer typed them. */
+    @Column(name = "note", length = 300)
+    private String note;
 
     @Column(name = "called_at", nullable = false)
     private LocalDateTime calledAt;

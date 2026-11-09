@@ -213,6 +213,55 @@ public class StaffOrderService {
         return new Response<>(sent);
     }
 
+    /** One line a customer ordered from a table's window. */
+    public record TableItem(String serviceUid, int quantity) {}
+
+    /**
+     * A customer's order from a table (customers' window), taken by someone at
+     * the bar for a waiter: it goes on the waiter's bill straight to the
+     * station(s), already SENT - one order per station, marked with the table -
+     * and becomes a sale (stock, commission) when the station receives it.
+     */
+    @Transactional
+    public List<StaffOrder> sendFromTable(SalesOpened bill, List<TableItem> items, String tableName) {
+        String branchUID = branch();
+        requireNoHandoverSent(bill.getStaffUid());
+        LocalDateTime now = LocalDateTime.now();
+        java.util.Map<String, StaffOrder> byStation = new java.util.LinkedHashMap<>();
+        for (TableItem it : items) {
+            BarServiceEntity service = barServiceRepository.findBarServiceByUID(it.serviceUid(), LoggerUser.getBranchUIDOrMain()).orElse(null);
+            if (service == null || ServiceKind.of(service.getKind()) == ServiceKind.STOCK_ITEM || service.getPrice() == null || service.getPrice() <= 0)
+                throw new com.midland.bar.Utils.Exceptions.BusinessException("An item on this order is no longer sold");
+            String station = stationFor(service, branchUID);
+            StaffOrder order = byStation.computeIfAbsent(station, st -> {
+                StaffOrder o = new StaffOrder();
+                o.setStation(st);
+                o.setSalesOpenedUid(bill.getUid());
+                o.setSalesCode(bill.getSalesCode());
+                o.setStaffUid(bill.getStaffUid());
+                o.setStaffCode(bill.getStaffCode());
+                o.setStaffName(bill.getStaffName());
+                o.setExchange(false);
+                o.setExchangeNote(tableName == null ? null : "Oda ya " + tableName);
+                o.setStatus(StaffOrder.SENT);
+                o.setSentAt(now);
+                return o;
+            });
+            StaffOrderLine line = new StaffOrderLine();
+            line.setOrder(order);
+            line.setBarServiceUid(service.getUid());
+            line.setServiceName(service.getServiceName());
+            line.setQuantity(it.quantity());
+            line.setUnitPrice(service.getPrice());
+            order.getLines().add(line);
+        }
+        List<StaffOrder> sent = new ArrayList<>();
+        for (StaffOrder o : byStation.values())
+            sent.add(staffOrderRepository.save(o));
+        log.info("{}: order from {} on {} ({} station orders)", bill.getStaffName(), tableName, bill.getSalesCode(), sent.size());
+        return sent;
+    }
+
     private static StaffOrder exchangeOrder(SalesOpened bill, String station, String note, LocalDateTime now) {
         StaffOrder o = new StaffOrder();
         o.setStation(station);

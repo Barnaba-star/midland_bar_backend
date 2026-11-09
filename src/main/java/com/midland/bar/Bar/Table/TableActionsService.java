@@ -40,6 +40,17 @@ public class TableActionsService {
     private final LiveEvents liveEvents;
     private final OwnerAlertService ownerAlertService;
     private final LoyaltyService loyaltyService;
+    private final TableOrderRepository orderRepository;
+    private final BarTableInfoRepository infoRepository;
+    private final com.midland.bar.Bar.Repository.BarServiceRepository barServiceRepository;
+    private final com.midland.bar.Bar.Repository.BarStaffRepository barStaffRepository;
+    private final com.midland.bar.Bar.Repository.SalesOpenedRepository salesOpenedRepository;
+    private final com.midland.bar.Bar.Service.StaffOrderService staffOrderService;
+    private final com.midland.bar.Bar.Service.StaffSellService staffSellService;
+    private final BarTableService tableService;
+    private static final com.fasterxml.jackson.databind.ObjectMapper JSON = new com.fasterxml.jackson.databind.ObjectMapper();
+    /** At most this many orders from one table per 10 minutes. */
+    private static final int ORDERS_PER_10_MIN = 6;
 
     private Optional<BarTable> table(String token) {
         String key = token == null ? "" : token.trim().toUpperCase();
@@ -100,6 +111,7 @@ public class TableActionsService {
         f.setRating(rating);
         f.setCustomerName(trim(body.get("name"), 60));
         f.setCustomerPhone(trim(body.get("phone"), 20));
+        f.setStaffName(waiterOf(t.getUid()));
         f.setSentAt(now);
         feedbackRepository.save(f);
         ownerAlertService.customerFeedback(t.getBranchUid(), t.getName(), kind, rating, message);
@@ -132,7 +144,229 @@ public class TableActionsService {
         }
     }
 
+    /** The waiter serving a table now: who took its latest order tonight. */
+    private String waiterOf(String tableUid) {
+        return orderRepository.findForTable(tableUid, LocalDateTime.now().minusHours(CALL_HOURS)).stream()
+                .filter(o -> TableOrder.ACCEPTED.equals(o.getStatus()) && o.getStaffName() != null)
+                .map(TableOrder::getStaffName).findFirst().orElse(null);
+    }
+
+    /** "Nimelipa": paid the bar's own number - the cashier sees it with the note and checks. */
+    public Response<Map<String, Object>> paid(String token, Map<String, Object> body) {
+        BarTable t = table(token).orElse(null);
+        if (t == null)
+            return new Response<>("TABLE_NOT_FOUND");
+        String method = trim(body.get("method"), 20);
+        String name = trim(body.get("name"), 60);
+        String ref = trim(body.get("ref"), 40);
+        String amount = trim(body.get("amount"), 15);
+        if (name == null && ref == null)
+            return new Response<>("Write your name or the payment reference");
+        LocalDateTime now = LocalDateTime.now();
+        Optional<TableCall> open = callRepository.findOpenFor(t.getUid(), TableCall.PAID, now.minusHours(CALL_HOURS));
+        if (open.isPresent() && open.get().getCalledAt().isAfter(now.minusSeconds(CALL_REST_SECONDS)))
+            return new Response<>("TOO_SOON");
+        TableCall c = new TableCall();
+        c.setBranchUid(t.getBranchUid());
+        c.setTableUid(t.getUid());
+        c.setTableName(t.getName());
+        c.setKind(TableCall.PAID);
+        c.setNote(String.join(" · ", java.util.stream.Stream.of(method, name, ref == null ? null : "ref " + ref,
+                amount == null ? null : "Tsh " + amount).filter(Objects::nonNull).toList()));
+        c.setCalledAt(now);
+        callRepository.save(c);
+        liveEvents.publish(t.getBranchUid(), TOPIC_CALLS);
+        return new Response<>(Map.of("sent", true));
+    }
+
+    /** A customer's order: [{uid, qty}] from the menu. Waits for someone at the bar to take it. */
+    @SuppressWarnings("unchecked")
+    public Response<Map<String, Object>> placeOrder(String token, Map<String, Object> body) {
+        BarTable t = table(token).orElse(null);
+        if (t == null)
+            return new Response<>("TABLE_NOT_FOUND");
+        LocalDateTime now = LocalDateTime.now();
+        if (orderRepository.countFromTableSince(t.getUid(), now.minusMinutes(10)) >= ORDERS_PER_10_MIN)
+            return new Response<>("TOO_MANY");
+        List<Map<String, Object>> raw = body.get("items") instanceof List<?> l ? (List<Map<String, Object>>) l : List.of();
+        if (raw.isEmpty() || raw.size() > 30)
+            return new Response<>("Choose what to order");
+        List<Map<String, Object>> lines = new ArrayList<>();
+        int total = 0;
+        for (Map<String, Object> r : raw) {
+            String uid = r.get("uid") == null ? null : r.get("uid").toString();
+            int qty = r.get("qty") instanceof Number n ? n.intValue() : 0;
+            if (uid == null || qty < 1 || qty > 20)
+                return new Response<>("Choose between 1 and 20 of each");
+            var service = barServiceRepository.findById(uid)
+                    .filter(sv -> t.getBranchUid().equals(sv.getBranchUid()) && !"STOCK_ITEM".equals(sv.getKind())
+                            && sv.getPrice() != null && sv.getPrice() > 0)
+                    .orElse(null);
+            if (service == null)
+                return new Response<>("An item is no longer on the menu");
+            Map<String, Object> line = new LinkedHashMap<>();
+            line.put("uid", service.getUid());
+            line.put("name", service.getServiceName());
+            line.put("qty", qty);
+            line.put("price", service.getPrice());
+            lines.add(line);
+            total += service.getPrice() * qty;
+        }
+        TableOrder o = new TableOrder();
+        o.setBranchUid(t.getBranchUid());
+        o.setTableUid(t.getUid());
+        o.setTableName(t.getName());
+        try {
+            o.setLinesJson(JSON.writeValueAsString(lines));
+        } catch (Exception e) {
+            return new Response<>("Could not read the order");
+        }
+        o.setTotal(total);
+        o.setNote(trim(body.get("note"), 200));
+        o.setPlacedAt(now);
+        orderRepository.save(o);
+        liveEvents.publish(t.getBranchUid(), TOPIC_CALLS);
+        log.info("{} ordered {} line(s), Tsh {}", t.getName(), lines.size(), total);
+        return new Response<>(Map.of("uid", o.getUid(), "status", o.getStatus()));
+    }
+
+    /** The table's orders tonight, newest first, and who serves it - the window shows their state. */
+    public Response<Map<String, Object>> tableOrders(String token) {
+        BarTable t = table(token).orElse(null);
+        if (t == null)
+            return new Response<>("TABLE_NOT_FOUND");
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (TableOrder o : orderRepository.findForTable(t.getUid(), LocalDateTime.now().minusHours(CALL_HOURS))) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("uid", o.getUid());
+            m.put("status", o.getStatus());
+            m.put("total", o.getTotal());
+            m.put("lines", lines(o));
+            m.put("placedAt", o.getPlacedAt());
+            m.put("staffName", o.getStaffName());
+            m.put("rejectReason", o.getRejectReason());
+            out.add(m);
+        }
+        Map<String, Object> res = new LinkedHashMap<>();
+        res.put("orders", out);
+        res.put("waiter", waiterOf(t.getUid()));
+        return new Response<>(res);
+    }
+
+    @SuppressWarnings("unchecked")
+    static List<Map<String, Object>> lines(TableOrder o) {
+        try {
+            return JSON.readValue(o.getLinesJson(), List.class);
+        } catch (Exception e) {
+            return List.of();
+        }
+    }
+
     // --------------------------------------------------------------- bar side
+
+    /** Orders from tables waiting to be taken - shown with the calls. */
+    public ResponseList<Map<String, Object>> pendingOrders() {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (TableOrder o : orderRepository.findPending(LoggerUser.getBranchUIDOrMain(), LocalDateTime.now().minusHours(CALL_HOURS))) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("uid", o.getUid());
+            m.put("tableName", o.getTableName());
+            m.put("total", o.getTotal());
+            m.put("note", o.getNote());
+            m.put("placedAt", o.getPlacedAt());
+            m.put("lines", lines(o));
+            out.add(m);
+        }
+        return new ResponseList<>(out);
+    }
+
+    /**
+     * Take a table's order for a waiter: it goes on the waiter's unpaid bill
+     * for that table (opened if none) and on to the counter / kitchen.
+     */
+    @org.springframework.transaction.annotation.Transactional
+    public Response<TableOrder> acceptOrder(String uid, String staffUid) {
+        String branch = LoggerUser.getBranchUIDOrMain();
+        TableOrder o = orderRepository.findInBranch(uid, branch).orElse(null);
+        if (o == null)
+            return new Response<>("Order Not Found");
+        if (!TableOrder.PENDING.equals(o.getStatus()))
+            return new Response<>("This order was already " + o.getStatus().toLowerCase());
+        var staff = staffUid == null ? null : barStaffRepository.findBarStaffByUID(staffUid, branch).orElse(null);
+        if (staff == null)
+            return new Response<>("Choose the waiter");
+        var bill = salesOpenedRepository.findOpenForTable(o.getTableUid(), staff.getUid(), branch).stream().findFirst().orElse(null);
+        if (bill == null) {
+            var dto = new com.midland.bar.Bar.Dto.StaffBillDTO();
+            dto.setStaffCode(staff.getStaffCode());
+            var opened = staffSellService.openBill(dto);
+            if (opened.getData() == null)
+                return new Response<>(opened.getMessage());
+            bill = opened.getData();
+            bill.setTableUid(o.getTableUid());
+            bill.setTableName(o.getTableName());
+            bill = salesOpenedRepository.save(bill);
+        }
+        List<com.midland.bar.Bar.Service.StaffOrderService.TableItem> items = new ArrayList<>();
+        for (Map<String, Object> l : lines(o))
+            items.add(new com.midland.bar.Bar.Service.StaffOrderService.TableItem(
+                    String.valueOf(l.get("uid")), ((Number) l.get("qty")).intValue()));
+        staffOrderService.sendFromTable(bill, items, o.getTableName());
+        o.setStatus(TableOrder.ACCEPTED);
+        o.setDecidedAt(LocalDateTime.now());
+        o.setDecidedBy(LoggerUser.getEmail());
+        o.setStaffUid(bill.getStaffUid());
+        o.setStaffName(bill.getStaffName());
+        o.setBillUid(bill.getUid());
+        o.setBillCode(bill.getSalesCode());
+        orderRepository.save(o);
+        liveEvents.publish(branch, "orders");
+        liveEvents.publish(branch, "bills");
+        liveEvents.publish(branch, TOPIC_CALLS);
+        return new Response<>(o);
+    }
+
+    public Response<TableOrder> rejectOrder(String uid, String reason) {
+        String branch = LoggerUser.getBranchUIDOrMain();
+        TableOrder o = orderRepository.findInBranch(uid, branch).orElse(null);
+        if (o == null)
+            return new Response<>("Order Not Found");
+        if (!TableOrder.PENDING.equals(o.getStatus()))
+            return new Response<>("This order was already " + o.getStatus().toLowerCase());
+        String why = trim(reason, 200);
+        if (why == null)
+            return new Response<>("Write the reason the customer will see");
+        o.setStatus(TableOrder.REJECTED);
+        o.setRejectReason(why);
+        o.setDecidedAt(LocalDateTime.now());
+        o.setDecidedBy(LoggerUser.getEmail());
+        orderRepository.save(o);
+        liveEvents.publish(branch, TOPIC_CALLS);
+        return new Response<>(o);
+    }
+
+    /** The branch's info for customers (WiFi, hours, phone, events, payment numbers). */
+    public Response<BarTableInfo> info() {
+        return new Response<>(infoRepository.findInBranch(LoggerUser.getBranchUIDOrMain()).orElseGet(BarTableInfo::new));
+    }
+
+    public Response<BarTableInfo> saveInfo(Map<String, String> b) {
+        BarTableInfo i = infoRepository.findInBranch(LoggerUser.getBranchUIDOrMain()).orElseGet(BarTableInfo::new);
+        i.setWifiName(trim(b.get("wifiName"), 60));
+        i.setWifiPassword(trim(b.get("wifiPassword"), 60));
+        i.setHours(trim(b.get("hours"), 120));
+        i.setPhone(trim(b.get("phone"), 30));
+        i.setNote(trim(b.get("note"), 500));
+        i.setPayMpesa(trim(b.get("payMpesa"), 60));
+        i.setPayTigo(trim(b.get("payTigo"), 60));
+        i.setPayAirtel(trim(b.get("payAirtel"), 60));
+        i.setPayHalo(trim(b.get("payHalo"), 60));
+        i.setPayBank(trim(b.get("payBank"), 120));
+        tableService.forgetViews();
+        return new Response<>(infoRepository.save(i));
+    }
+
+    // ---- calls (bar side)
 
     public ResponseList<TableCall> openCalls() {
         return new ResponseList<>(callRepository.findOpen(LoggerUser.getBranchUIDOrMain(), LocalDateTime.now().minusHours(CALL_HOURS)));

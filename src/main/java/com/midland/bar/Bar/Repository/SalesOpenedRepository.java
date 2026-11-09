@@ -77,4 +77,9 @@ public interface SalesOpenedRepository extends JpaRepository<SalesOpened, String
             WHERE s.branchUid = :branchUID AND s.paymentStatus = 'PENDING'
             """)
     long pendingBillsAmount(@Param("branchUID") String branchUID);
+
+    /** A waiter's unpaid bill for a table (customers' window orders keep landing on it). */
+    @Query("SELECT s FROM SalesOpened s WHERE s.tableUid = :tableUid AND s.staffUid = :staffUid AND s.branchUid = :branchUID " +
+           "AND s.isActive = true AND s.paymentStatus = 'PENDING' ORDER BY s.createdAt DESC")
+    List<SalesOpened> findOpenForTable(@Param("tableUid") String tableUid, @Param("staffUid") String staffUid, @Param("branchUID") String branchUID);
 }

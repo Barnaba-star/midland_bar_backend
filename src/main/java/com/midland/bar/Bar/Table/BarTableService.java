@@ -29,6 +29,7 @@ public class BarTableService {
     private final BarServiceRepository barServiceRepository;
     private final BranchRepository branchRepository;
     private final com.midland.bar.Bar.Service.PriceRuleService priceRuleService;
+    private final BarTableInfoRepository infoRepository;
 
     /**
      * The customers' window, kept 60 s per token: a whole table scanning at
@@ -136,6 +137,7 @@ public class BarTableService {
         java.time.LocalDateTime now = java.time.LocalDateTime.now();
         for (var s : sellable) {
             Map<String, Object> item = new LinkedHashMap<>();
+            item.put("uid", s.getUid());
             item.put("name", s.getServiceName());
             item.put("price", s.getPrice());
             item.put("category", s.getCategory());
@@ -156,10 +158,29 @@ public class BarTableService {
             menu.add(item);
         }
         view.put("menu", menu);
+        infoRepository.findInBranch(t.getBranchUid()).ifPresent(i -> {
+            Map<String, Object> info = new LinkedHashMap<>();
+            info.put("wifiName", i.getWifiName());
+            info.put("wifiPassword", i.getWifiPassword());
+            info.put("hours", i.getHours());
+            info.put("phone", i.getPhone());
+            info.put("note", i.getNote());
+            info.put("payMpesa", i.getPayMpesa());
+            info.put("payTigo", i.getPayTigo());
+            info.put("payAirtel", i.getPayAirtel());
+            info.put("payHalo", i.getPayHalo());
+            info.put("payBank", i.getPayBank());
+            view.put("info", info);
+        });
         if (viewCache.size() > 2000)
             viewCache.clear();
         viewCache.put(key, Map.entry(System.currentTimeMillis() + VIEW_TTL_MS, view));
         return new Response<>(view);
+    }
+
+    /** Info or prices changed: customers see it on their next load. */
+    public void forgetViews() {
+        viewCache.clear();
     }
 
     /** Can one be sold right now - the same stock rule a sale applies (BarService.addItemsToBill). */

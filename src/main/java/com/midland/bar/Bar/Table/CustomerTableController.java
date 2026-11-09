@@ -40,4 +40,22 @@ public class CustomerTableController {
     public Response<Map<String, Object>> card(@PathVariable String token, @RequestBody Map<String, String> body) {
         return actions.card(token, body);
     }
+
+    /** {items: [{uid, qty}], note?} - waits for someone at the bar to take it. */
+    @PostMapping("/{token}/order")
+    public Response<Map<String, Object>> order(@PathVariable String token, @RequestBody Map<String, Object> body) {
+        return actions.placeOrder(token, body);
+    }
+
+    /** The table's orders tonight and its waiter. */
+    @GetMapping("/{token}/orders")
+    public Response<Map<String, Object>> orders(@PathVariable String token) {
+        return actions.tableOrders(token);
+    }
+
+    /** {method, name, ref, amount} - paid the bar's own number; the cashier checks. */
+    @PostMapping("/{token}/paid")
+    public Response<Map<String, Object>> paid(@PathVariable String token, @RequestBody Map<String, Object> body) {
+        return actions.paid(token, body);
+    }
 }

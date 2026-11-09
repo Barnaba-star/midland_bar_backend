@@ -47,6 +47,10 @@ public class CustomerFeedback extends TenantEntity {
     @Column(name = "customer_phone", length = 20)
     private String customerPhone;
 
+    /** The waiter serving that table when it was written (from the table's accepted orders), if known. */
+    @Column(name = "staff_name", length = 120)
+    private String staffName;
+
     @Column(name = "sent_at", nullable = false)
     private LocalDateTime sentAt;
 

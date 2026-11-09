@@ -72,4 +72,36 @@ public class BarTableController {
     public Response<CustomerFeedback> feedbackRead(@PathVariable String uid) {
         return actions.markRead(uid);
     }
+
+    /** Orders from tables waiting to be taken. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_SALES') or @authChecker.hasPermissionOrRoot('RECEIVE_ORDERS')")
+    @GetMapping("/orders")
+    public ResponseList<Map<String, Object>> pendingOrders() {
+        return actions.pendingOrders();
+    }
+
+    /** {staffUid} - onto that waiter's bill for the table, and on to the counter / kitchen. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
+    @PostMapping("/orders/{uid}/accept")
+    public Response<TableOrder> acceptOrder(@PathVariable String uid, @RequestBody Map<String, String> body) {
+        return actions.acceptOrder(uid, body.get("staffUid"));
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES') or @authChecker.hasPermissionOrRoot('RECEIVE_ORDERS')")
+    @PostMapping("/orders/{uid}/reject")
+    public Response<TableOrder> rejectOrder(@PathVariable String uid, @RequestBody Map<String, String> body) {
+        return actions.rejectOrder(uid, body.get("reason"));
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_SERVICE')")
+    @GetMapping("/info")
+    public Response<BarTableInfo> info() {
+        return actions.info();
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SERVICE')")
+    @PostMapping("/info")
+    public Response<BarTableInfo> saveInfo(@RequestBody Map<String, String> body) {
+        return actions.saveInfo(body);
+    }
 }

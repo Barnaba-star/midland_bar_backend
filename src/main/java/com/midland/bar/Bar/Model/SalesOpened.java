@@ -42,6 +42,13 @@ public class SalesOpened extends TenantEntity {
     @Column(name = "staff_code")
     private String staffCode;
 
+    /** The table a customer ordered from (customers' window) - its orders keep landing on this bill until paid. */
+    @Column(name = "table_uid", length = 64)
+    private String tableUid;
+
+    @Column(name = "table_name", length = 40)
+    private String tableName;
+
     /**
      * Who opened the bill at the till (sign-in name) - the person a bill with
      * no staff member belongs to on the Sales page: a manager, the CEO, root.
