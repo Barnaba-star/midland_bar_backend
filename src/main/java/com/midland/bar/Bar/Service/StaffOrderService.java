@@ -214,7 +214,7 @@ public class StaffOrderService {
     }
 
     /** One line a customer ordered from a table's window. */
-    public record TableItem(String serviceUid, int quantity) {}
+    public record TableItem(String serviceUid, int quantity, String serving) {}
 
     /**
      * A customer's order from a table (customers' window), taken by someone at
@@ -253,6 +253,7 @@ public class StaffOrderService {
             line.setServiceName(service.getServiceName());
             line.setQuantity(it.quantity());
             line.setUnitPrice(service.getPrice());
+            line.setServing(StaffOrderLine.serving(it.serving()));
             order.getLines().add(line);
         }
         List<StaffOrder> sent = new ArrayList<>();

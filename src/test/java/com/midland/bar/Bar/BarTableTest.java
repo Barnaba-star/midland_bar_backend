@@ -184,6 +184,33 @@ class BarTableTest {
     }
 
     @Test
+    void aDrinkOrderedColdAndWarmReachesTheStationThatWay() {
+        workShiftService.open();
+        tableService.setCount(0);
+        BarTable t = tableService.setCount(1).getData().get(0);
+        java.util.List<?> menu = (java.util.List<?>) tableService.customerView(t.getToken()).getData().get("menu");
+        var drink = menu.stream().map(m -> (java.util.Map<?, ?>) m)
+                .filter(m -> com.midland.bar.Bar.Table.TableActionsService.asksServing((String) m.get("category")))
+                .findFirst().orElseThrow();
+        String uid = (String) drink.get("uid");
+
+        var placed = actions.placeOrder(t.getToken(), java.util.Map.of("items", java.util.List.of(
+                java.util.Map.of("uid", uid, "qty", 2, "serving", "COLD"),
+                java.util.Map.of("uid", uid, "qty", 1, "serving", "warm"))));
+        assertNotNull(placed.getData(), placed.getMessage());
+        var pending = actions.pendingOrders().getData().stream().filter(o -> t.getName().equals(o.get("tableName"))).findFirst().orElseThrow();
+        assertEquals(java.util.List.of("COLD", "WARM"), ((java.util.List<?>) pending.get("lines")).stream()
+                .map(l -> ((java.util.Map<?, ?>) l).get("serving")).toList(), "the waiter sees baridi / moto");
+
+        var accepted = actions.acceptOrder((String) pending.get("uid"), waiter().getUid());
+        assertNotNull(accepted.getData(), accepted.getMessage());
+        var lines = staffOrderRepository.findAll().stream().filter(o -> accepted.getData().getBillUid().equals(o.getSalesOpenedUid()))
+                .flatMap(o -> o.getLines().stream()).toList();
+        assertEquals(2, lines.stream().filter(l -> "COLD".equals(l.getServing())).mapToInt(l -> l.getQuantity()).sum());
+        assertEquals(1, lines.stream().filter(l -> "WARM".equals(l.getServing())).mapToInt(l -> l.getQuantity()).sum());
+    }
+
+    @Test
     void aRejectedOrderTellsWhyAndPaidAndInfoReachTheBar() {
         tableService.setCount(0);
         BarTable t = tableService.setCount(1).getData().get(0);

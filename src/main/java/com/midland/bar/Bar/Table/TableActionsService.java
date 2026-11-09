@@ -209,6 +209,12 @@ public class TableActionsService {
             line.put("name", service.getServiceName());
             line.put("qty", qty);
             line.put("price", service.getPrice());
+            // Baridi / moto, as the customer chose on the drink (owner, 2026-11-09).
+            String serving = asksServing(service.getCategory())
+                    ? com.midland.bar.Bar.Model.StaffOrderLine.serving(r.get("serving") == null ? null : r.get("serving").toString())
+                    : null;
+            if (serving != null)
+                line.put("serving", serving);
             lines.add(line);
             total += service.getPrice() * qty;
         }
@@ -228,6 +234,11 @@ public class TableActionsService {
         liveEvents.publish(t.getBranchUid(), TOPIC_CALLS);
         log.info("{} ordered {} line(s), Tsh {}", t.getName(), lines.size(), total);
         return new Response<>(Map.of("uid", o.getUid(), "status", o.getStatus()));
+    }
+
+    /** Drinks are asked cold or warm - as on the waiters' picker: not food, shisha, pool or juice. */
+    public static boolean asksServing(String category) {
+        return !List.of("FOOD", "SHISHA", "POOL", "JUICE").contains(category == null ? "" : category.toUpperCase());
     }
 
     /** The table's orders tonight, newest first, and who serves it - the window shows their state. */
@@ -313,7 +324,8 @@ public class TableActionsService {
         List<com.midland.bar.Bar.Service.StaffOrderService.TableItem> items = new ArrayList<>();
         for (Map<String, Object> l : lines(o))
             items.add(new com.midland.bar.Bar.Service.StaffOrderService.TableItem(
-                    String.valueOf(l.get("uid")), ((Number) l.get("qty")).intValue()));
+                    String.valueOf(l.get("uid")), ((Number) l.get("qty")).intValue(),
+                    l.get("serving") == null ? null : l.get("serving").toString()));
         staffOrderService.sendFromTable(bill, items, o.getTableName());
         o.setStatus(TableOrder.ACCEPTED);
         o.setDecidedAt(LocalDateTime.now());
