@@ -292,6 +292,9 @@ public class TableActionsService {
             return new Response<>("Order Not Found");
         if (!TableOrder.PENDING.equals(o.getStatus()))
             return new Response<>("This order was already " + o.getStatus().toLowerCase());
+        // A waiter signed in with code + PIN takes it onto their own bill, never a colleague's.
+        if (com.midland.bar.Config.Security.StaffSession.active())
+            staffUid = com.midland.bar.Config.Security.StaffSession.staffUid();
         var staff = staffUid == null ? null : barStaffRepository.findBarStaffByUID(staffUid, branch).orElse(null);
         if (staff == null)
             return new Response<>("Choose the waiter");

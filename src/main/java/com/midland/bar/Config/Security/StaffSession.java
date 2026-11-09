@@ -58,6 +58,11 @@ public final class StaffSession {
             new Route("GET", Pattern.compile("^/bar/loyalty/bills/[^/]+/ask$")),
             new Route("POST", Pattern.compile("^/bar/loyalty/(identify|register)$")),
             new Route("POST", Pattern.compile("^/bar/loyalty/bills/[^/]+$")),
+            // Tables calling / ordering from the customers' window (owner, 2026-11-09):
+            // the waiter sees them, goes, and takes a table's order onto their own bill.
+            new Route("GET", Pattern.compile("^/bar/tables/(calls|orders)$")),
+            new Route("POST", Pattern.compile("^/bar/tables/calls/[^/]+/done$")),
+            new Route("POST", Pattern.compile("^/bar/tables/orders/[^/]+/(accept|reject)$")),
             new Route("GET", Pattern.compile("^/uploads/.+$"))
     );
 

@@ -203,4 +203,31 @@ class BarTableTest {
         assertEquals("bia2026", info.get("wifiPassword"));
         assertEquals("123456", info.get("payMpesa"));
     }
+
+    @Test
+    void aWaiterSignedInWithCodeSeesTheTablesAndTakesAnOrderOntoTheirOwnBill() {
+        assertTrue(com.midland.bar.Config.Security.StaffSession.allows("GET", "/bar/tables/calls"));
+        assertTrue(com.midland.bar.Config.Security.StaffSession.allows("GET", "/bar/tables/orders"));
+        assertTrue(com.midland.bar.Config.Security.StaffSession.allows("POST", "/bar/tables/orders/x/accept"));
+        assertTrue(com.midland.bar.Config.Security.StaffSession.allows("POST", "/bar/tables/calls/x/done"));
+        assertFalse(com.midland.bar.Config.Security.StaffSession.allows("GET", "/bar/tables/feedback/WEEK"), "feedback stays with the boss");
+
+        workShiftService.open();
+        tableService.setCount(0);
+        BarTable t = tableService.setCount(1).getData().get(0);
+        java.util.List<?> menu = (java.util.List<?>) tableService.customerView(t.getToken()).getData().get("menu");
+        String uid = (String) ((java.util.Map<?, ?>) menu.get(0)).get("uid");
+        actions.placeOrder(t.getToken(), java.util.Map.of("items", java.util.List.of(java.util.Map.of("uid", uid, "qty", 1))));
+        String o = (String) actions.pendingOrders().getData().stream().filter(x -> t.getName().equals(x.get("tableName"))).findFirst().orElseThrow().get("uid");
+        var me = waiter();
+        var other = waiter();
+        // Signed in as "me" with code + PIN: asking for a colleague still lands on my bill.
+        var user = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        var auth = new UsernamePasswordAuthenticationToken(user, null, List.of());
+        auth.setDetails(new com.midland.bar.Config.Security.StaffSession.Info(me.getUid(), me.getStaffCode()));
+        SecurityContextHolder.getContext().setAuthentication(auth);
+        var taken = actions.acceptOrder(o, other.getUid());
+        assertNotNull(taken.getData(), taken.getMessage());
+        assertEquals(me.getUid(), taken.getData().getStaffUid());
+    }
 }
