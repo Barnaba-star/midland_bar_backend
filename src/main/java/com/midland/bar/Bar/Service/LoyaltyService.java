@@ -52,7 +52,11 @@ public class LoyaltyService {
      * a fresh, switched-off one when neither was saved.
      */
     public LoyaltyRule rule() {
-        String branch = LoggerUser.getBranchUIDOrMain();
+        return rule(LoggerUser.getBranchUIDOrMain());
+    }
+
+    /** The same for a named branch - the customers' window has no login. */
+    public LoyaltyRule rule(String branch) {
         return ruleRepository.findInBranch(branch)
                 .or(() -> "MAIN_OFFICE".equals(branch) ? Optional.empty() : ruleRepository.findInBranch("MAIN_OFFICE"))
                 .orElseGet(LoyaltyRule::new);
@@ -139,10 +143,16 @@ public class LoyaltyService {
      */
     @Transactional(noRollbackFor = BusinessException.class)
     public DebtCustomer verify(String phone, String pin) {
+        return verify(phone, pin, LoggerUser.getBranchUIDOrMain());
+    }
+
+    /** The same in a named branch (the customers' window: no login, the table says the branch). Same 5-try lock. */
+    @Transactional(noRollbackFor = BusinessException.class)
+    public DebtCustomer verify(String phone, String pin, String branchUID) {
         String number = SmsService.normalise(phone);
         if (number == null)
             throw new BusinessException("Enter a valid phone number, e.g. 0712 345 678");
-        DebtCustomer c = customerRepository.findByPhone(number, LoggerUser.getBranchUIDOrMain())
+        DebtCustomer c = customerRepository.findByPhone(number, branchUID)
                 .orElseThrow(() -> new BusinessException(NOT_REGISTERED));
         if (c.getPinHash() == null)
             throw new BusinessException(PIN_NOT_SET);
@@ -222,19 +232,28 @@ public class LoyaltyService {
 
     /** What the screens show once a customer is known: name, offer, credit and loyalty progress. No phone, no PIN. */
     public Map<String, Object> card(DebtCustomer c) {
+        return card(c, LoggerUser.getBranchUIDOrMain());
+    }
+
+    /** The same for a named branch. */
+    public Map<String, Object> card(DebtCustomer c, String branchUID) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("uid", c.getUid());
         m.put("name", c.getName());
         m.put("offerLeft", offerLeft(c));
         int limit = c.getCreditLimit() == null ? 0 : c.getCreditLimit();
         m.put("creditLeft", Math.max(0, limit - entryRepository.balanceOf(c.getUid())));
-        LoyaltyRule rule = rule();
-        m.put("loyalty", progress(c.getUid(), rule));
+        LoyaltyRule rule = rule(branchUID);
+        m.put("loyalty", progress(c.getUid(), rule, branchUID));
         return m;
     }
 
     /** Visits counted so far in the current round, out of how many. */
     public Map<String, Object> progress(String customerUid, LoyaltyRule rule) {
+        return progress(customerUid, rule, LoggerUser.getBranchUIDOrMain());
+    }
+
+    public Map<String, Object> progress(String customerUid, LoyaltyRule rule, String branchUID) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("enabled", Boolean.TRUE.equals(rule.getEnabled()));
         m.put("visits", rule.getUid() == null ? 0 : visitRepository.counting(customerUid, windowStart(rule)).size());
@@ -244,7 +263,7 @@ public class LoyaltyService {
         // so the screen can say "2 paid, 1 waiting for payment".
         long waiting = 0;
         if (rule.getUid() != null) {
-            List<SalesOpened> open = salesOpenedRepository.findOpenBillsByLoyaltyCustomer(customerUid, LoggerUser.getBranchUIDOrMain());
+            List<SalesOpened> open = salesOpenedRepository.findOpenBillsByLoyaltyCustomer(customerUid, branchUID);
             if (!open.isEmpty()) {
                 Map<String, Long> totals = new java.util.HashMap<>();
                 for (Object[] r : barSalesRepository.billTotals(open.stream().map(SalesOpened::getUid).toList()))

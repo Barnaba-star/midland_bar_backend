@@ -28,6 +28,7 @@ public class BarTableService {
     private final BarTableRepository tableRepository;
     private final BarServiceRepository barServiceRepository;
     private final BranchRepository branchRepository;
+    private final com.midland.bar.Bar.Service.PriceRuleService priceRuleService;
 
     /**
      * The customers' window, kept 60 s per token: a whole table scanning at
@@ -100,6 +101,7 @@ public class BarTableService {
      * the table and the menu with prices. No login - the token is the key,
      * and it unlocks only this read-only view.
      */
+    @Transactional(readOnly = true)
     public Response<Map<String, Object>> customerView(String token) {
         String key = token == null ? "" : token.trim().toUpperCase();
         if (key.length() != TOKEN_LENGTH)
@@ -115,23 +117,65 @@ public class BarTableService {
         view.put("tableNumber", t.getNumber());
         branchRepository.findById(t.getBranchUid()).ifPresent(b -> view.put("branchName", b.getBranchName()));
         List<Map<String, Object>> menu = new ArrayList<>();
-        barServiceRepository.findAllBarServiceList(t.getBranchUid(), 0).forEach(s -> {
+        var all = barServiceRepository.findAllBarServiceList(t.getBranchUid(), 0);
+        // Units on hand of everything in the branch, for "Kimeisha" (sold out).
+        Map<String, Integer> onHand = new HashMap<>();
+        all.forEach(s -> onHand.put(s.getUid(), s.getStockQuantity() == null ? 0 : s.getStockQuantity()));
+        List<com.midland.bar.Bar.Projection.BarProjection> sellable = new ArrayList<>();
+        all.forEach(s -> {
             if ("STOCK_ITEM".equals(s.getKind()) || s.getPrice() == null || s.getPrice() <= 0)
                 return;
             if (s.getStatus() != null && !"active".equalsIgnoreCase(s.getStatus()))
                 return;
+            sellable.add(s);
+        });
+        // Offers running now (Happy hour etc.) - the same pricing a sale uses, for one unit.
+        Map<String, com.midland.bar.Bar.Model.BarServiceEntity> entities = new HashMap<>();
+        barServiceRepository.findAllById(sellable.stream().map(com.midland.bar.Bar.Projection.BarProjection::getUid).toList())
+                .forEach(e -> entities.put(e.getUid(), e));
+        java.time.LocalDateTime now = java.time.LocalDateTime.now();
+        for (var s : sellable) {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("name", s.getServiceName());
             item.put("price", s.getPrice());
             item.put("category", s.getCategory());
             item.put("description", s.getDescription());
+            item.put("available", available(s, onHand));
+            var e = entities.get(s.getUid());
+            if (e != null) {
+                try {
+                    var p = priceRuleService.price(e, 1, now, null);
+                    if (p.unitPrice() < s.getPrice()) {
+                        item.put("offerPrice", p.unitPrice());
+                        item.put("offerName", p.ruleName());
+                    }
+                } catch (Exception ex) {
+                    log.debug("no offer price for {}: {}", s.getServiceName(), ex.getMessage());
+                }
+            }
             menu.add(item);
-        });
+        }
         view.put("menu", menu);
         if (viewCache.size() > 2000)
             viewCache.clear();
         viewCache.put(key, Map.entry(System.currentTimeMillis() + VIEW_TTL_MS, view));
         return new Response<>(view);
+    }
+
+    /** Can one be sold right now - the same stock rule a sale applies (BarService.addItemsToBill). */
+    static boolean available(com.midland.bar.Bar.Projection.BarProjection s, Map<String, Integer> onHand) {
+        if (s.getStockSourceUid() != null) {
+            int perSale = s.getUnitsPerSale() == null || s.getUnitsPerSale() < 1 ? 1 : s.getUnitsPerSale();
+            if (onHand.getOrDefault(s.getStockSourceUid(), 0) < perSale)
+                return false;
+            for (var in : com.midland.bar.Bar.Service.Ingredients.parse(s.getExtraIngredients()))
+                if (onHand.getOrDefault(in.uid(), 0) < Math.max(1, in.units()))
+                    return false;
+            return true;
+        }
+        if (Boolean.TRUE.equals(s.getTrackStock()))
+            return s.getStockQuantity() != null && s.getStockQuantity() >= 1;
+        return true;
     }
 
     private String newToken() {

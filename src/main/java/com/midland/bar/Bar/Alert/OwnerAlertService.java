@@ -135,6 +135,33 @@ public class OwnerAlertService {
                 new MapSqlParameterSource("b", branchUid), Long.class);
     }
 
+    /**
+     * A customer wrote from a table's QR window (owner, 2026-11-09). Always a
+     * bell notification; an SMS only for a complaint or 1-2 stars, so praise
+     * and questions don't cost an SMS each.
+     */
+    public void customerFeedback(String branchUid, String table, String kind, Integer rating, String text) {
+        boolean urgent = "COMPLAINT".equals(kind) || (rating != null && rating <= 2);
+        String label = switch (kind) {
+            case "PRAISE" -> "pongezi";
+            case "COMPLAINT" -> "malalamiko";
+            case "QUESTION" -> "swali";
+            default -> "ushauri";
+        };
+        String shortText = text.length() > 90 ? text.substring(0, 90) + "..." : text;
+        Map<String, Object> params = Map.of("table", table, "kind", label, "text", shortText);
+        try {
+            for (User u : owners(branchUid)) {
+                notificationService.notify(u.getUid(), "ALERTS.FEEDBACK_TITLE", "ALERTS.FEEDBACK_MESSAGE", params, urgent ? "warning" : "info", "/pos/barSetting");
+                if (urgent && u.getPhone() != null && !u.getPhone().isBlank())
+                    smsService.send(SMS_ALERT, u.getUid(), u.getPhone(),
+                            "BaronixTZ: " + table + " - " + label + (rating != null ? " (" + rating + "/5)" : "") + ": " + shortText, true);
+            }
+        } catch (Exception e) {
+            log.warn("customer feedback alert failed: {}", e.getMessage());
+        }
+    }
+
     private void send(String branchUid, String titleKey, String messageKey, Map<String, Object> params, String route, String sms) {
         try {
             for (User u : owners(branchUid)) {

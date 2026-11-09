@@ -32,6 +32,7 @@ class BarTableTest {
     private static final String LOGIN = "METHEW@2026";
 
     @Autowired BarTableService tableService;
+    @Autowired com.midland.bar.Bar.Table.TableActionsService actions;
     @Autowired UserRepository userRepository;
     @Autowired MockMvc mvc;
 
@@ -86,5 +87,48 @@ class BarTableTest {
         // A phone holding an old or broken login still opens the window, never the sign-in.
         mvc.perform(get("/public/table/" + token).header("Authorization", "Bearer not.a.real.token"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.tableName").value("Meza 1"));
+    }
+
+    @Test
+    void aTableCallsTheWaiterOnceAndTheBarClosesIt() {
+        tableService.setCount(0);
+        BarTable t = tableService.setCount(1).getData().get(0);
+        assertNotNull(actions.call(t.getToken(), "WAITER").getData());
+        assertEquals("TOO_SOON", actions.call(t.getToken(), "WAITER").getMessage(), "a second tap within a minute");
+        assertNotNull(actions.call(t.getToken(), "BILL").getData(), "the bill is its own call");
+        var open = actions.openCalls().getData().stream().filter(c -> c.getTableUid().equals(t.getUid())).toList();
+        assertEquals(2, open.size());
+        assertEquals(t.getBranchUid(), open.get(0).getBranchUid(), "the table's branch, not a login's");
+        actions.done(open.get(0).getUid());
+        assertEquals(1, actions.openCalls().getData().stream().filter(c -> c.getTableUid().equals(t.getUid())).count());
+        assertEquals("TABLE_NOT_FOUND", actions.call("ZZZZZZZZZZ", "WAITER").getMessage());
+    }
+
+    @Test
+    void feedbackReachesTheBranchAndOneTableCannotFloodIt() {
+        tableService.setCount(0);
+        BarTable t = tableService.setCount(1).getData().get(0);
+        long before = actions.unreadFeedback().getData();
+        var res = actions.feedback(t.getToken(), java.util.Map.of("kind", "COMPLAINT", "message", "Bia ilikuwa ya moto", "rating", 2));
+        assertNotNull(res.getData(), res.getMessage());
+        assertEquals(before + 1, actions.unreadFeedback().getData());
+        var mine = actions.feedbackList("TODAY").getData().stream().filter(f -> t.getUid().equals(f.getTableUid())).toList();
+        assertEquals(1, mine.size());
+        assertEquals("COMPLAINT", mine.get(0).getKind());
+        assertEquals(2, mine.get(0).getRating());
+        actions.markRead(mine.get(0).getUid());
+        assertEquals(before, actions.unreadFeedback().getData());
+        for (int i = 0; i < 4; i++)
+            actions.feedback(t.getToken(), java.util.Map.of("kind", "ADVICE", "message", "ujumbe " + i));
+        assertEquals("TOO_MANY", actions.feedback(t.getToken(), java.util.Map.of("message", "tena")).getMessage());
+    }
+
+    @Test
+    void theMenuSaysWhatIsSoldOutAndAWrongPinTellsNothing() {
+        tableService.setCount(0);
+        BarTable t = tableService.setCount(1).getData().get(0);
+        java.util.List<?> menu = (java.util.List<?>) tableService.customerView(t.getToken()).getData().get("menu");
+        menu.forEach(m -> assertNotNull(((java.util.Map<?, ?>) m).get("available")));
+        assertEquals("WRONG_PHONE_OR_PIN", actions.card(t.getToken(), java.util.Map.of("phone", "0700000001", "pin", "0000")).getMessage());
     }
 }

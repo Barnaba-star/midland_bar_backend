@@ -157,7 +157,7 @@ public class Initializer implements ApplicationRunner {
                         // Jack Point: the waiters' game - set up, and approve the winners.
                         "MANAGE_JACK_POINT",
                         // Customer loyalty: the bill amount, how many bills, the reward.
-                        "MANAGE_LOYALTY"
+                        "MANAGE_LOYALTY", "VIEW_CUSTOMER_FEEDBACK"
                 )
         );
 
@@ -174,7 +174,7 @@ public class Initializer implements ApplicationRunner {
                         "VIEW_REPORT", "VIEW_EXPENSES", "VIEW_STOCK_AND_PURCHASE",
                         "SAVE_STORE", "VIEW_STORE", "DELETE_STORE",
                         "VIEW_DEBT", "MANAGE_DEBT", "REFUND_SALES", "MANAGE_PRICE_RULES", "DISCOUNT_ANY", "MANAGE_SUPPLIERS",
-                        "MANAGE_JACK_POINT", "MANAGE_LOYALTY"
+                        "MANAGE_JACK_POINT", "MANAGE_LOYALTY", "VIEW_CUSTOMER_FEEDBACK"
                 )
         );
 

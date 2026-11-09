@@ -15,6 +15,7 @@ import java.util.Map;
 public class BarTableController {
 
     private final BarTableService tableService;
+    private final TableActionsService actions;
 
     @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_SERVICE')")
     @GetMapping
@@ -38,5 +39,37 @@ public class BarTableController {
     @PostMapping("/{uid}/newCard")
     public Response<BarTable> newCard(@PathVariable String uid) {
         return tableService.newCard(uid);
+    }
+
+    /** Tables calling now (waiter / bill) - for the counter, cashier and managers. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_SALES') or @authChecker.hasPermissionOrRoot('RECEIVE_ORDERS')")
+    @GetMapping("/calls")
+    public ResponseList<TableCall> calls() {
+        return actions.openCalls();
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_SALES') or @authChecker.hasPermissionOrRoot('RECEIVE_ORDERS')")
+    @PostMapping("/calls/{uid}/done")
+    public Response<TableCall> callDone(@PathVariable String uid) {
+        return actions.done(uid);
+    }
+
+    /** What customers wrote from the tables, in a period (today, week, month...). */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_CUSTOMER_FEEDBACK')")
+    @GetMapping("/feedback/{filter}")
+    public ResponseList<CustomerFeedback> feedback(@PathVariable String filter) {
+        return actions.feedbackList(filter);
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_CUSTOMER_FEEDBACK')")
+    @GetMapping("/feedbackUnread")
+    public Response<Long> feedbackUnread() {
+        return actions.unreadFeedback();
+    }
+
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_CUSTOMER_FEEDBACK')")
+    @PostMapping("/feedback/{uid}/read")
+    public Response<CustomerFeedback> feedbackRead(@PathVariable String uid) {
+        return actions.markRead(uid);
     }
 }
