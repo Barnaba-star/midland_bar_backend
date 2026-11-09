@@ -80,6 +80,9 @@ public class WebSecurityConfiguration {
                         // reached the browser as a 401 "session expired" and logged
                         // the user out.
                         .requestMatchers("/error").permitAll()
+                        // The customers' window behind a table's QR card (BarTable): read-only,
+                        // the table's secret token in the path is the key, no login.
+                        .requestMatchers("/public/**").permitAll()
                         .anyRequest().authenticated()
                 )
 
