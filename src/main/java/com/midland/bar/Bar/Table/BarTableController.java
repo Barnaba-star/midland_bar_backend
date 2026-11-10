@@ -16,6 +16,18 @@ public class BarTableController {
 
     private final BarTableService tableService;
     private final TableActionsService actions;
+    private final BillQrService billQrService;
+
+    /**
+     * A bill's own QR (owner, 2026-11-10), for the waiter to show or print:
+     * the token the customers' window opens with (/meza/TOKEN). Only for a
+     * waiter's unpaid bill; a waiter signed in with code + PIN gets their own only.
+     */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_SALES')")
+    @GetMapping("/billQr/{billUid}")
+    public com.midland.bar.Utils.Responses.Response<java.util.Map<String, Object>> billQr(@PathVariable String billUid) {
+        return billQrService.qrFor(billUid);
+    }
 
     @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_SERVICE')")
     @GetMapping

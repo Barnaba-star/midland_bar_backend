@@ -37,6 +37,7 @@ public class BillPaymentService {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     private final SalesOpenedRepository salesOpenedRepository;
+    private final com.midland.bar.Bar.Table.BillQrService billQrService;
     private final BarSalesRepository barSalesRepository;
     private final BillPaymentRepository billPaymentRepository;
     private final com.midland.bar.Bar.Repository.StaffOrderRepository staffOrderRepository;
@@ -363,6 +364,9 @@ public class BillPaymentService {
         receipt.put("traVerifyCode", bill.getTraVerifyCode());
         receipt.put("lines", lines);
         receipt.put("payments", payments);
+        // An unpaid waiter's bill prints its own QR: the customer scans it to see the bill and order onto it.
+        if ("PENDING".equals(bill.getPaymentStatus()) && bill.getStaffUid() != null)
+            receipt.put("customerToken", billQrService.tokenOf(bill));
         return new Response<>(receipt);
     }
 

@@ -26,6 +26,14 @@ public class SalesOpened extends TenantEntity {
     private String salesCode;
 
     /**
+     * The bill's own QR (owner, 2026-11-10): the customers' window for this
+     * bill only - its copy, ordering onto it, calling its waiter. Random and
+     * long, so no bill can be reached by guessing; made the first time asked.
+     */
+    @Column(name = "customer_token", length = 20)
+    private String customerToken;
+
+    /**
      * The staff member the bill belongs to when it was opened at Staff Sell.
      * Everything sold on it is theirs - the seller on each line and the
      * commission - whoever is logged in at the till. Null for bills opened on

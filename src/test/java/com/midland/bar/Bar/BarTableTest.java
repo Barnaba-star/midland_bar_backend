@@ -39,6 +39,7 @@ class BarTableTest {
     @Autowired com.midland.bar.Bar.Repository.StaffOrderRepository staffOrderRepository;
     @Autowired UserRepository userRepository;
     @Autowired MockMvc mvc;
+    @Autowired com.midland.bar.Bar.Table.BillQrService billQrController;
 
     @BeforeEach
     void signIn() {
@@ -235,6 +236,45 @@ class BarTableTest {
         for (int i = 0; i < 10; i++)
             actions.billCopy(t.getToken(), "ZZ-" + i);
         assertEquals("TOO_MANY", actions.billCopy(t.getToken(), bill.getSalesCode()).getMessage(), "no guessing through numbers");
+    }
+
+    @Test
+    void aBillsOwnQrShowsThatBillAndOrdersGoStraightOntoItForItsWaiter() {
+        workShiftService.open();
+        tableService.setCount(0);
+        BarTable t = tableService.setCount(1).getData().get(0);
+        java.util.List<?> menu = (java.util.List<?>) tableService.customerView(t.getToken()).getData().get("menu");
+        String uid = (String) ((java.util.Map<?, ?>) menu.get(0)).get("uid");
+        actions.placeOrder(t.getToken(), java.util.Map.of("items", java.util.List.of(java.util.Map.of("uid", uid, "qty", 1))));
+        String first = (String) actions.pendingOrders().getData().stream().filter(o -> t.getName().equals(o.get("tableName"))).findFirst().orElseThrow().get("uid");
+        var w = waiter();
+        var bill = salesOpenedRepository.findById(actions.acceptOrder(first, w.getUid()).getData().getBillUid()).orElseThrow();
+
+        var qr = billQrController.qrFor(bill.getUid());
+        assertNotNull(qr.getData(), qr.getMessage());
+        String token = (String) qr.getData().get("token");
+        assertEquals(16, token.length());
+        assertEquals(token, billQrController.qrFor(bill.getUid()).getData().get("token"), "one token per bill");
+
+        var view = tableService.customerView(token).getData();
+        assertEquals(bill.getSalesCode(), ((java.util.Map<?, ?>) view.get("bill")).get("code"));
+        assertFalse(((java.util.List<?>) view.get("menu")).isEmpty());
+        assertEquals(bill.getSalesCode(), actions.myBill(token, false).getData().get("code"));
+
+        var placed = actions.placeOrder(token, java.util.Map.of("items", java.util.List.of(java.util.Map.of("uid", uid, "qty", 2))));
+        assertNotNull(placed.getData(), placed.getMessage());
+        var pending = actions.pendingOrders().getData().stream().filter(o -> bill.getSalesCode().equals(o.get("billCode"))).findFirst().orElseThrow();
+        assertEquals(bill.getStaffName(), pending.get("staffName"), "the waiter it is for");
+        var taken = actions.acceptOrder((String) pending.get("uid"), null);
+        assertNotNull(taken.getData(), taken.getMessage());
+        assertEquals(bill.getUid(), taken.getData().getBillUid(), "no waiter to choose - its own bill");
+
+        bill.setPaymentStatus("PAID");
+        bill.setPaidAt(java.time.LocalDateTime.now());
+        salesOpenedRepository.save(bill);
+        assertEquals("BILL_CLOSED", actions.placeOrder(token, java.util.Map.of("items", java.util.List.of(java.util.Map.of("uid", uid, "qty", 1)))).getMessage());
+        assertEquals("PAID", actions.myBill(token, false).getData().get("status"), "still readable after paying");
+        assertNull(tableService.customerView("ZZZZZZZZZZZZZZZZ").getData(), "a made-up token opens nothing");
     }
 
     @Test

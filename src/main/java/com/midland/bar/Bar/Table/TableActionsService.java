@@ -60,9 +60,20 @@ public class TableActionsService {
     /** At most this many orders from one table per 10 minutes. */
     private static final int ORDERS_PER_10_MIN = 6;
 
+    private final BillQrService billQrService;
+
+    /** A table by its QR token - or a bill by its own (the bill read as a table of its own). */
     private Optional<BarTable> table(String token) {
         String key = token == null ? "" : token.trim().toUpperCase();
+        if (key.length() == BillQrService.TOKEN_LENGTH)
+            return billQrService.billFor(key).map(b -> BillQrService.asTable(b, key));
         return key.length() == 10 ? tableRepository.findByToken(key) : Optional.empty();
+    }
+
+    /** A bill's window: its bill, or null for a table. */
+    private com.midland.bar.Bar.Model.SalesOpened billOf(BarTable t) {
+        String uid = BillQrService.billUid(t);
+        return uid == null ? null : salesOpenedRepository.findById(uid).orElse(null);
     }
 
     // ------------------------------------------------------------ customer side
@@ -121,7 +132,22 @@ public class TableActionsService {
                         .findFirst().orElse(null));
         if (bill == null)
             return new Response<>("BILL_NOT_FOUND");
+        return copyOf(t, bill, true);
+    }
 
+    /**
+     * A bill's own window (its QR): the copy of that bill. With `ask` (Omba
+     * bill) its waiter is told the customer wants it.
+     */
+    public Response<Map<String, Object>> myBill(String token, boolean ask) {
+        BarTable t = table(token).orElse(null);
+        var bill = t == null ? null : billOf(t);
+        if (bill == null)
+            return new Response<>("BILL_NOT_FOUND");
+        return copyOf(t, bill, ask);
+    }
+
+    private Response<Map<String, Object>> copyOf(BarTable t, com.midland.bar.Bar.Model.SalesOpened bill, boolean tellWaiter) {
         // Each beer is added as its own line; the copy reads one line per item and
         // price ("6 x Castle Lite"), the free units of an offer on a line of their own.
         Map<String, Map<String, Object>> merged = new LinkedHashMap<>();
@@ -149,7 +175,7 @@ public class TableActionsService {
         boolean isPaid = "PAID".equals(bill.getPaymentStatus());
 
         // Unpaid: the waiter is told this table wants its bill (a repeat within the minute is quiet).
-        if (!isPaid) {
+        if (tellWaiter && !isPaid) {
             Optional<TableCall> open = callRepository.findOpenFor(t.getUid(), TableCall.BILL, LocalDateTime.now().minusHours(CALL_HOURS));
             if (open.isEmpty()) {
                 TableCall c = new TableCall();
@@ -238,6 +264,9 @@ public class TableActionsService {
 
     /** The waiter serving a table now: who took its latest order tonight. */
     private String waiterOf(String tableUid) {
+        if (tableUid != null && tableUid.startsWith(BillQrService.BILL_PREFIX))
+            return salesOpenedRepository.findById(tableUid.substring(BillQrService.BILL_PREFIX.length()))
+                    .map(com.midland.bar.Bar.Model.SalesOpened::getStaffName).orElse(null);
         return orderRepository.findForTable(tableUid, LocalDateTime.now().minusHours(CALL_HOURS)).stream()
                 .filter(o -> TableOrder.ACCEPTED.equals(o.getStatus()) && o.getStaffName() != null)
                 .map(TableOrder::getStaffName).findFirst().orElse(null);
@@ -277,6 +306,10 @@ public class TableActionsService {
         BarTable t = table(token).orElse(null);
         if (t == null)
             return new Response<>("TABLE_NOT_FOUND");
+        // From a bill's own QR: onto that bill, for its waiter - while it is unpaid.
+        var forBill = billOf(t);
+        if (BillQrService.isBill(t) && (forBill == null || !"PENDING".equals(forBill.getPaymentStatus())))
+            return new Response<>("BILL_CLOSED");
         LocalDateTime now = LocalDateTime.now();
         if (orderRepository.countFromTableSince(t.getUid(), now.minusMinutes(10)) >= ORDERS_PER_10_MIN)
             return new Response<>("TOO_MANY");
@@ -320,6 +353,12 @@ public class TableActionsService {
             return new Response<>("Could not read the order");
         }
         o.setTotal(total);
+        if (forBill != null) {
+            o.setBillUid(forBill.getUid());
+            o.setBillCode(forBill.getSalesCode());
+            o.setStaffUid(forBill.getStaffUid());
+            o.setStaffName(forBill.getStaffName());
+        }
         o.setNote(trim(body.get("note"), 200));
         o.setPlacedAt(now);
         orderRepository.save(o);
@@ -378,6 +417,10 @@ public class TableActionsService {
             m.put("note", o.getNote());
             m.put("placedAt", o.getPlacedAt());
             m.put("lines", lines(o));
+            // From a bill's QR: whose it is, taken without choosing a waiter.
+            m.put("billUid", o.getBillUid());
+            m.put("billCode", o.getBillCode());
+            m.put("staffName", o.getStaffName());
             out.add(m);
         }
         return new ResponseList<>(out);
@@ -395,6 +438,15 @@ public class TableActionsService {
             return new Response<>("Order Not Found");
         if (!TableOrder.PENDING.equals(o.getStatus()))
             return new Response<>("This order was already " + o.getStatus().toLowerCase());
+        // Ordered from a bill's own QR: onto that bill, whoever taps (its waiter, or a cashier for them).
+        if (o.getBillUid() != null) {
+            var own = salesOpenedRepository.findById(o.getBillUid()).filter(b -> branch.equals(b.getBranchUid())).orElse(null);
+            if (own == null || !"PENDING".equals(own.getPaymentStatus()))
+                return new Response<>("Bill " + o.getBillCode() + " is already closed");
+            com.midland.bar.Config.Security.StaffSession.requireOwnBill(own);
+            staffOrderService.sendFromTable(own, lineItems(o), o.getTableName());
+            return accepted(o, own, branch);
+        }
         // A waiter signed in with code + PIN takes it onto their own bill, never a colleague's.
         if (com.midland.bar.Config.Security.StaffSession.active())
             staffUid = com.midland.bar.Config.Security.StaffSession.staffUid();
@@ -413,12 +465,20 @@ public class TableActionsService {
             bill.setTableName(o.getTableName());
             bill = salesOpenedRepository.save(bill);
         }
+        staffOrderService.sendFromTable(bill, lineItems(o), o.getTableName());
+        return accepted(o, bill, branch);
+    }
+
+    private static List<com.midland.bar.Bar.Service.StaffOrderService.TableItem> lineItems(TableOrder o) {
         List<com.midland.bar.Bar.Service.StaffOrderService.TableItem> items = new ArrayList<>();
         for (Map<String, Object> l : lines(o))
             items.add(new com.midland.bar.Bar.Service.StaffOrderService.TableItem(
                     String.valueOf(l.get("uid")), ((Number) l.get("qty")).intValue(),
                     l.get("serving") == null ? null : l.get("serving").toString()));
-        staffOrderService.sendFromTable(bill, items, o.getTableName());
+        return items;
+    }
+
+    private Response<TableOrder> accepted(TableOrder o, com.midland.bar.Bar.Model.SalesOpened bill, String branch) {
         o.setStatus(TableOrder.ACCEPTED);
         o.setDecidedAt(LocalDateTime.now());
         o.setDecidedBy(LoggerUser.getEmail());

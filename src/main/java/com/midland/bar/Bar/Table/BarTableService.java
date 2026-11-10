@@ -30,6 +30,7 @@ public class BarTableService {
     private final BranchRepository branchRepository;
     private final com.midland.bar.Bar.Service.PriceRuleService priceRuleService;
     private final BarTableInfoRepository infoRepository;
+    private final BillQrService billQrService;
 
     /**
      * The customers' window, kept 60 s per token: a whole table scanning at
@@ -105,17 +106,26 @@ public class BarTableService {
     @Transactional(readOnly = true)
     public Response<Map<String, Object>> customerView(String token) {
         String key = token == null ? "" : token.trim().toUpperCase();
-        if (key.length() != TOKEN_LENGTH)
+        if (key.length() != TOKEN_LENGTH && key.length() != BillQrService.TOKEN_LENGTH)
             return new Response<>("TABLE_NOT_FOUND");
         Map.Entry<Long, Map<String, Object>> cached = viewCache.get(key);
         if (cached != null && cached.getKey() > System.currentTimeMillis())
             return new Response<>(cached.getValue());
-        BarTable t = tableRepository.findByToken(key).orElse(null);
+        // A bill's own QR: the same window, for that bill only (owner, 2026-11-10).
+        var bill = key.length() == BillQrService.TOKEN_LENGTH ? billQrService.billFor(key).orElse(null) : null;
+        BarTable t = bill != null ? BillQrService.asTable(bill, key) : tableRepository.findByToken(key).orElse(null);
         if (t == null)
             return new Response<>("TABLE_NOT_FOUND");
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("tableName", t.getName());
         view.put("tableNumber", t.getNumber());
+        if (bill != null) {
+            Map<String, Object> b = new LinkedHashMap<>();
+            b.put("code", bill.getSalesCode());
+            b.put("staffName", bill.getStaffName());
+            b.put("open", "PENDING".equals(bill.getPaymentStatus()));
+            view.put("bill", b);
+        }
         branchRepository.findById(t.getBranchUid()).ifPresent(b -> view.put("branchName", b.getBranchName()));
         List<Map<String, Object>> menu = new ArrayList<>();
         var all = barServiceRepository.findAllBarServiceList(t.getBranchUid(), 0);

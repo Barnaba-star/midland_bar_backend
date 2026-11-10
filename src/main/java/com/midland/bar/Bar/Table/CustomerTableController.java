@@ -30,6 +30,12 @@ public class CustomerTableController {
     }
 
     /** {kind, message, rating?, name?, phone?} - to the branch's CEO / manager. */
+    /** A bill's own window (its QR): the copy of that bill; ask=true tells its waiter. */
+    @GetMapping("/{token}/myBill")
+    public Response<Map<String, Object>> myBill(@PathVariable String token, @RequestParam(defaultValue = "false") boolean ask) {
+        return actions.myBill(token, ask);
+    }
+
     /** A copy of the customer's bill by its number (MK-1). */
     @PostMapping("/{token}/bill")
     public Response<Map<String, Object>> bill(@PathVariable String token, @RequestBody Map<String, String> body) {

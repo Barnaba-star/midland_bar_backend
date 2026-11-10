@@ -78,6 +78,10 @@ public interface SalesOpenedRepository extends JpaRepository<SalesOpened, String
             """)
     long pendingBillsAmount(@Param("branchUID") String branchUID);
 
+    /** A bill by its own QR token (any branch - the token is the key). */
+    @Query("SELECT s FROM SalesOpened s WHERE s.customerToken = :token AND s.isActive = true")
+    java.util.Optional<SalesOpened> findByCustomerToken(@Param("token") String token);
+
     /** Bills in a branch by their number (MK-1), newest first - the customers' window's bill copy. */
     @Query("SELECT s FROM SalesOpened s WHERE UPPER(s.salesCode) = UPPER(:code) AND s.branchUid = :branchUID " +
            "AND s.isActive = true AND s.createdAt >= :since ORDER BY s.createdAt DESC")
