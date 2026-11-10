@@ -61,6 +61,8 @@ public class TableActionsService {
     private static final int ORDERS_PER_10_MIN = 6;
 
     private final BillQrService billQrService;
+    private final com.midland.bar.Uaa.Repository.UserRepository userRepository;
+    private final com.midland.bar.Setting.Repository.BranchRepository branchRepository;
 
     /** A table by its QR token - or a bill by its own (the bill read as a table of its own). */
     private Optional<BarTable> table(String token) {
@@ -362,6 +364,8 @@ public class TableActionsService {
         o.setNote(trim(body.get("note"), 200));
         o.setPlacedAt(now);
         orderRepository.save(o);
+        if (forBill != null)
+            straightThrough(t, o, forBill);
         liveEvents.publish(t.getBranchUid(), TOPIC_CALLS);
         log.info("{} ordered {} line(s), Tsh {}", t.getName(), lines.size(), total);
         return new Response<>(Map.of("uid", o.getUid(), "status", o.getStatus()));
@@ -467,6 +471,50 @@ public class TableActionsService {
         }
         staffOrderService.sendFromTable(bill, lineItems(o), o.getTableName());
         return accepted(o, bill, branch);
+    }
+
+    /**
+     * Ordered from a bill's own QR (owner, 2026-11-10): it goes straight to the
+     * counter / kitchen / pool on that bill, and the waiter is told what to take
+     * over. Done on behalf of whoever opened the bill, in its branch; if that
+     * cannot be done the order waits for the waiter's "Pokea" as before.
+     */
+    private void straightThrough(BarTable t, TableOrder o, com.midland.bar.Bar.Model.SalesOpened bill) {
+        var prev = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        try {
+            // Whoever opened the bill; a Staff Sell bill records none - then an account of its branch.
+            var user = bill.getOpenedBy() == null ? null : userRepository.findByUsernameForAuthentication(bill.getOpenedBy());
+            if (user == null)
+                user = userRepository.findHomedIn(bill.getBranchUid()).stream().findFirst().orElse(null);
+            var branch = branchRepository.findById(bill.getBranchUid()).orElse(null);
+            if (user == null || branch == null)
+                return;
+            user.setActiveBranch(branch);
+            org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                    new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(user, null, List.of()));
+            staffOrderService.sendFromTable(bill, lineItems(o), o.getTableName());
+            o.setStatus(TableOrder.ACCEPTED);
+            o.setDecidedAt(LocalDateTime.now());
+            o.setDecidedBy("QR");
+            orderRepository.save(o);
+
+            TableCall c = new TableCall();
+            c.setBranchUid(t.getBranchUid());
+            c.setTableUid(t.getUid());
+            c.setTableName(t.getName());
+            c.setKind(TableCall.ORDER);
+            String what = String.join(", ", lines(o).stream().map(l -> l.get("qty") + "× " + l.get("name")
+                    + ("COLD".equals(l.get("serving")) ? " (Baridi)" : "WARM".equals(l.get("serving")) ? " (Moto)" : "")).toList());
+            c.setNote(what.length() > 300 ? what.substring(0, 297) + "..." : what);
+            c.setCalledAt(LocalDateTime.now());
+            callRepository.save(c);
+            liveEvents.publish(bill.getBranchUid(), "orders");
+            liveEvents.publish(bill.getBranchUid(), "bills");
+        } catch (RuntimeException e) {
+            log.warn("Bill {} QR order left for the waiter to take: {}", bill.getSalesCode(), e.getMessage());
+        } finally {
+            org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(prev);
+        }
     }
 
     private static List<com.midland.bar.Bar.Service.StaffOrderService.TableItem> lineItems(TableOrder o) {

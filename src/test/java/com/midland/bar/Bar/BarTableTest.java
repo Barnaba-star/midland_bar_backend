@@ -261,13 +261,15 @@ class BarTableTest {
         assertFalse(((java.util.List<?>) view.get("menu")).isEmpty());
         assertEquals(bill.getSalesCode(), actions.myBill(token, false).getData().get("code"));
 
-        var placed = actions.placeOrder(token, java.util.Map.of("items", java.util.List.of(java.util.Map.of("uid", uid, "qty", 2))));
+        long sentBefore = staffOrderRepository.findAll().stream().filter(o -> bill.getUid().equals(o.getSalesOpenedUid())).count();
+        var placed = actions.placeOrder(token, java.util.Map.of("items", java.util.List.of(java.util.Map.of("uid", uid, "qty", 2, "serving", "COLD"))));
         assertNotNull(placed.getData(), placed.getMessage());
-        var pending = actions.pendingOrders().getData().stream().filter(o -> bill.getSalesCode().equals(o.get("billCode"))).findFirst().orElseThrow();
-        assertEquals(bill.getStaffName(), pending.get("staffName"), "the waiter it is for");
-        var taken = actions.acceptOrder((String) pending.get("uid"), null);
-        assertNotNull(taken.getData(), taken.getMessage());
-        assertEquals(bill.getUid(), taken.getData().getBillUid(), "no waiter to choose - its own bill");
+        // Straight through (owner, 2026-11-10): to the station on that bill, nothing waiting for "Pokea"...
+        assertTrue(actions.pendingOrders().getData().stream().noneMatch(o -> bill.getSalesCode().equals(o.get("billCode"))), "no Pokea needed");
+        assertEquals(sentBefore + 1, staffOrderRepository.findAll().stream().filter(o -> bill.getUid().equals(o.getSalesOpenedUid())).count(), "sent to the station");
+        // ...and the waiter is told what to take over.
+        assertTrue(actions.openCalls().getData().stream().anyMatch(c -> "ORDER".equals(c.getKind()) && c.getNote().contains("2×") && c.getNote().contains("Baridi")));
+        assertEquals("ACCEPTED", ((java.util.Map<?, ?>) ((java.util.List<?>) actions.tableOrders(token).getData().get("orders")).get(0)).get("status"));
 
         bill.setPaymentStatus("PAID");
         bill.setPaidAt(java.time.LocalDateTime.now());

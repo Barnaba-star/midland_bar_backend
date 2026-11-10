@@ -26,6 +26,11 @@ public class TableCall extends TenantEntity {
     public static final String BILL = "BILL";
     /** "Nimelipa": the customer says they paid the bar's number - the note says how, for the cashier to check. */
     public static final String PAID = "PAID";
+    /**
+     * Ordered from the bill's own QR and already sent to the counter / kitchen
+     * (owner, 2026-11-10): the waiter is told what, to take it to the customer.
+     */
+    public static final String ORDER = "ORDER";
 
     @Column(name = "table_uid", length = 64, nullable = false)
     private String tableUid;

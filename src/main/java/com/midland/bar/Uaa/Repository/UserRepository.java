@@ -256,4 +256,8 @@ public interface UserRepository extends JpaRepository<User, String> {
     /** [userUid, roleName] for a page of users - their roles, in one query. */
     @Query("SELECT u.uid, r.name FROM User u JOIN u.roles r WHERE u.uid IN :uids ORDER BY r.name")
     List<Object[]> findRoleNamesOf(@Param("uids") java.util.Collection<String> uids);
+
+    /** Accounts whose home is this branch, not blocked - something done for the branch with no one signed in (a bill's QR order) is written as one of them. */
+    @org.springframework.data.jpa.repository.Query("SELECT u FROM User u WHERE u.branch.uid = :branchUid AND (u.isBlocked = false OR u.isBlocked IS NULL)")
+    java.util.List<User> findHomedIn(@org.springframework.data.repository.query.Param("branchUid") String branchUid);
 }
