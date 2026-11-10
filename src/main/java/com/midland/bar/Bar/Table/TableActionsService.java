@@ -48,6 +48,14 @@ public class TableActionsService {
     private final com.midland.bar.Bar.Service.StaffOrderService staffOrderService;
     private final com.midland.bar.Bar.Service.StaffSellService staffSellService;
     private final BarTableService tableService;
+    private final com.midland.bar.Bar.Repository.BarSalesRepository barSalesRepository;
+    private final com.midland.bar.Bar.Repository.BillPaymentRepository billPaymentRepository;
+
+    /** Bill copies a table may look up in 10 minutes - numbers are short, so no guessing through them. */
+    static final int BILL_LOOKUPS_PER_10_MIN = 10;
+    /** A paid bill can still be seen this long after it was paid. */
+    static final int PAID_BILL_HOURS = 6;
+    private final java.util.concurrent.ConcurrentHashMap<String, java.util.Deque<Long>> billLookups = new java.util.concurrent.ConcurrentHashMap<>();
     private static final com.fasterxml.jackson.databind.ObjectMapper JSON = new com.fasterxml.jackson.databind.ObjectMapper();
     /** At most this many orders from one table per 10 minutes. */
     private static final int ORDERS_PER_10_MIN = 6;
@@ -82,6 +90,90 @@ public class TableActionsService {
         liveEvents.publish(t.getBranchUid(), TOPIC_CALLS);
         log.info("{} called ({}) in branch {}", t.getName(), kind, t.getBranchUid());
         return new Response<>(Map.of("kind", kind, "waiting", true));
+    }
+
+    /**
+     * The customer types their bill number (MK-1) and sees a copy of it - what
+     * is on it, what is paid and what is left - and their waiter is told the
+     * table asked for the bill (owner, 2026-11-10). Only this branch's bills,
+     * unpaid or paid in the last few hours.
+     */
+    public Response<Map<String, Object>> billCopy(String token, String rawCode) {
+        BarTable t = table(token).orElse(null);
+        if (t == null)
+            return new Response<>("TABLE_NOT_FOUND");
+        String code = rawCode == null ? "" : rawCode.trim().toUpperCase().replaceAll("\\s+", "");
+        if (code.isEmpty() || code.length() > 30)
+            return new Response<>("BILL_NOT_FOUND");
+        long now = System.currentTimeMillis();
+        java.util.Deque<Long> tries = billLookups.computeIfAbsent(t.getUid(), k -> new java.util.ArrayDeque<>());
+        synchronized (tries) {
+            while (!tries.isEmpty() && tries.peekFirst() < now - 10 * 60_000L)
+                tries.pollFirst();
+            if (tries.size() >= BILL_LOOKUPS_PER_10_MIN)
+                return new Response<>("TOO_MANY");
+            tries.addLast(now);
+        }
+        LocalDateTime paidSince = LocalDateTime.now().minusHours(PAID_BILL_HOURS);
+        List<com.midland.bar.Bar.Model.SalesOpened> found = salesOpenedRepository.findRecentByCode(code, t.getBranchUid(), java.time.LocalDate.now().minusDays(1));
+        com.midland.bar.Bar.Model.SalesOpened bill = found.stream().filter(b -> "PENDING".equals(b.getPaymentStatus())).findFirst()
+                .orElse(found.stream().filter(b -> "PAID".equals(b.getPaymentStatus()) && b.getPaidAt() != null && b.getPaidAt().isAfter(paidSince))
+                        .findFirst().orElse(null));
+        if (bill == null)
+            return new Response<>("BILL_NOT_FOUND");
+
+        // Each beer is added as its own line; the copy reads one line per item and
+        // price ("6 x Castle Lite"), the free units of an offer on a line of their own.
+        Map<String, Map<String, Object>> merged = new LinkedHashMap<>();
+        for (var l : barSalesRepository.findBarSalesList(t.getBranchUid(), bill.getUid())) {
+            int qty = l.getQuantity() == null ? 1 : l.getQuantity();
+            int lineTotal = l.getLineTotal() == null ? 0 : l.getLineTotal();
+            String offer = lineTotal == 0 && l.getPriceRuleName() != null ? l.getPriceRuleName() : null;
+            String key = l.getServiceName() + "|" + l.getPrice() + "|" + (offer == null ? "" : offer);
+            Map<String, Object> m = merged.computeIfAbsent(key, k -> {
+                Map<String, Object> n = new LinkedHashMap<>();
+                n.put("name", l.getServiceName());
+                n.put("qty", 0);
+                n.put("price", l.getPrice());
+                n.put("total", 0);
+                n.put("offer", offer);
+                return n;
+            });
+            m.put("qty", (Integer) m.get("qty") + qty);
+            m.put("total", (Integer) m.get("total") + lineTotal);
+        }
+        List<Map<String, Object>> lines = new ArrayList<>(merged.values());
+        long total = barSalesRepository.billTotal(bill.getUid());
+        long paid = billPaymentRepository.findByBill(bill.getUid(), t.getBranchUid()).stream()
+                .mapToLong(p -> p.getAmount() == null ? 0 : p.getAmount()).sum();
+        boolean isPaid = "PAID".equals(bill.getPaymentStatus());
+
+        // Unpaid: the waiter is told this table wants its bill (a repeat within the minute is quiet).
+        if (!isPaid) {
+            Optional<TableCall> open = callRepository.findOpenFor(t.getUid(), TableCall.BILL, LocalDateTime.now().minusHours(CALL_HOURS));
+            if (open.isEmpty()) {
+                TableCall c = new TableCall();
+                c.setBranchUid(t.getBranchUid());
+                c.setTableUid(t.getUid());
+                c.setTableName(t.getName());
+                c.setKind(TableCall.BILL);
+                c.setNote("Bill " + bill.getSalesCode() + (bill.getStaffName() == null ? "" : " (" + bill.getStaffName() + ")"));
+                c.setCalledAt(LocalDateTime.now());
+                callRepository.save(c);
+                liveEvents.publish(t.getBranchUid(), TOPIC_CALLS);
+            }
+        }
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("code", bill.getSalesCode());
+        out.put("staffName", bill.getStaffName() != null ? bill.getStaffName() : bill.getOpenedByName());
+        out.put("status", bill.getPaymentStatus());
+        out.put("lines", lines);
+        out.put("total", total);
+        out.put("paid", isPaid ? total : paid);
+        out.put("toPay", isPaid ? 0 : Math.max(0, total - paid));
+        out.put("paidAt", bill.getPaidAt());
+        return new Response<>(out);
     }
 
     public Response<Map<String, Object>> feedback(String token, Map<String, Object> body) {

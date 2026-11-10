@@ -78,6 +78,12 @@ public interface SalesOpenedRepository extends JpaRepository<SalesOpened, String
             """)
     long pendingBillsAmount(@Param("branchUID") String branchUID);
 
+    /** Bills in a branch by their number (MK-1), newest first - the customers' window's bill copy. */
+    @Query("SELECT s FROM SalesOpened s WHERE UPPER(s.salesCode) = UPPER(:code) AND s.branchUid = :branchUID " +
+           "AND s.isActive = true AND s.createdAt >= :since ORDER BY s.createdAt DESC")
+    List<SalesOpened> findRecentByCode(@Param("code") String code, @Param("branchUID") String branchUID,
+                                       @Param("since") java.time.LocalDate since);
+
     /** A waiter's unpaid bill for a table (customers' window orders keep landing on it). */
     @Query("SELECT s FROM SalesOpened s WHERE s.tableUid = :tableUid AND s.staffUid = :staffUid AND s.branchUid = :branchUID " +
            "AND s.isActive = true AND s.paymentStatus = 'PENDING' ORDER BY s.createdAt DESC")

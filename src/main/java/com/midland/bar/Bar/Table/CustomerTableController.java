@@ -30,6 +30,12 @@ public class CustomerTableController {
     }
 
     /** {kind, message, rating?, name?, phone?} - to the branch's CEO / manager. */
+    /** A copy of the customer's bill by its number (MK-1). */
+    @PostMapping("/{token}/bill")
+    public Response<Map<String, Object>> bill(@PathVariable String token, @RequestBody Map<String, String> body) {
+        return actions.billCopy(token, body == null ? null : body.get("code"));
+    }
+
     @PostMapping("/{token}/feedback")
     public Response<Map<String, Object>> feedback(@PathVariable String token, @RequestBody Map<String, Object> body) {
         return actions.feedback(token, body);

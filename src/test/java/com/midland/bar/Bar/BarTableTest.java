@@ -211,6 +211,33 @@ class BarTableTest {
     }
 
     @Test
+    void aCustomerTypesTheirBillNumberAndSeesACopyAndTheWaiterIsCalled() {
+        workShiftService.open();
+        tableService.setCount(0);
+        BarTable t = tableService.setCount(1).getData().get(0);
+        java.util.List<?> menu = (java.util.List<?>) tableService.customerView(t.getToken()).getData().get("menu");
+        String uid = (String) ((java.util.Map<?, ?>) menu.get(0)).get("uid");
+        actions.placeOrder(t.getToken(), java.util.Map.of("items", java.util.List.of(java.util.Map.of("uid", uid, "qty", 2))));
+        String orderUid = (String) actions.pendingOrders().getData().stream().filter(o -> t.getName().equals(o.get("tableName"))).findFirst().orElseThrow().get("uid");
+        var accepted = actions.acceptOrder(orderUid, waiter().getUid()).getData();
+        var bill = salesOpenedRepository.findById(accepted.getBillUid()).orElseThrow();
+
+        assertEquals("BILL_NOT_FOUND", actions.billCopy(t.getToken(), "ZZ-999").getMessage());
+        var copy = actions.billCopy(t.getToken(), " " + bill.getSalesCode().toLowerCase() + " ");
+        assertNotNull(copy.getData(), copy.getMessage());
+        assertEquals(bill.getSalesCode(), copy.getData().get("code"));
+        assertEquals("PENDING", copy.getData().get("status"));
+        assertEquals(copy.getData().get("total"), copy.getData().get("toPay"), "nothing paid yet");
+        assertNotNull(copy.getData().get("lines"), "what the counter has put on it so far");
+        assertTrue(actions.openCalls().getData().stream().anyMatch(c -> "BILL".equals(c.getKind())
+                && String.valueOf(c.getNote()).contains(bill.getSalesCode())), "the waiter is told which bill");
+
+        for (int i = 0; i < 10; i++)
+            actions.billCopy(t.getToken(), "ZZ-" + i);
+        assertEquals("TOO_MANY", actions.billCopy(t.getToken(), bill.getSalesCode()).getMessage(), "no guessing through numbers");
+    }
+
+    @Test
     void aRejectedOrderTellsWhyAndPaidAndInfoReachTheBar() {
         tableService.setCount(0);
         BarTable t = tableService.setCount(1).getData().get(0);
