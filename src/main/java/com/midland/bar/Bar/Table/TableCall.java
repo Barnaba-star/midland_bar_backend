@@ -54,6 +54,30 @@ public class TableCall extends TenantEntity {
     @Column(name = "done_by", length = 120)
     private String doneBy;
 
+    // ---- "Nimelipa" to the bar's Lipa Namba (owner, 2026-11-11): the bill it pays,
+    // what the customer says they sent, and the cashier's answer.
+    @Column(name = "bill_uid", length = 64)
+    private String billUid;
+
+    @Column(name = "bill_code", length = 30)
+    private String billCode;
+
+    @Column(name = "pay_method", length = 20)
+    private String payMethod;
+
+    @Column(name = "pay_ref", length = 40)
+    private String payRef;
+
+    @Column(name = "pay_amount")
+    private Integer payAmount;
+
+    /** CONFIRMED (the cashier took it as payment) or REJECTED (with reason); null while waiting. */
+    @Column(name = "outcome", length = 10)
+    private String outcome;
+
+    @Column(name = "reject_reason", length = 200)
+    private String rejectReason;
+
     /**
      * Written by a customer's phone - nobody is signed in, so the branch is
      * the table's (set before saving), not the login's as TenantEntity does.

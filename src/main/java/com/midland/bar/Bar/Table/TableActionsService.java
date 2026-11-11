@@ -282,24 +282,88 @@ public class TableActionsService {
         String method = trim(body.get("method"), 20);
         String name = trim(body.get("name"), 60);
         String ref = trim(body.get("ref"), 40);
-        String amount = trim(body.get("amount"), 15);
-        if (name == null && ref == null)
-            return new Response<>("Write your name or the payment reference");
+        String amountText = trim(body.get("amount"), 15);
+        // The transaction reference is what the cashier checks on the bar's phone (owner, 2026-11-11).
+        if (ref == null)
+            return new Response<>("REF_REQUIRED");
         LocalDateTime now = LocalDateTime.now();
         Optional<TableCall> open = callRepository.findOpenFor(t.getUid(), TableCall.PAID, now.minusHours(CALL_HOURS));
         if (open.isPresent() && open.get().getCalledAt().isAfter(now.minusSeconds(CALL_REST_SECONDS)))
             return new Response<>("TOO_SOON");
+        if (callRepository.countRefUsed(t.getBranchUid(), ref, now.minusDays(14)) > 0)
+            return new Response<>("REF_USED");
+
+        // Which bill: the bill's own QR is that bill; at a table, the number the customer looked up.
+        com.midland.bar.Bar.Model.SalesOpened bill = billOf(t);
+        if (bill == null) {
+            String code = trim(body.get("billCode"), 30);
+            if (code != null) {
+                code = code.toUpperCase().replaceAll("\\s+", "");
+                bill = salesOpenedRepository.findRecentByCode(code, t.getBranchUid(), java.time.LocalDate.now().minusDays(1))
+                        .stream().filter(b -> "PENDING".equals(b.getPaymentStatus())).findFirst().orElse(null);
+            }
+        }
+        if (bill != null && "PAID".equals(bill.getPaymentStatus()))
+            return new Response<>("BILL_PAID");
+        Integer amount = null;
+        if (amountText != null) {
+            try {
+                amount = Integer.parseInt(amountText.replaceAll("[^0-9]", ""));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        if (amount == null && bill != null) {
+            long total = barSalesRepository.billTotal(bill.getUid());
+            long paidSoFar = billPaymentRepository.findByBill(bill.getUid(), t.getBranchUid()).stream()
+                    .mapToLong(p -> p.getAmount() == null ? 0 : p.getAmount()).sum();
+            amount = (int) Math.max(0, total - paidSoFar);
+        }
+
         TableCall c = new TableCall();
         c.setBranchUid(t.getBranchUid());
         c.setTableUid(t.getUid());
         c.setTableName(t.getName());
         c.setKind(TableCall.PAID);
-        c.setNote(String.join(" · ", java.util.stream.Stream.of(method, name, ref == null ? null : "ref " + ref,
+        c.setPayMethod(method);
+        c.setPayRef(ref);
+        c.setPayAmount(amount);
+        if (bill != null) {
+            c.setBillUid(bill.getUid());
+            c.setBillCode(bill.getSalesCode());
+        }
+        c.setNote(String.join(" · ", java.util.stream.Stream.of(
+                bill == null ? null : "Bill " + bill.getSalesCode(), method, name, "ref " + ref,
                 amount == null ? null : "Tsh " + amount).filter(Objects::nonNull).toList()));
         c.setCalledAt(now);
         callRepository.save(c);
         liveEvents.publish(t.getBranchUid(), TOPIC_CALLS);
-        return new Response<>(Map.of("sent", true));
+        return new Response<>(Map.of("sent", true, "claim", c.getUid()));
+    }
+
+    /** The customer watching their "Nimelipa": PENDING, CONFIRMED (or the bill is paid) or REJECTED with the reason. */
+    public Response<Map<String, Object>> paidStatus(String token, String claimUid) {
+        BarTable t = table(token).orElse(null);
+        if (t == null)
+            return new Response<>("TABLE_NOT_FOUND");
+        TableCall c = callRepository.findInBranch(claimUid, t.getBranchUid())
+                .filter(x -> TableCall.PAID.equals(x.getKind()) && t.getUid().equals(x.getTableUid())).orElse(null);
+        if (c == null)
+            return new Response<>("CLAIM_NOT_FOUND");
+        String status = "PENDING";
+        if ("REJECTED".equals(c.getOutcome()))
+            status = "REJECTED";
+        else if ("CONFIRMED".equals(c.getOutcome()))
+            status = "CONFIRMED";
+        else if (c.getBillUid() != null && salesOpenedRepository.findById(c.getBillUid())
+                .map(b -> "PAID".equals(b.getPaymentStatus())).orElse(false))
+            status = "CONFIRMED";
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("status", status);
+        out.put("reason", c.getRejectReason());
+        out.put("amount", c.getPayAmount());
+        out.put("ref", c.getPayRef());
+        out.put("billCode", c.getBillCode());
+        return new Response<>(out);
     }
 
     /** A customer's order: [{uid, qty}] from the menu. Waits for someone at the bar to take it. */
@@ -585,6 +649,34 @@ public class TableActionsService {
 
     public ResponseList<TableCall> openCalls() {
         return new ResponseList<>(callRepository.findOpen(LoggerUser.getBranchUIDOrMain(), LocalDateTime.now().minusHours(CALL_HOURS)));
+    }
+
+    /** The cashier took the customer's "Nimelipa" as payment (the bill was paid through the Pay dialog). */
+    public Response<TableCall> confirmPaid(String uid) {
+        return settle(uid, "CONFIRMED", null);
+    }
+
+    /** Not received / wrong amount: the customer's page shows the reason. */
+    public Response<TableCall> rejectPaid(String uid, String reason) {
+        String r = trim(reason, 200);
+        if (r == null)
+            return new Response<>("Andika sababu");
+        return settle(uid, "REJECTED", r);
+    }
+
+    private Response<TableCall> settle(String uid, String outcome, String reason) {
+        TableCall c = callRepository.findInBranch(uid, LoggerUser.getBranchUIDOrMain()).orElse(null);
+        if (c == null || !TableCall.PAID.equals(c.getKind()))
+            return new Response<>("Call Not Found");
+        c.setOutcome(outcome);
+        c.setRejectReason(reason);
+        if (c.getDoneAt() == null) {
+            c.setDoneAt(LocalDateTime.now());
+            c.setDoneBy(LoggerUser.getEmail());
+        }
+        callRepository.save(c);
+        liveEvents.publish(c.getBranchUid(), TOPIC_CALLS);
+        return new Response<>(c);
     }
 
     public Response<TableCall> done(String uid) {

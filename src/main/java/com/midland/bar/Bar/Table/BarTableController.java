@@ -60,6 +60,20 @@ public class BarTableController {
         return actions.openCalls();
     }
 
+    /** "Nimelipa" taken as payment - called after the bill was paid through the Pay dialog. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
+    @PostMapping("/calls/{uid}/confirmPaid")
+    public Response<TableCall> confirmPaid(@PathVariable String uid) {
+        return actions.confirmPaid(uid);
+    }
+
+    /** "Nimelipa" turned down {reason} - the customer's page shows why. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('SAVE_SALES')")
+    @PostMapping("/calls/{uid}/rejectPaid")
+    public Response<TableCall> rejectPaid(@PathVariable String uid, @RequestBody java.util.Map<String, String> body) {
+        return actions.rejectPaid(uid, body == null ? null : body.get("reason"));
+    }
+
     @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_SALES') or @authChecker.hasPermissionOrRoot('RECEIVE_ORDERS')")
     @PostMapping("/calls/{uid}/done")
     public Response<TableCall> callDone(@PathVariable String uid) {

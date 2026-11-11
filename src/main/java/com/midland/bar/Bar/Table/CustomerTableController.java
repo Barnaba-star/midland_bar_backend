@@ -70,4 +70,10 @@ public class CustomerTableController {
     public Response<Map<String, Object>> paid(@PathVariable String token, @RequestBody Map<String, Object> body) {
         return actions.paid(token, body);
     }
+
+    /** The customer's "Nimelipa": still with the cashier, confirmed, or turned down (and why). */
+    @GetMapping("/{token}/paid/{claim}")
+    public Response<Map<String, Object>> paidStatus(@PathVariable String token, @PathVariable String claim) {
+        return actions.paidStatus(token, claim);
+    }
 }
