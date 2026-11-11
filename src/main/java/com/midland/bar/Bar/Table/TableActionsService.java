@@ -81,6 +81,11 @@ public class TableActionsService {
     // ------------------------------------------------------------ customer side
 
     public Response<Map<String, Object>> call(String token, String rawKind) {
+        return call(token, rawKind, null);
+    }
+
+    /** staffUid: the waiter the customer picked by their photo (owner, 2026-11-12) - this branch's only. */
+    public Response<Map<String, Object>> call(String token, String rawKind, String staffUid) {
         BarTable t = table(token).orElse(null);
         if (t == null)
             return new Response<>("TABLE_NOT_FOUND");
@@ -99,6 +104,11 @@ public class TableActionsService {
         c.setTableName(t.getName());
         c.setKind(kind);
         c.setCalledAt(now);
+        if (TableCall.WAITER.equals(kind) && staffUid != null && !staffUid.isBlank())
+            barStaffRepository.findBarStaffByUID(staffUid.trim(), t.getBranchUid()).ifPresent(s -> {
+                c.setStaffUid(s.getUid());
+                c.setStaffName(com.midland.bar.Bar.Service.StaffSellService.fullName(s));
+            });
         callRepository.save(c);
         liveEvents.publish(t.getBranchUid(), TOPIC_CALLS);
         log.info("{} called ({}) in branch {}", t.getName(), kind, t.getBranchUid());

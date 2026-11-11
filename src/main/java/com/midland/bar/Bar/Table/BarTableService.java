@@ -31,6 +31,7 @@ public class BarTableService {
     private final com.midland.bar.Bar.Service.PriceRuleService priceRuleService;
     private final BarTableInfoRepository infoRepository;
     private final BillQrService billQrService;
+    private final jakarta.persistence.EntityManager em;
 
     /**
      * The customers' window, kept 60 s per token: a whole table scanning at
@@ -104,6 +105,35 @@ public class BarTableService {
      * and it unlocks only this read-only view.
      */
     @Transactional(readOnly = true)
+    /**
+     * The waiters a customer can call by name and photo (owner, 2026-11-12):
+     * those with a bill opened since yesterday in this branch - who is working
+     * tonight, without a roster.
+     */
+    private List<Map<String, Object>> waitersOnDuty(String branchUid) {
+        List<String> uids = em.createQuery(
+                        "SELECT DISTINCT s.staffUid FROM SalesOpened s WHERE s.branchUid = :branch"
+                                + " AND s.staffUid IS NOT NULL AND s.createdAt >= :from", String.class)
+                .setParameter("branch", branchUid)
+                .setParameter("from", java.time.LocalDate.now().minusDays(1))
+                .getResultList();
+        if (uids.isEmpty())
+            return List.of();
+        List<Map<String, Object>> out = new ArrayList<>();
+        em.createQuery("SELECT b FROM BarStaff b WHERE b.uid IN :uids AND b.branchUid = :branch AND b.isActive = true",
+                        com.midland.bar.Bar.Model.BarStaff.class)
+                .setParameter("uids", uids).setParameter("branch", branchUid)
+                .getResultList().forEach(b -> {
+                    Map<String, Object> w = new LinkedHashMap<>();
+                    w.put("uid", b.getUid());
+                    w.put("name", com.midland.bar.Bar.Service.StaffSellService.fullName(b));
+                    w.put("photo", b.getPhoto() == null ? null : "/public/staffPhoto/" + b.getPhoto());
+                    out.add(w);
+                });
+        out.sort(java.util.Comparator.comparing(m -> String.valueOf(m.get("name"))));
+        return out;
+    }
+
     public Response<Map<String, Object>> customerView(String token) {
         String key = token == null ? "" : token.trim().toUpperCase();
         if (key.length() != TOKEN_LENGTH && key.length() != BillQrService.TOKEN_LENGTH)
@@ -182,6 +212,7 @@ public class BarTableService {
             info.put("payBank", i.getPayBank());
             view.put("info", info);
         });
+        view.put("waiters", waitersOnDuty(t.getBranchUid()));
         if (viewCache.size() > 2000)
             viewCache.clear();
         viewCache.put(key, Map.entry(System.currentTimeMillis() + VIEW_TTL_MS, view));

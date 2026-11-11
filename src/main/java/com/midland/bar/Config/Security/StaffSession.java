@@ -65,6 +65,8 @@ public final class StaffSession {
             new Route("POST", Pattern.compile("^/bar/tables/orders/[^/]+/(accept|reject)$")),
             // Their bill's own QR, to show the customer (owner, 2026-11-10).
             new Route("GET", Pattern.compile("^/bar/tables/billQr/[^/]+$")),
+            // Their own picture (owner, 2026-11-12).
+            new Route("POST", Pattern.compile("^/bar/staffSell/photo$")),
             new Route("GET", Pattern.compile("^/uploads/.+$"))
     );
 

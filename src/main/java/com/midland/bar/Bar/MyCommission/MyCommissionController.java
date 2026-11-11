@@ -50,9 +50,12 @@ public class MyCommissionController {
         LocalDate today = LocalDate.now();
         LocalDate weekStart = today.with(DayOfWeek.MONDAY);
         LocalDate monthStart = today.withDayOfMonth(1);
-        LocalDate from = monthStart.isBefore(today.minusDays(DAYS - 1)) ? monthStart : today.minusDays(DAYS - 1);
-        if (weekStart.isBefore(from))
-            from = weekStart;
+        // Last month and this year too (owner, 2026-11-12).
+        LocalDate lastMonthStart = monthStart.minusMonths(1);
+        LocalDate yearStart = today.withDayOfYear(1);
+        LocalDate from = yearStart.isBefore(lastMonthStart) ? yearStart : lastMonthStart;
+        if (today.minusDays(DAYS - 1).isBefore(from))
+            from = today.minusDays(DAYS - 1);
 
         List<Object[]> rows = em.createQuery("""
                 SELECT s.createdAt, COALESCE(s.totalAmount, 0), COALESCE(s.payedAmount, 0), COALESCE(s.lossAmount, 0),
@@ -64,7 +67,7 @@ public class MyCommissionController {
                 .setParameter("staff", who).setParameter("branch", branch).setParameter("from", from)
                 .getResultList();
 
-        long[] tday = new long[5], week = new long[5], month = new long[5];
+        long[] tday = new long[5], week = new long[5], month = new long[5], lastMonth = new long[5], year = new long[5];
         List<Map<String, Object>> days = new ArrayList<>();
         for (Object[] r : rows) {
             LocalDate d = (LocalDate) r[0];
@@ -72,6 +75,8 @@ public class MyCommissionController {
             if (d.equals(today)) add(tday, v);
             if (!d.isBefore(weekStart)) add(week, v);
             if (!d.isBefore(monthStart)) add(month, v);
+            if (!d.isBefore(lastMonthStart) && d.isBefore(monthStart)) add(lastMonth, v);
+            if (!d.isBefore(yearStart)) add(year, v);
             if (!d.isBefore(today.minusDays(DAYS - 1))) {
                 Map<String, Object> m = sums(v);
                 m.put("date", d.toString());
@@ -90,6 +95,8 @@ public class MyCommissionController {
         out.put("today", sums(tday));
         out.put("week", sums(week));
         out.put("month", sums(month));
+        out.put("lastMonth", sums(lastMonth));
+        out.put("year", sums(year));
         out.put("owedAll", owedAll == null ? 0 : owedAll.longValue());
         out.put("days", days);
         return ResponseEntity.ok(Map.of("data", out));

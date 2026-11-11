@@ -421,10 +421,12 @@ public class StaffSellService {
         s.put("staffCode", staff.getStaffCode());
         s.put("name", fullName(staff));
         s.put("category", staff.getBarCategory());
+        // Their picture: the wallpaper of their screen (owner, 2026-11-12).
+        s.put("photo", staff.getPhoto() == null ? null : "/public/staffPhoto/" + staff.getPhoto());
         return s;
     }
 
-    static String fullName(BarStaff staff) {
+    public static String fullName(BarStaff staff) {
         String first = staff.getFirstName() == null ? "" : staff.getFirstName().trim();
         String last = staff.getLastName() == null ? "" : staff.getLastName().trim();
         return (first + " " + last).trim();

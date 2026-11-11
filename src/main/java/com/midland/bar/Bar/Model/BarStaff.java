@@ -48,6 +48,14 @@ public class BarStaff extends TenantEntity {
     private String gender;
 
     /**
+     * Their own picture (owner, 2026-11-12): the wallpaper of their Staff Sell
+     * screen, and what a customer sees when calling a waiter from a table's QR.
+     * A file name in the uploads folder (staff-<uuid>.jpg).
+     */
+    @Column(name = "photo", length = 80)
+    private String photo;
+
+    /**
      * What the staff member types at Staff Sell to pull up their bills: 001,
      * 002... Given out in order within the branch and never reused, so an old
      * code cannot land a new person's sales on someone who has left.

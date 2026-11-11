@@ -78,6 +78,13 @@ public class TableCall extends TenantEntity {
     @Column(name = "reject_reason", length = 200)
     private String rejectReason;
 
+    /** WAITER: the waiter the customer picked by their photo (owner, 2026-11-12); null for anyone. */
+    @Column(name = "staff_uid", length = 64)
+    private String staffUid;
+
+    @Column(name = "staff_name", length = 120)
+    private String staffName;
+
     /**
      * Written by a customer's phone - nobody is signed in, so the branch is
      * the table's (set before saving), not the login's as TenantEntity does.

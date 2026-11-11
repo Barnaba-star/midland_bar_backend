@@ -26,7 +26,7 @@ public class CustomerTableController {
     /** {kind: WAITER | BILL} - the bar sees it at once. */
     @PostMapping("/{token}/call")
     public Response<Map<String, Object>> call(@PathVariable String token, @RequestBody(required = false) Map<String, String> body) {
-        return actions.call(token, body == null ? null : body.get("kind"));
+        return actions.call(token, body == null ? null : body.get("kind"), body == null ? null : body.get("staffUid"));
     }
 
     /** {kind, message, rating?, name?, phone?} - to the branch's CEO / manager. */
