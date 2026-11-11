@@ -17,6 +17,9 @@ public class BarServiceDTO {
     /** Ignored on input: the code is generated on create (see ProductCategory.codePrefix). */
     private String serviceCode;
 
+    /** The barcode / QR on the product; blank clears it. */
+    private String barcode;
+
 
     private String description;
 

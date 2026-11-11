@@ -30,6 +30,10 @@ public class BarServiceEntity extends TenantEntity {
     @Column(name = "service_code")
     private String serviceCode;
 
+    /** The barcode / QR on the product (owner, 2026-11-12): scanned, it finds this at once - one per branch. */
+    @Column(name = "barcode", length = 64)
+    private String barcode;
+
     @Column(name = "description")
     private String description;
 

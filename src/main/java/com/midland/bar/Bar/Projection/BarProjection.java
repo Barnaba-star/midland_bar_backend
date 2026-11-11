@@ -56,6 +56,9 @@ public interface BarProjection {
 
     /** For a service from a stock item: the rung one sale is, how many of it, and the item's ladder. */
     String getSaleUnitName();
+
+    /** The product's barcode / QR (owner, 2026-11-12). */
+    String getBarcode();
     Integer getSaleUnitCount();
     String getSourceUnitLadder();
 

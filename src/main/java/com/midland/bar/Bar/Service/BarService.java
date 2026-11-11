@@ -130,6 +130,19 @@ public class BarService {
       ProductCategory category = ProductCategory.valueOf(barServiceDTO.getCategory());
       serviceEntity.setServiceName(barServiceDTO.getServiceName());
       serviceEntity.setDescription(barServiceDTO.getDescription());
+      // The barcode / QR on the product: one product per code in a branch (owner, 2026-11-12).
+      String barcode = barServiceDTO.getBarcode() == null ? null : barServiceDTO.getBarcode().trim();
+      if (barcode != null && barcode.isEmpty())
+          barcode = null;
+      if (barcode != null && barcode.length() > 64)
+          return new Response<>("Barcode ni ndefu mno");
+      if (barcode != null) {
+          String branch = serviceEntity.getBranchUid() != null ? serviceEntity.getBranchUid() : LoggerUser.getBranchUIDOrMain();
+          for (BarServiceEntity other : barServiceRepository.findByBarcode(branch, barcode))
+              if (!other.getUid().equals(serviceEntity.getUid()))
+                  return new Response<>("Barcode hii tayari ni ya " + other.getServiceName());
+      }
+      serviceEntity.setBarcode(barcode);
       serviceEntity.setPrice(barServiceDTO.getPrice());
       serviceEntity.setCategory(category.name());
       serviceEntity.setUnit(barServiceDTO.getUnit());
