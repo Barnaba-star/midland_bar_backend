@@ -423,6 +423,8 @@ public class StaffSellService {
         s.put("category", staff.getBarCategory());
         // Their picture: the wallpaper of their screen (owner, 2026-11-12).
         s.put("photo", staff.getPhoto() == null ? null : "/public/staffPhoto/" + staff.getPhoto());
+        // Up to five, taking turns as the wallpaper (owner, 2026-11-12).
+        s.put("photos", com.midland.bar.Bar.StaffPhoto.StaffPhotoController.urls(staff.photoList()));
         return s;
     }
 

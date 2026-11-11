@@ -56,6 +56,28 @@ public class BarStaff extends TenantEntity {
     private String photo;
 
     /**
+     * All their pictures, up to five, comma-separated (owner, 2026-11-12): they
+     * take turns as the wallpaper. The first is the one customers see (= photo).
+     */
+    @Column(name = "photos", length = 600)
+    private String photos;
+
+    public java.util.List<String> photoList() {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        if (photos != null)
+            for (String p : photos.split(","))
+                if (!p.isBlank()) out.add(p.trim());
+        if (out.isEmpty() && photo != null && !photo.isBlank())
+            out.add(photo);
+        return out;
+    }
+
+    public void photoList(java.util.List<String> list) {
+        photos = list.isEmpty() ? null : String.join(",", list);
+        photo = list.isEmpty() ? null : list.get(0);
+    }
+
+    /**
      * What the staff member types at Staff Sell to pull up their bills: 001,
      * 002... Given out in order within the branch and never reused, so an old
      * code cannot land a new person's sales on someone who has left.
