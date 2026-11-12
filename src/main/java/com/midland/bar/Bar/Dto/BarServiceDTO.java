@@ -20,6 +20,9 @@ public class BarServiceDTO {
     /** The barcode / QR on the product; blank clears it. */
     private String barcode;
 
+    /** The barcode on its pack (crate / carton); blank clears it. */
+    private String packBarcode;
+
 
     private String description;
 

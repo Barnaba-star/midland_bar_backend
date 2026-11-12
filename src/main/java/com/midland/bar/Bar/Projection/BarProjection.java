@@ -59,6 +59,9 @@ public interface BarProjection {
 
     /** The product's barcode / QR (owner, 2026-11-12). */
     String getBarcode();
+
+    /** The barcode on its pack (crate / carton). */
+    String getPackBarcode();
     Integer getSaleUnitCount();
     String getSourceUnitLadder();
 

@@ -34,6 +34,10 @@ public class BarServiceEntity extends TenantEntity {
     @Column(name = "barcode", length = 64)
     private String barcode;
 
+    /** The barcode on its pack (crate / carton): scanned in the store it adds a whole pack (owner, 2026-11-12). */
+    @Column(name = "pack_barcode", length = 64)
+    private String packBarcode;
+
     @Column(name = "description")
     private String description;
 

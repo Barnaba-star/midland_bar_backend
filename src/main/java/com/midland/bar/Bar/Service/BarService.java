@@ -130,19 +130,24 @@ public class BarService {
       ProductCategory category = ProductCategory.valueOf(barServiceDTO.getCategory());
       serviceEntity.setServiceName(barServiceDTO.getServiceName());
       serviceEntity.setDescription(barServiceDTO.getDescription());
-      // The barcode / QR on the product: one product per code in a branch (owner, 2026-11-12).
-      String barcode = barServiceDTO.getBarcode() == null ? null : barServiceDTO.getBarcode().trim();
-      if (barcode != null && barcode.isEmpty())
-          barcode = null;
-      if (barcode != null && barcode.length() > 64)
+      // The barcodes on the product and on its pack (crate / carton): each code
+      // belongs to one product in a branch (owner, 2026-11-12).
+      String barcode = cleanCode(barServiceDTO.getBarcode());
+      String packBarcode = cleanCode(barServiceDTO.getPackBarcode());
+      if ((barcode != null && barcode.length() > 64) || (packBarcode != null && packBarcode.length() > 64))
           return new Response<>("Barcode ni ndefu mno");
-      if (barcode != null) {
-          String branch = serviceEntity.getBranchUid() != null ? serviceEntity.getBranchUid() : LoggerUser.getBranchUIDOrMain();
-          for (BarServiceEntity other : barServiceRepository.findByBarcode(branch, barcode))
+      if (barcode != null && barcode.equals(packBarcode))
+          return new Response<>("Barcode ya chupa na ya katoni haziwezi kuwa moja");
+      String codeBranch = serviceEntity.getBranchUid() != null ? serviceEntity.getBranchUid() : LoggerUser.getBranchUIDOrMain();
+      for (String code : new String[]{barcode, packBarcode}) {
+          if (code == null)
+              continue;
+          for (BarServiceEntity other : barServiceRepository.findByBarcode(codeBranch, code))
               if (!other.getUid().equals(serviceEntity.getUid()))
-                  return new Response<>("Barcode hii tayari ni ya " + other.getServiceName());
+                  return new Response<>("Barcode " + code + " tayari ni ya " + other.getServiceName());
       }
       serviceEntity.setBarcode(barcode);
+      serviceEntity.setPackBarcode(packBarcode);
       serviceEntity.setPrice(barServiceDTO.getPrice());
       serviceEntity.setCategory(category.name());
       serviceEntity.setUnit(barServiceDTO.getUnit());
@@ -4650,4 +4655,11 @@ public class BarService {
         );
     }
 
+
+  private static String cleanCode(String code) {
+      if (code == null)
+          return null;
+      String c = code.trim();
+      return c.isEmpty() ? null : c;
+  }
 }
