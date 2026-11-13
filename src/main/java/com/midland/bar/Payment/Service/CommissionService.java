@@ -421,7 +421,7 @@ public class CommissionService {
      * themselves. Mirrors the same split in RoleService/UserService.
      */
     private boolean seesAllStaff() {
-        // ROOT, DIRECTOR and ADMIN (MainOfficeRoles).
+        // ROOT and DIRECTOR (MainOfficeRoles).
         return MainOfficeRoles.seesAllBranches(LoggerUser.getUser());
     }
 

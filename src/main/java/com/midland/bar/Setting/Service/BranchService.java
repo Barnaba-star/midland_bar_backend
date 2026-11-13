@@ -216,11 +216,11 @@ public class BranchService {
         Optional<Branch> optionalBranch = branchRepository.findById(branchUID);
         return optionalBranch.map(Response::new).orElseGet(() -> new Response<>("Branch Not Found"));
     }
-    // ROOT, DIRECTOR and ADMIN see every branch; anyone else (STAFF) only sees the
+    // ROOT and DIRECTOR see every branch; anyone else (STAFF, ADMIN) only sees the
     // ones they registered themselves - one staffer's companies stay hidden
     // from another's.
     public boolean seesAllBranches() {
-        // ROOT, DIRECTOR and ADMIN (MainOfficeRoles).
+        // ROOT and DIRECTOR (MainOfficeRoles).
         return MainOfficeRoles.seesAllBranches(LoggerUser.getUser());
     }
 
@@ -325,10 +325,9 @@ public class BranchService {
         LocalDate today = LocalDate.now();
         LocalDate horizon = today.plusDays(window);
 
-        // Admin's Expiring view (VIEW_EXPIRING_BRANCHES) is platform-wide, like ROOT/DIRECTOR.
-        boolean platformWide = seesAllBranches() || org.springframework.security.core.context.SecurityContextHolder
-                .getContext().getAuthentication().getAuthorities().stream()
-                .anyMatch(a -> "VIEW_EXPIRING_BRANCHES".equals(a.getAuthority()));
+        // Only ROOT and DIRECTOR see every branch here; ADMIN, like STAFF,
+        // sees the ones they registered (owner, 2026-11-13).
+        boolean platformWide = seesAllBranches();
         String createdBy = platformWide ? null : LoggerUser.getUser().getUid();
         List<Branch> branches = branchRepository.findExpiringBranches(horizon, createdBy);
 

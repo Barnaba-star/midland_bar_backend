@@ -37,9 +37,12 @@ public final class MainOfficeRoles {
         return has(user, "ADMIN") && !seesAllRoles(user);
     }
 
-    /** ROOT, DIRECTOR and ADMIN see every branch (and every staff member's commission). */
+    /**
+     * ROOT and DIRECTOR see every branch (and every staff member's commission).
+     * STAFF and ADMIN only the branches they registered (owner, 2026-11-13).
+     */
     public static boolean seesAllBranches(User user) {
-        return seesAllRoles(user) || has(user, "ADMIN");
+        return seesAllRoles(user);
     }
 
     /** The roles this login may see and hand out; null means every role. */

@@ -21,8 +21,8 @@ import java.util.Set;
  *  - ROOT and DIRECTOR (main office): every branch, to give support anywhere.
  *  - STAFF (registers branches): MIDLAND plus the branches they registered,
  *    and in a customer's branch they may look but not change anything.
- *  - ADMIN: every branch, but like STAFF only looking outside MIDLAND
- *    (owner's choice, 2026-10-13).
+ *  - ADMIN: like STAFF - MIDLAND plus the branches they registered, only
+ *    looking outside MIDLAND (owner, 2026-11-13; was every branch).
  *  - Everyone else: their home branch plus any the main office gave them.
  *
  * MIDLAND - the home branch of main-office logins - is always listed first,
@@ -35,7 +35,7 @@ public class BranchAccess {
     private static final Set<String> EVERY_BRANCH = Set.of("ROOT", "DIRECTOR");
     private static final Set<String> MAIN_OFFICE = Set.of("ROOT", "DIRECTOR", "STAFF", "ADMIN");
     /** May sign in to every branch - ADMIN only to look (isSupportViewOnly). */
-    private static final Set<String> LISTS_EVERY_BRANCH = Set.of("ROOT", "DIRECTOR", "ADMIN");
+    private static final Set<String> LISTS_EVERY_BRANCH = Set.of("ROOT", "DIRECTOR");
 
     private final BranchRepository branchRepository;
 
@@ -47,7 +47,7 @@ public class BranchAccess {
         List<Branch> others = new ArrayList<>();
         if (listsEveryBranch(user)) {
             others.addAll(branchRepository.findAll());
-        } else if (hasRole(user, "STAFF")) {
+        } else if (hasRole(user, "STAFF") || hasRole(user, "ADMIN")) {
             // Only the branches they registered themselves - never a
             // colleague's, even one they were once added to (owner, 2026-11-13).
             others.addAll(branchRepository.findAllByCreatedBy(user.getUid()));

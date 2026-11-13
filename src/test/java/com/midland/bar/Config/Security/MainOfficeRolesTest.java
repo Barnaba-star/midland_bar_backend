@@ -26,9 +26,11 @@ class MainOfficeRolesTest {
     }
 
     @Test
-    void adminSeesEveryBranchButOnlyTheRolesBelowItsOwn() {
+    void adminSeesOnlyItsOwnBranchesAndOnlyTheRolesBelowItsOwn() {
         User admin = user("ADMIN");
-        assertTrue(MainOfficeRoles.seesAllBranches(admin));
+        // Owner, 2026-11-13: only ROOT and DIRECTOR see every branch.
+        assertFalse(MainOfficeRoles.seesAllBranches(admin));
+        assertTrue(MainOfficeRoles.seesAllBranches(user("DIRECTOR")));
         assertFalse(MainOfficeRoles.seesAllRoles(admin));
         List<String> codes = MainOfficeRoles.visibleRoleCodes(admin);
         assertTrue(codes.contains("CEO") && codes.contains("STAFF"));
