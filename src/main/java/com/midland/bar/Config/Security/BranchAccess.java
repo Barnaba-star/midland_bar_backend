@@ -47,10 +47,12 @@ public class BranchAccess {
         List<Branch> others = new ArrayList<>();
         if (listsEveryBranch(user)) {
             others.addAll(branchRepository.findAll());
+        } else if (hasRole(user, "STAFF")) {
+            // Only the branches they registered themselves - never a
+            // colleague's, even one they were once added to (owner, 2026-11-13).
+            others.addAll(branchRepository.findAllByCreatedBy(user.getUid()));
         } else {
             others.addAll(user.getWorkBranches());
-            if (hasRole(user, "STAFF"))
-                others.addAll(branchRepository.findAllByCreatedBy(user.getUid()));
         }
         others.stream()
                 .filter(b -> b != null && !Boolean.FALSE.equals(b.getIsActive()))
