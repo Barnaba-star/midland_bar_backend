@@ -51,9 +51,19 @@ public class AppReleaseController {
             m.matches();
             out.put("version", m.group(1) + "." + m.group(2) + "." + m.group(3));
             out.put("file", "/public/app/" + newest.getName());
-            out.put("mb", Math.round(newest.length() / 104857.6) / 10.0);
+            out.put("mb", Math.round(newest.length() / 100000.0) / 10.0);
         }
         return ResponseEntity.ok().cacheControl(CacheControl.noCache()).body(Map.of("data", out));
+    }
+
+    /** Old links and "just give me the app": straight to the newest file. */
+    @GetMapping("/public/app/latest/download")
+    public ResponseEntity<Void> latestDownload() {
+        Object file = ((Map<?, ?>) latest().getBody().get("data")).get("file");
+        if (file == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.status(302).header(HttpHeaders.LOCATION, file.toString()).build();
     }
 
     @GetMapping("/public/app/{name}")
