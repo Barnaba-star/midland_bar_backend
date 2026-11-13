@@ -723,6 +723,27 @@ public class TableActionsService {
         return new Response<>(f);
     }
 
+    /**
+     * Gone for good, so the table does not grow forever (owner, 2026-11-13).
+     * Unread messages are deleted only one at a time, never in bulk.
+     */
+    @org.springframework.transaction.annotation.Transactional
+    public Response<String> deleteFeedback(String uid) {
+        CustomerFeedback f = feedbackRepository.findInBranch(uid, LoggerUser.getBranchUIDOrMain()).orElse(null);
+        if (f == null)
+            return new Response<>(null, "Feedback Not Found", com.midland.bar.Utils.Responses.ResponseStatus.WARNING);
+        feedbackRepository.delete(f);
+        log.info("{} deleted customer feedback {} ({})", LoggerUser.getEmail(), uid, f.getKind());
+        return new Response<>(uid, null);
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    public Response<Integer> deleteReadFeedback() {
+        int n = feedbackRepository.deleteRead(LoggerUser.getBranchUIDOrMain());
+        log.info("{} deleted {} read customer feedback", LoggerUser.getEmail(), n);
+        return new Response<>(n, null);
+    }
+
     private static Map<String, String> line(String label, String value) {
         Map<String, String> m = new LinkedHashMap<>();
         m.put("label", label);

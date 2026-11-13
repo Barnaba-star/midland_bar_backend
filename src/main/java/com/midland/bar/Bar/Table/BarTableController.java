@@ -99,6 +99,19 @@ public class BarTableController {
         return actions.markRead(uid);
     }
 
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_CUSTOMER_FEEDBACK')")
+    @PostMapping("/feedback/{uid}/delete")
+    public Response<String> feedbackDelete(@PathVariable String uid) {
+        return actions.deleteFeedback(uid);
+    }
+
+    /** Every message already read - those still unread stay. */
+    @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_CUSTOMER_FEEDBACK')")
+    @PostMapping("/feedback/deleteRead")
+    public Response<Integer> feedbackDeleteRead() {
+        return actions.deleteReadFeedback();
+    }
+
     /** Orders from tables waiting to be taken. */
     @PreAuthorize("@authChecker.hasPermissionOrRoot('VIEW_SALES') or @authChecker.hasPermissionOrRoot('RECEIVE_ORDERS')")
     @GetMapping("/orders")
