@@ -21,8 +21,13 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
+        // Profile pictures and logos were fetched in full on every screen
+        // (194 KB each time). The name stays the same when a picture is
+        // replaced, so the browser keeps it but asks first: unchanged, the
+        // answer is an empty 304 (Last-Modified) instead of the whole file.
         registry.addResourceHandler("/uploads/**")
-                .addResourceLocations("file:" + uploadDir);
+                .addResourceLocations("file:" + uploadDir)
+                .setCacheControl(org.springframework.http.CacheControl.noCache().cachePublic());
     }
 }
 
