@@ -69,12 +69,15 @@ public class CatalogController {
 
         String barcode = clean(body.getBarcode());
         String packBarcode = clean(body.getPackBarcode());
+        String qrCode = clean(body.getQrCode());
         if (barcode != null && barcode.equals(packBarcode))
             return new Response<>(null, "Barcode ya chupa na ya kreti haziwezi kuwa moja", ResponseStatus.WARNING);
-        for (String code : new String[]{barcode, packBarcode}) {
+        if (qrCode != null && qrCode.length() > 255)
+            return new Response<>(null, "QR code ni ndefu mno", ResponseStatus.WARNING);
+        for (String code : new String[]{barcode, packBarcode, qrCode}) {
             if (code == null)
                 continue;
-            if (code.length() > 64)
+            if (code.length() > 64 && code != qrCode)
                 return new Response<>(null, "Barcode ni ndefu mno", ResponseStatus.WARNING);
             for (CatalogItem other : catalogRepository.findByAnyBarcode(code))
                 if (!other.getUid().equals(item.getUid()))
@@ -96,6 +99,7 @@ public class CatalogController {
         item.setUnitsPerPack(packUnit == null ? 1 : perPack);
         item.setBarcode(barcode);
         item.setPackBarcode(packBarcode);
+        item.setQrCode(qrCode);
         log.info(LoggerUser.getEmail() + " saved catalog drink " + item.displayName());
         return new Response<>(catalogRepository.save(item));
     }
@@ -131,6 +135,7 @@ public class CatalogController {
             row.put("unitsPerPack", c.getUnitsPerPack());
             row.put("barcode", c.getBarcode());
             row.put("packBarcode", c.getPackBarcode());
+            row.put("qrCode", c.getQrCode());
             BarServiceEntity s = mine.get(c.getUid());
             if (s == null)
                 s = handMade(c);
@@ -218,10 +223,19 @@ public class CatalogController {
                 r.put("message", saved.getMessage());
             } else {
                 BarServiceEntity s = saved.getData();
+                boolean changed = false;
                 if (!c.getUid().equals(s.getCatalogUid())) {
                     s.setCatalogUid(c.getUid());
-                    barServiceRepository.save(s);
+                    changed = true;
                 }
+                // The QR code is not on the product form; it comes from the catalog.
+                if (s.getQrCode() == null && c.getQrCode() != null
+                        && barServiceRepository.findByBarcode(s.getBranchUid(), c.getQrCode()).stream().allMatch(o -> o.getUid().equals(s.getUid()))) {
+                    s.setQrCode(c.getQrCode());
+                    changed = true;
+                }
+                if (changed)
+                    barServiceRepository.save(s);
                 r.put("ok", true);
                 r.put("serviceUid", s.getUid());
                 r.put("updated", existing != null);
@@ -234,7 +248,7 @@ public class CatalogController {
 
     private BarServiceEntity handMade(CatalogItem c) {
         String branch = LoggerUser.getBranchUID();
-        for (String code : new String[]{c.getBarcode(), c.getPackBarcode()}) {
+        for (String code : new String[]{c.getBarcode(), c.getPackBarcode(), c.getQrCode()}) {
             if (code == null)
                 continue;
             for (BarServiceEntity s : barServiceRepository.findByBarcode(branch, code))

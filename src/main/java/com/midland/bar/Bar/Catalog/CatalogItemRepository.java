@@ -11,6 +11,6 @@ public interface CatalogItemRepository extends JpaRepository<CatalogItem, String
     @Query("SELECT c FROM CatalogItem c WHERE c.isActive = true ORDER BY LOWER(c.name), LOWER(c.flavour), LOWER(c.size)")
     List<CatalogItem> findAllSorted();
 
-    @Query("SELECT c FROM CatalogItem c WHERE c.isActive = true AND (c.barcode = :code OR c.packBarcode = :code)")
+    @Query("SELECT c FROM CatalogItem c WHERE c.isActive = true AND (c.barcode = :code OR c.packBarcode = :code OR c.qrCode = :code)")
     List<CatalogItem> findByAnyBarcode(@Param("code") String code);
 }

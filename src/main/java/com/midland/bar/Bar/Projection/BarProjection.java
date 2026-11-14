@@ -62,6 +62,9 @@ public interface BarProjection {
 
     /** The barcode on its pack (crate / carton). */
     String getPackBarcode();
+
+    /** The QR code on the product, if it has one. */
+    String getQrCode();
     Integer getSaleUnitCount();
     String getSourceUnitLadder();
 

@@ -38,6 +38,10 @@ public class BarServiceEntity extends TenantEntity {
     @Column(name = "pack_barcode", length = 64)
     private String packBarcode;
 
+    /** The QR code on the product, beside its barcode - scanned, it finds this the same way (owner, 2026-11-14). */
+    @Column(name = "qr_code", length = 255)
+    private String qrCode;
+
     @Column(name = "description")
     private String description;
 

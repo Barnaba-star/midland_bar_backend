@@ -72,6 +72,7 @@ public interface BarServiceRepository extends JpaRepository<BarServiceEntity, St
               s.saleUnitName AS saleUnitName,
               s.barcode AS barcode,
               s.packBarcode AS packBarcode,
+              s.qrCode AS qrCode,
               s.saleUnitCount AS saleUnitCount,
               src.unitLadder AS sourceUnitLadder,
               src.serviceName AS stockSourceName,
@@ -111,6 +112,7 @@ public interface BarServiceRepository extends JpaRepository<BarServiceEntity, St
               s.saleUnitName AS saleUnitName,
               s.barcode AS barcode,
               s.packBarcode AS packBarcode,
+              s.qrCode AS qrCode,
               s.saleUnitCount AS saleUnitCount,
               src.unitLadder AS sourceUnitLadder,
               src.serviceName AS stockSourceName,
@@ -156,6 +158,6 @@ public interface BarServiceRepository extends JpaRepository<BarServiceEntity, St
     java.util.List<BarServiceEntity> findByNameIgnoreCase(@Param("branchUid") String branchUid, @Param("name") String name);
 
     /** Who already carries this barcode in the branch (owner, 2026-11-12). */
-    @Query("SELECT s FROM BarServiceEntity s WHERE s.branchUid = :branchUid AND (s.barcode = :barcode OR s.packBarcode = :barcode) AND s.isActive = true")
+    @Query("SELECT s FROM BarServiceEntity s WHERE s.branchUid = :branchUid AND (s.barcode = :barcode OR s.packBarcode = :barcode OR s.qrCode = :barcode) AND s.isActive = true")
     java.util.List<BarServiceEntity> findByBarcode(@Param("branchUid") String branchUid, @Param("barcode") String barcode);
 }

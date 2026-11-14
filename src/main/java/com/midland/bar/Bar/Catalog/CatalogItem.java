@@ -54,6 +54,10 @@ public class CatalogItem extends BaseEntity {
     @Column(name = "pack_barcode", length = 64)
     private String packBarcode;
 
+    /** The QR code on the label, when the drink has one beside its barcode (owner, 2026-11-14). */
+    @Column(name = "qr_code", length = 255)
+    private String qrCode;
+
     @Column(name = "created_by", length = 64)
     private String createdBy;
 
