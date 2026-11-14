@@ -139,4 +139,11 @@ public class BarServiceEntity extends TenantEntity {
     @Column(name = "usage_type")
     private String usageType;
 
+    /**
+     * The drink in the main office's catalog this product was taken from
+     * (owner, 2026-11-14). Null for products the branch made itself.
+     */
+    @Column(name = "catalog_uid", length = 64)
+    private String catalogUid;
+
 }

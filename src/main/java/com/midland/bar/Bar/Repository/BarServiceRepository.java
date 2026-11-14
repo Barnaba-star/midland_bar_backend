@@ -42,6 +42,10 @@ public interface BarServiceRepository extends JpaRepository<BarServiceEntity, St
     @Query("SELECT s FROM BarServiceEntity s WHERE s.uid=:barServiceUID AND s.branchUid=:branchUID")
     Optional<BarServiceEntity> findForUpdate(@Param("barServiceUID") String barServiceUID, @Param("branchUID") String branchUID);
 
+    /** A branch's products taken from the main office's drink catalog. */
+    @Query("SELECT s FROM BarServiceEntity s WHERE s.isActive = true AND s.catalogUid IS NOT NULL AND s.branchUid = :branchUID")
+    List<BarServiceEntity> findFromCatalog(@Param("branchUID") String branchUID);
+
     @Query("SELECT s FROM BarServiceEntity s WHERE s.uid=:barServiceUID AND s.branchUid=:branchUID")
     Optional<BarServiceEntity> findBarServiceByUID(@Param("barServiceUID") String barServiceUID, String branchUID);
 
@@ -146,6 +150,10 @@ public interface BarServiceRepository extends JpaRepository<BarServiceEntity, St
     /** Everything counted in the store - what a stock take goes through. */
     @Query("SELECT s FROM BarServiceEntity s WHERE s.branchUid = :branchUID AND s.isActive = true AND s.trackStock = true ORDER BY s.serviceName")
     java.util.List<BarServiceEntity> findCountable(@Param("branchUID") String branchUID);
+
+    /** A product of the branch by its name, ignoring case and spaces at the ends - for linking a catalog drink to one made by hand. */
+    @Query("SELECT s FROM BarServiceEntity s WHERE s.branchUid = :branchUid AND s.isActive = true AND LOWER(TRIM(s.serviceName)) = :name AND (s.kind IS NULL OR s.kind <> 'STOCK_ITEM')")
+    java.util.List<BarServiceEntity> findByNameIgnoreCase(@Param("branchUid") String branchUid, @Param("name") String name);
 
     /** Who already carries this barcode in the branch (owner, 2026-11-12). */
     @Query("SELECT s FROM BarServiceEntity s WHERE s.branchUid = :branchUid AND (s.barcode = :barcode OR s.packBarcode = :barcode) AND s.isActive = true")
